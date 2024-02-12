@@ -1,5 +1,6 @@
 # third party
 import flask
+import flask_cors
 
 # modules
 import src.controller as cn
@@ -8,6 +9,15 @@ import src.controller as cn
 # setup
 app: flask.Flask = flask.Flask(__name__)
 controller: cn.Controller = cn.Controller()
+cors: flask_cors.CORS = flask_cors.CORS(
+    app,
+    resources={
+        r"/*": {
+            "origins": "http://localhost:8001"
+        }
+    }
+)
+
 
 # add routes
 routes: list = [
