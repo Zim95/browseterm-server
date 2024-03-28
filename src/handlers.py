@@ -1,5 +1,9 @@
 # builtins
 import abc
+import os
+
+# module
+import src.auth as au
 
 
 class Handler:
@@ -68,3 +72,48 @@ class ImageOptionsHandler(Handler):
                 "label": "ubuntu",
             }
         ]
+
+
+class LoginHandler(Handler):
+
+    def __init__(self, request_params: dict) -> None:
+        super().__init__(request_params)
+
+    def get_base_uri(self) -> str:
+        base_uri: str = os.environ.get("BASE_URL", "")
+        if not base_uri:
+            raise ValueError("Invalid Base URI")
+        return base_uri
+
+    def get_redirect_uri_offset(self) -> str:
+        return ""
+
+    def get_redirect_uri(self) -> None:
+        try:
+            return self.get_base_uri() + self.get_redirect_uri_offset()
+        except ValueError as ve:
+            raise ValueError(ve)
+
+    def handle(self) -> dict | None:
+        redirect_uri: str = self.get_redirect_uri()
+        return au.oauth.BrowseTermGoogleAuth.authorize_redirect(redirect_uri=redirect_uri)
+
+
+class GoogleLoginHandler(LoginHandler):
+
+    def __init__(self, request_params: dict) -> None:
+        super().__init__(request_params)
+
+    def get_redirect_uri_offset(self) -> str:
+        return "google-login-redirect"
+
+
+class GoogleRedirectHandler(Handler):
+
+    def __init__(self, request_params: dict) -> None:
+        super().__init__(request_params)
+
+    def handle(self) -> dict | None:
+        token: str = au.oauth.BrowseTermGoogleAuth.authorize_access_token()
+        breakpoint()
+        # app.flask.session
