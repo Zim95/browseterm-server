@@ -9,6 +9,8 @@ import src.handlers as handlers
 HANDLERS_MAP: dict = {
     "image_options": handlers.ImageOptionsHandler,
     "ping": handlers.PingHandler,
+    "google-login": handlers.GoogleLoginHandler,
+    "google-login-redirect": handlers.GoogleRedirectHandler,
 }
 
 
@@ -61,12 +63,13 @@ class Controller:
                         "error": f"Invalid route: {handler_name}"
                     }
                 ), 404
-            return flask.jsonify(
-                {
-                    "response": handler(
-                        request_params=request_params).handle()
-                }
-            ), 200
+            # return flask.jsonify(
+            #     {
+            #         "response": handler(
+            #             request_params=request_params).handle()
+            #     }
+            # ), 200
+            return handler(request_params=request_params).handle()
         except Exception as e:
             return flask.jsonify(
                 {
