@@ -2,10 +2,9 @@
 import flask
 import flask_cors
 import dotenv
-
 # modules
 import src.controller as cn
-import src.auth as au
+import src.authconf as authconf
 # builtins
 import os
 
@@ -15,7 +14,19 @@ dotenv.load_dotenv(".env")
 
 # app setup
 app: flask.Flask = flask.Flask(__name__)
-controller: cn.Controller = cn.Controller()
+# flask session setup
+app.config['SESSION_TYPE'] = 'redis'
+app.config['SESSION_PERMANENT'] = False  # Session will expire when the browser is closed
+app.config['SESSION_USE_SIGNER'] = True  # Sign the session cookie for extra security
+app.config['SESSION_REDIS'] = {  # Redis server configuration
+    'host': os.environ.get("REDIS_SESSION_HOST"),
+    'port': os.environ.get("REDIS_SESSION_PORT"),
+    'db': os.environ.get("REDIS_SESSION_DB"),  # Redis database index
+    'password': os.environ.get("REDIS_SESSION_PASSWORD")  # Optional: If Redis requires authentication
+}
+# authlib setup
+authconf.configure_google_auth(app)
+app.secret_key = os.environ.get("FLASK_SECRET")
 
 # cors setup
 cors: flask_cors.CORS = flask_cors.CORS(
@@ -27,9 +38,8 @@ cors: flask_cors.CORS = flask_cors.CORS(
     }
 )
 
-# authlib setup
-au.configure_google_auth(app)
-app.secret_key = os.environ.get("FLASK_SECRET")
+# controllers
+controller: cn.Controller = cn.Controller()
 
 # add routes
 routes: list = [

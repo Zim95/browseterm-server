@@ -10,7 +10,7 @@ HANDLERS_MAP: dict = {
     "image_options": handlers.ImageOptionsHandler,
     "ping": handlers.PingHandler,
     "google-login": handlers.GoogleLoginHandler,
-    "google-login-redirect": handlers.GoogleRedirectHandler,
+    "google-login-redirect": handlers.GoogleAuthCallbackHandler,
 }
 
 
@@ -41,6 +41,17 @@ class Controller:
         }
         return request_params
 
+    def return_response(self, handler: handlers.Handler, request_params: dict) -> any:
+        """
+        Return response as is.
+
+        Author: Namah Shrestha
+        """
+        try:
+            return handler(request_params=request_params).handle()
+        except Exception as e:
+            raise Exception(e)
+
     def handle(self, **kwargs: dict) -> typing.Any:
         """
         1. Sends the request data to appropriate handler methods
@@ -63,16 +74,25 @@ class Controller:
                         "error": f"Invalid route: {handler_name}"
                     }
                 ), 404
-            # return flask.jsonify(
-            #     {
-            #         "response": handler(
-            #             request_params=request_params).handle()
-            #     }
-            # ), 200
-            return handler(request_params=request_params).handle()
+            return self.return_response(handler, request_params)
         except Exception as e:
             return flask.jsonify(
                 {
                     "error": f"Internal Server Error: {e}"
                 }
             ), 500
+
+
+class JsonController(Controller):
+    """
+    JSON Controller. Formats response in json format.
+    Inhertied from Controller.
+
+    Author: Namah Shrestha
+    """
+    def return_response(self, handler: handlers.Handler, request_params: dict) -> any:
+        try:
+            response: any = handler(request_params=request_params).handle()
+            return flask.jsonify({"response": response}), 200
+        except Exception as e:
+            raise Exception(e)
