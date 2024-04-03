@@ -10,7 +10,7 @@ HANDLERS_MAP: dict = {
     "image_options": handlers.ImageOptionsHandler,
     "ping": handlers.PingHandler,
     "google-login": handlers.GoogleLoginHandler,
-    "google-login-redirect": handlers.GoogleAuthCallbackHandler,
+    "google-login-redirect": handlers.GoogleLoginRedirectHandler,
 }
 
 

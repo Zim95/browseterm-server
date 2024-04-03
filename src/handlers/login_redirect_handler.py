@@ -14,9 +14,16 @@ class LoginRedirectHandler(bh.Handler):
     def get_token(self) -> dict:
         raise NotImplementedError("Please implement the get_token method!")
 
+    def get_user_info(self) -> dict:
+        """
+        Extract user info from token
+        """
+        raise NotImplementedError("Please implement the get_user_info method!")
+
     def handle(self) -> dict | None:
         try:
             token: dict = self.get_token()
+            breakpoint()
             flask.session["user"] = token
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
