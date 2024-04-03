@@ -1,0 +1,20 @@
+#!/bin/bash
+
+PSQL_DIALECT=postgresql
+PSQL_DRIVER=psycopg2
+PSQL_USERNAME=postgres
+PSQL_PASSWORD=0907namah
+PSQL_HOST=0.0.0.0
+PSQL_CONTAINER_PORT=5432
+PSQL_HOST_PORT=5432
+PSQL_DATABASE=authlab
+CONTAINER_NAME=bt-postgres
+IMAGE_NAME=postgres
+
+
+docker container run -d \
+    --name "$CONTAINER_NAME" \
+    -p "$PSQL_HOST":"$PSQL_HOST_PORT":"$PSQL_CONTAINER_PORT" \
+    -e POSTGRES_USER="$PSQL_USERNAME" \
+    -e POSTGRES_PASSWORD="$PSQL_PASSWORD" \
+    "$IMAGE_NAME"

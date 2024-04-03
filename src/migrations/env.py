@@ -18,19 +18,20 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-import src.models as models
 
-# we need to import all models within the models directory.
+# import all existing models
+import dotenv
+dotenv.load_dotenv()
+import src.models as models
 import os
 import importlib
 
-exclude_files: list = ['__init__.py', '__pycache__']
-include_files: list = list(filter(lambda x: x not in exclude_files, os.listdir('./models')))
+exclude_files: list = ['__init__.py', '__pycache__', 'commons.py']
+include_files: list = list(filter(lambda x: x not in exclude_files, os.listdir('src/models')))
 for file in include_files:
     module_name: str = file[:-3]
-    module_path: str = f'models.{module_name}'
-    importlib.import_module(module_path, package="models")
-
+    module_path: str = f'src.models.{module_name}'
+    importlib.import_module(module_path)
 target_metadata = models.Base.metadata
 
 # other values from the config, defined by the needs of env.py,

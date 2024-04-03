@@ -6,5 +6,5 @@ Generic single-database configuration.
     - alembic init migrations
 2. Create revisions:
     - alembic revision --autogenerate -m "<message>"
-3. Apply the migrations:
+3. Apply the migrations    
     - alembic upgrade heads

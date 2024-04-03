@@ -1,14 +1,7 @@
-1. Set up redis password
-2. Create session in Redis.
-3. Setup SQLAlchemy User and Token models.
-4. Setup Alembic for Data migration.
-5. 
-
-
-
-1. Setup PostgreSQL
-2. Setup SQLAlchemy and Alembic.
+1. Setup PostgreSQL - Done
+2. Setup SQLAlchemy and Alembic. - Done
 3. Setup UserModelOps
     -> insert unique user and token.
     -> get unique user and token
-4. 
+4. Setup password on Redis.
+5. Create session in Redis. 
