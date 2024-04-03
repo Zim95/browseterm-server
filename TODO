@@ -1,7 +1,11 @@
 1. Setup PostgreSQL - Done
 2. Setup SQLAlchemy and Alembic. - Done
-3. Setup UserModelOps
-    -> insert unique user and token.
-    -> get unique user and token
+3. Setup UserModelOps.
+    - insert unique user and token.
+    - get unique user and token
 4. Setup password on Redis.
-5. Create session in Redis. 
+5. Create session in Redis.
+
+
+# Important:
+1. Use env variables in alembic.ini.
