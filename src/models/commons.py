@@ -43,11 +43,13 @@ class BasicModelOps:
         self.model: decl.DeclarativeMeta = model
         self.session: sql_orm.session.Session = session
 
-    def insert(self, insert_dict: dict) -> None:
+    def insert(self, insert_dict: dict, return_record: bool=False) -> None | decl.DeclarativeMeta:
         try:
             record: decl.DeclarativeMeta = self.model(**insert_dict)
             self.session.add(record)
             self.session.commit()
+            if return_record:
+                return record
         except Exception as e:
             self.session.rollback()
             raise Exception(e)
@@ -75,6 +77,14 @@ class BasicModelOps:
         if format_dict:
             return [r.__dict__ for r in records]
         return records
+
+    def update(self, find_dict: dict = {}, update_dict: dict = {}) -> None:
+        try:
+            self.session.query(self.model).filter_by(**find_dict).update(update_dict)
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            raise Exception(e)
 
     def delete(self, find_dict: dict={}) -> None:
         try:

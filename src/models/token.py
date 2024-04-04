@@ -26,3 +26,29 @@ class Tokens(model.Base):
     user = model.sql_orm.relationship(
         "Users", back_populates="token"
     )
+
+
+class TokensModelOps(model.BasicModelOps):
+
+    def __init__(
+        self,
+        model: model.decl.DeclarativeMeta,
+        session: model.sql_orm.Session
+    ) -> None:
+        super().__init__(model, session)
+
+    def insert_or_update_token(self, user_id: int, token_info: dict) -> None:
+        try:
+            record: model.decl.DeclarativeMeta = self.find(
+                find_dict={"user_id": user_id}
+            )
+            if record:
+                self.update(
+                    find_dict={"user_id": user_id},
+                    update_dict=token_info
+                )
+            else:
+                token_info["user_id"] = user_id
+                self.insert(**token_info)
+        except Exception as e:
+            raise Exception(e)
