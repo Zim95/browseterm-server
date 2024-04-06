@@ -1,6 +1,7 @@
 # third party
 import flask
 import flask_cors
+import flask_session
 import dotenv
 # modules
 import src.controller as cn
@@ -24,8 +25,10 @@ app.config['SESSION_REDIS'] = {  # Redis server configuration
     'db': os.environ.get("REDIS_SESSION_DB"),  # Redis database index
     'password': os.environ.get("REDIS_SESSION_PASSWORD")  # Optional: If Redis requires authentication
 }
+server_session: flask_session.Session = flask_session.Session(app)
 # authlib setup
 authconf.configure_google_auth(app)
+authconf.configure_github_auth(app)
 app.secret_key = os.environ.get("FLASK_SECRET")
 
 # cors setup
@@ -46,7 +49,9 @@ routes: list = [
     ("/ping", "ping", ["GET", "POST"]),
     ("/image_options", "image_options", ["GET"]),
     ("/google-login", "google_login", ["GET"]),
+    ("/github-login", "github_login", ["GET"]),
     ("/google-login-redirect", "google_login_redirect", ["GET"]),
+    ("/github-login-redirect", "github_login_redirect", ["GET"]),
 ]
 for route in routes:
     app.add_url_rule(route[0], route[1], controller.handle, methods=route[2])

@@ -8,6 +8,8 @@ import sqlalchemy.orm.decl_api as decl
 
 # modules
 import os
+import dotenv
+dotenv.load_dotenv()
 
 
 # postgres settings

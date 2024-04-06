@@ -28,10 +28,14 @@ class LoginHandler(bh.Handler):
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
 
+    def get_authorizer(self) -> any:
+        raise NotImplementedError("Please implement the ger_authorizer method!")
+
     def handle(self) -> dict | None:
         try:
             redirect_uri: str = self.get_redirect_uri()
-            return authconf.oauth.BrowseTermGoogleAuth.authorize_redirect(redirect_uri=redirect_uri)
+            authorizer: any = self.get_authorizer()
+            return authorizer.authorize_redirect(redirect_uri=redirect_uri)
         except ValueError as ve:
             raise ValueError(ve)
         except NotImplementedError as ni:
@@ -45,3 +49,18 @@ class GoogleLoginHandler(LoginHandler):
 
     def get_redirect_uri_offset(self) -> str:
         return "google-login-redirect"
+
+    def get_authorizer(self) -> any:
+        return authconf.oauth.BrowseTermGoogleAuth
+
+
+class GithubLoginHandler(LoginHandler):
+
+    def __init__(self, request_params: dict) -> None:
+        super().__init__(request_params)
+
+    def get_redirect_uri_offset(self) -> str:
+        return "github-login-redirect"
+
+    def get_authorizer(self) -> any:
+        return authconf.oauth.BrowseTermGithubAuth

@@ -30,4 +30,5 @@ class Handler:
 
         Author: Namah Shrestha
         """
+        # TODO: Add async logging of request params here
         pass
