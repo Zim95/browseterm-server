@@ -11,3 +11,7 @@
 1. Use env variables in alembic.ini.
 2. Log every request asynchronously to MongoDB.
 3. Implement Refresh token logic.
+
+# Optional
+1. Add address in google login - scope: https://www.googleapis.com/auth/user.addresses.read.
+    Then use, api requests: people/me?peopleFields=addresses

@@ -81,7 +81,8 @@ class GoogleLoginRedirectHandler(LoginRedirectHandler):
     def extract_token_info(self, token: dict) -> dict:
         return {
             "token_info": {
-                "id_token": token["id_token"]
+                "id_token": token["id_token"],
+                "refresh_token": ""
             },
             "provider": "google"
         }
@@ -108,16 +109,16 @@ class GithubLoginRedirectHandler(LoginRedirectHandler):
         return {
             "name": token["userinfo"]["name"],
             "email": token["userinfo"]["email"],
-            "profile_picture_url": token["userinfo"].get("avatar_url", "")
+            "profile_picture_url": token["userinfo"].get("avatar_url", ""),
+            "location": token["userinfo"].get("location", "")
         }
 
     def extract_token_info(self, token: dict) -> dict:
         return {
-            "access_token": "",
-            "id_token": "",
-            "expires_in": "",
-            "expires_at": "",
-            "token_type": "",
+            "token_info": {
+                "access_token": "",
+                "refresh_token": ""
+            },
             "provider": "github"
         }
 
