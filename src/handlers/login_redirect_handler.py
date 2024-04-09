@@ -31,18 +31,29 @@ class LoginRedirectHandler(bh.Handler):
         super().__init__(request_params)
 
     def get_token(self) -> dict:
-        raise NotImplementedError("Please implement the get_token method!")
+        """
+        Get token
+
+        Author: Namah Shrestha
+        """
+        raise NotImplementedError(
+            "Please implement the get_token method!")
 
     def extract_user_info(self, token: dict) -> dict:
         """
         Extract user info from token
+
+        Author: Namah Shrestha
         """
-        raise NotImplementedError("Please implement the extract_user_info method!")
+        raise NotImplementedError(
+            "Please implement the extract_user_info method!")
 
     def extract_agent_info(self) -> dict:
         return {
-            "user_agent": self.request_params.get("headers", {}).get("User-Agent", ""),
-            "host": self.request_params.get("headers", {}).get("Host", "")
+            "user_agent": self.request_params.get(
+                "headers", {}).get("User-Agent", ""),
+            "host": self.request_params.get(
+                "headers", {}).get("Host", "")
         }
 
     def handle(self) -> dict | None:
@@ -62,7 +73,6 @@ class LoginRedirectHandler(bh.Handler):
             agent_info: dict = self.extract_agent_info()
             session_info = {"user_info": user_info, "agent_info": agent_info}
             flask.session["session_info"] = json.dumps(session_info)
-            breakpoint()
             return flask.redirect("http://localhost:8004/ping")
         except NotImplementedError as ni:
             raise NotImplementedError(ni)

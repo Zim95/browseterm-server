@@ -1,8 +1,20 @@
 # builtins
 import functools
 import json
+import os
 # third party
 import flask
+import redis
+
+
+def check_session_lifetime() -> int:
+    rc: redis.Redis = redis.Redis(
+        host=os.environ.get("REDIS_SESSION_HOST", "localhost"),
+        port=os.environ.get("REDIS_SESSION_PORT", 6379),
+        db=os.environ.get("REDIS_SESSION_DB", 0)
+    )
+    redis_id: str = f"session:{flask.session.sid}"
+    return rc.ttl(redis_id)
 
 
 def auth_required(handler: callable) -> callable:
@@ -22,8 +34,15 @@ def auth_required(handler: callable) -> callable:
             # we do not need to check the lifetime.
             # This case is when the session data has disappeared.
             return "Unauthorized", 401
+        
         # validate agent and host
-        # inspect args and kwargs
-        breakpoint()
+        headers: dict = [*args][0].request_params["headers"]
+        host: str = headers.get("Host", "")
+        user_agent: str = headers.get("User-Agent", "")
+        agent_info: dict = session_data["agent_info"]
+        if host != agent_info["host"] or user_agent != agent_info["user_agent"]:
+            # if host and user agent mismach, raise Unauthorized
+            return "Unauthorized", 401
+
         return handler(*args, **kwargs)
     return wrapper
