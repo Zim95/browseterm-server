@@ -9,11 +9,25 @@ import requests
 
 # builtins
 import os
+import json
 
 
 class LoginRedirectHandler(bh.Handler):
+    """
+    Handle Login Redirect.
+
+    Author: Namah Shrestha
+    """
 
     def __init__(self, request_params: dict) -> None:
+        """
+        Initialize request params.
+        :params:
+            :request_params: dict: Request parameters.
+        :returns: None
+
+        Author: Namah Shrestha
+        """
         super().__init__(request_params)
 
     def get_token(self) -> dict:
@@ -25,19 +39,31 @@ class LoginRedirectHandler(bh.Handler):
         """
         raise NotImplementedError("Please implement the extract_user_info method!")
 
-    def extract_token_info(self, token: dict) -> dict:
-        """
-        Extract token info from token
-        """
-        raise NotImplementedError("Please implement the extract_token_info method!")
+    def extract_agent_info(self) -> dict:
+        return {
+            "user_agent": self.request_params.get("headers", {}).get("User-Agent", ""),
+            "host": self.request_params.get("headers", {}).get("Host", "")
+        }
 
     def handle(self) -> dict | None:
+        """
+        1. Construct token.
+        2. Construct user info.
+        3. Construct agent info
+        4. Insert or Update user info.
+        5. Update token info in session.
+
+        Author: Namah Shrestha
+        """
         try:
             token: dict = self.get_token()
             user_info: dict = self.extract_user_info(token)
-            token_info: dict = self.extract_token_info(token)
+            # insert user_info into the database
+            agent_info: dict = self.extract_agent_info()
+            session_info = {"user_info": user_info, "agent_info": agent_info}
+            flask.session["session_info"] = json.dumps(session_info)
             breakpoint()
-            flask.session["token_info"] = token_info
+            return flask.redirect("http://localhost:8004/ping")
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
 
@@ -78,26 +104,27 @@ class GoogleLoginRedirectHandler(LoginRedirectHandler):
             )
         }
 
-    def extract_token_info(self, token: dict) -> dict:
-        return {
-            "token_info": {
-                "id_token": token["id_token"],
-                "refresh_token": ""
-            },
-            "provider": "google"
-        }
+    def get_person_data(self, access_token: str) -> dict:
+        try:
+            person_data_url: str = os.environ.get("GOOGLE_AUTH_PERSON_DATA_URL", "")
+            person_data: dict = requests.get(
+                person_data_url,
+                headers={
+                    "Authorization": f"Bearer {access_token}"
+                }
+            ).json()
+            return person_data
+        except Exception:
+            return {}
 
     def get_token(self) -> dict:
-        token: dict = authconf.oauth.BrowseTermGoogleAuth.authorize_access_token()
-        person_data_url: str = os.environ.get("GOOGLE_AUTH_PERSON_DATA_URL", "")
-        person_data: dict = requests.get(
-            person_data_url,
-            headers={
-                "Authorization": f"Bearer {token['access_token']}"
-            }
-        ).json()
-        token["person_data"] = person_data
-        return token
+        try:
+            token: dict = authconf.oauth.BrowseTermGoogleAuth.authorize_access_token()
+            person_data=self.get_person_data(access_token=token['access_token'])
+            token["person_data"] = person_data
+            return token
+        except Exception as e:
+            raise Exception(e)
 
 
 class GithubLoginRedirectHandler(LoginRedirectHandler):
@@ -111,15 +138,6 @@ class GithubLoginRedirectHandler(LoginRedirectHandler):
             "email": token["userinfo"]["email"],
             "profile_picture_url": token["userinfo"].get("avatar_url", ""),
             "location": token["userinfo"].get("location", "")
-        }
-
-    def extract_token_info(self, token: dict) -> dict:
-        return {
-            "token_info": {
-                "access_token": "",
-                "refresh_token": ""
-            },
-            "provider": "github"
         }
 
     def get_token(self) -> dict:

@@ -13,6 +13,7 @@ HANDLERS_MAP: dict = {
     "google-login-redirect": handlers.GoogleLoginRedirectHandler,
     "github-login": handlers.GithubLoginHandler,
     "github-login-redirect": handlers.GithubLoginRedirectHandler,
+    "usl": handlers.USLHandler,
 }
 
 

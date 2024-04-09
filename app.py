@@ -6,8 +6,11 @@ import dotenv
 # modules
 import src.controller as cn
 import src.authconf as authconf
+import src.auth as auth
+import src.handlers.usl_handler as uh
 # builtins
 import os
+import datetime as dt
 
 
 # load env values if file exists
@@ -25,6 +28,11 @@ app.config['SESSION_REDIS'] = {  # Redis server configuration
     'db': os.environ.get("REDIS_SESSION_DB"),  # Redis database index
     'password': os.environ.get("REDIS_SESSION_PASSWORD")  # Optional: If Redis requires authentication
 }
+# additional session security
+# app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['PERMANENT_SESSION_LIFETIME'] = dt.timedelta(minutes=10)
+
 server_session: flask_session.Session = flask_session.Session(app)
 # authlib setup
 authconf.configure_google_auth(app)
@@ -52,9 +60,19 @@ routes: list = [
     ("/github-login", "github_login", ["GET"]),
     ("/google-login-redirect", "google_login_redirect", ["GET"]),
     ("/github-login-redirect", "github_login_redirect", ["GET"]),
+    ("/usl", "usl", ["GET"])
 ]
 for route in routes:
-    app.add_url_rule(route[0], route[1], controller.handle, methods=route[2])
+    app.add_url_rule(
+        route[0], route[1], controller.handle, methods=route[2])
+
+
+# handle session update event here
+def handle_usl_event(td: dt.timedelta) -> None:
+    app.config['PERMANENT_SESSION_LIFETIME'] = td
+
+
+uh.usl_event.connect(handle_usl_event)
 
 
 if __name__ == "__main__":
