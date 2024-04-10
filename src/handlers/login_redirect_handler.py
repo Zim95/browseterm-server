@@ -2,6 +2,7 @@
 import src.handlers.base_handler as bh
 import src.authconf as authconf
 import src.models as models
+import src.models.commons as modcoms
 
 # third party
 import flask
@@ -67,15 +68,25 @@ class LoginRedirectHandler(bh.Handler):
         Author: Namah Shrestha
         """
         try:
+            # token info
             token: dict = self.get_token()
+
+            # extract user info and insert
             user_info: dict = self.extract_user_info(token)
-            # insert user_info into the database
+            record: modcoms.decl.DeclarativeMeta = models.user_model_ops.insert_or_update_user(
+                user_info=user_info, return_record=True)
+
+            # extract agent info and combine with user info to create session info
             agent_info: dict = self.extract_agent_info()
-            session_info = {"user_info": user_info, "agent_info": agent_info}
+            session_info = {"user_id": record.id, "agent_info": agent_info}
+
+            # create session and redirect
             flask.session["session_info"] = json.dumps(session_info)
-            return flask.redirect("http://localhost:8004/ping")
+            return flask.redirect("http://localhost:8004/@me")
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
+        except Exception as e:
+            raise Exception(e)
 
 
 class GoogleLoginRedirectHandler(LoginRedirectHandler):

@@ -14,6 +14,7 @@ HANDLERS_MAP: dict = {
     "github-login": handlers.GithubLoginHandler,
     "github-login-redirect": handlers.GithubLoginRedirectHandler,
     "usl": handlers.USLHandler,
+    "@me": handlers.ProfileHandler
 }
 
 

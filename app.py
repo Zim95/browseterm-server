@@ -60,7 +60,8 @@ routes: list = [
     ("/github-login", "github_login", ["GET"]),
     ("/google-login-redirect", "google_login_redirect", ["GET"]),
     ("/github-login-redirect", "github_login_redirect", ["GET"]),
-    ("/usl", "usl", ["GET"])
+    ("/usl", "usl", ["GET"]),
+    ("/@me", "me", ["GET"]),
 ]
 for route in routes:
     app.add_url_rule(

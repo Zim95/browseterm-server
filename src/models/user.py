@@ -1,5 +1,3 @@
-from sqlalchemy.orm.decl_api import DeclarativeMeta
-from sqlalchemy.orm.session import Session
 import src.models.commons as model
 
 
@@ -15,9 +13,6 @@ class Users(model.Base):
     gender: str = model.sql.Column(model.sql.String, nullable=True)
     profile_picture_url: str = model.sql.Column(model.sql.String, nullable=True)
     location: str = model.sql.Column(model.sql.String, nullable=True)
-
-    token = model.sql_orm.relationship(
-        "Tokens", back_populates="user", uselist=False, passive_deletes=True)
 
 
 class UsersModelOps(model.BasicModelOps):
@@ -54,3 +49,5 @@ class UsersModelOps(model.BasicModelOps):
         except Exception as e:
             raise Exception(e)
 
+
+user_model_ops: UsersModelOps = UsersModelOps(Users, model.session)
