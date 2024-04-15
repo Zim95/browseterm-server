@@ -11,8 +11,10 @@ HANDLERS_MAP: dict = {
     "ping": handlers.PingHandler,
     "google-login": handlers.GoogleLoginHandler,
     "google-login-redirect": handlers.GoogleLoginRedirectHandler,
+    "google-token-exchange": handlers.GoogleTokenExchangeHandler,
     "github-login": handlers.GithubLoginHandler,
     "github-login-redirect": handlers.GithubLoginRedirectHandler,
+    "github-token-exchange": handlers.GithubTokenExchangeHandler,
     "usl": handlers.USLHandler,
     "@me": handlers.ProfileHandler
 }

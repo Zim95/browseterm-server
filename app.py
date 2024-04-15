@@ -60,6 +60,8 @@ routes: list = [
     ("/github-login", "github_login", ["GET"]),
     ("/google-login-redirect", "google_login_redirect", ["GET"]),
     ("/github-login-redirect", "github_login_redirect", ["GET"]),
+    ("/google-token-exchange", "google_token_exchange", ["POST"]),
+    ("/github-token-exchange", "github-token-exchange", ["POST"]),
     ("/usl", "usl", ["GET"]),
     ("/@me", "me", ["GET"]),
 ]

@@ -1,3 +1,4 @@
+from src.handlers.token_exchange_handler import GoogleTokenExchangeHandler, GithubTokenExchangeHandler
 from src.handlers.login_redirect_handler import GoogleLoginRedirectHandler, GithubLoginRedirectHandler
 from src.handlers.image_options_handler import ImageOptionsHandler
 from src.handlers.login_handler import GoogleLoginHandler, GithubLoginHandler

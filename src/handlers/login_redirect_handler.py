@@ -82,7 +82,11 @@ class LoginRedirectHandler(bh.Handler):
 
             # create session and redirect
             flask.session["session_info"] = json.dumps(session_info)
-            return flask.redirect("http://localhost:8004/@me")
+            
+            # prepare response
+            response = flask.make_response(flask.redirect("http://localhost:8001/"))
+            response.set_cookie("session_id", value=flask.session.sid, httponly=True, domain="http://localhost:8001")
+            return response
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
         except Exception as e:
