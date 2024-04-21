@@ -16,7 +16,6 @@ def auth_required(handler: callable) -> callable:
             - Add userinfo on requests and then call handler.
         Author: Namah Shrestha
         """
-        breakpoint()
         session_data: dict = json.loads(flask.session.get("session_info", '{}'))
         if not session_data:
             # after expirty the session data disappears.
@@ -25,13 +24,13 @@ def auth_required(handler: callable) -> callable:
             return "Unauthorized", 401
 
         # validate agent and host
-        headers: dict = [*args][0].request_params["headers"]
-        host: str = headers.get("Host", "")
-        user_agent: str = headers.get("User-Agent", "")
-        agent_info: dict = session_data["agent_info"]
-        if host != agent_info["host"] or user_agent != agent_info["user_agent"]:
-            # if host and user agent mismach, raise Unauthorized
-            return "Unauthorized", 401
+        # headers: dict = [*args][0].request_params["headers"]
+        # host: str = headers.get("Host", "")
+        # user_agent: str = headers.get("User-Agent", "")
+        # agent_info: dict = session_data["agent_info"]
+        # if host != agent_info["host"] or user_agent != agent_info["user_agent"]:
+        #     # if host and user agent mismach, raise Unauthorized
+        #     return "Unauthorized", 401
 
         return handler(*args, **kwargs)
     return wrapper

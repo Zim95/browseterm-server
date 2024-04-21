@@ -42,6 +42,7 @@ app.secret_key = os.environ.get("FLASK_SECRET")
 # cors setup
 cors: flask_cors.CORS = flask_cors.CORS(
     app,
+    supports_credentials=True,
     resources={
         r"/*": {
             "origins": "http://localhost:8001"

@@ -27,6 +27,7 @@ def check_all_sessions() -> None:
     )
     redis_keys: list = rc.keys()
     for redis_key in redis_keys:
+        breakpoint()
         key: str = redis_key.decode('utf-8')
 
 

@@ -77,8 +77,8 @@ class TokenExchangeHandler(bh.Handler):
             session_info = {"user_id": record.id}
             flask.session["session_info"] = json.dumps(session_info)
 
-            # redirect to front end
-            return {"response": user_info_dict}
+            # return response to front end
+            return user_info_dict
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
         except Exception as e:
