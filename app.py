@@ -31,7 +31,7 @@ app.config['SESSION_REDIS'] = {  # Redis server configuration
 # additional session security
 # app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['PERMANENT_SESSION_LIFETIME'] = dt.timedelta(minutes=10)
+app.config['PERMANENT_SESSION_LIFETIME'] = dt.timedelta(minutes=30)
 
 server_session: flask_session.Session = flask_session.Session(app)
 # authlib setup
