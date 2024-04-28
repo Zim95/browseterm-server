@@ -1,5 +1,6 @@
 # module
 import src.handlers.base_handler as bh
+import src.auth as auth
 
 
 class ImageOptionsHandler(bh.Handler):
@@ -9,6 +10,7 @@ class ImageOptionsHandler(bh.Handler):
     Author: Namah Shrestha
     """
 
+    @auth.auth_required
     def handle(self) -> dict | None:
         """
         Return the available images for browseterm.
