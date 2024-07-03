@@ -6,7 +6,6 @@ import dotenv
 # modules
 import src.controller as cn
 import src.authconf as authconf
-import src.auth as auth
 import src.handlers.usl_handler as uh
 # builtins
 import os
