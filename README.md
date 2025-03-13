@@ -1,2 +1,5 @@
 # browseterm-server
-BrowseTerms backend server.
+Browseterm server
+
+# Dev Setup
+
