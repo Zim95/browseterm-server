@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browseterm-server-development
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-development
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browseterm-server-development
+  template:
+    metadata:
+      labels:
+        app: browseterm-server-development
+    spec:
+      containers:
+      - name: browseterm-server-development
+        image: zim95/browseterm-server-development:latest
+        ports:
+        - containerPort: 9999
+        env:
+        - name: SERVER_KEY
+          valueFrom:
+            secretKeyRef:
+              name: grpc-certs
+              key: server.key
+        - name: SERVER_CRT
+          valueFrom:
+            secretKeyRef:
+              name: grpc-certs
+              key: server.crt
+        - name: CLIENT_KEY
+          valueFrom:
+            secretKeyRef:
+              name: grpc-certs
+              key: client.key
+        - name: CLIENT_CRT
+          valueFrom:
+            secretKeyRef:
+              name: grpc-certs
+              key: client.crt
+        - name: CA_CRT
+          valueFrom:
+            secretKeyRef:
+              name: grpc-certs
+              key: ca.crt
+        volumeMounts:
+        - name: app-code
+          mountPath: /app
+      volumes:
+      - name: app-code
+        hostPath:
+          path: ${HOSTPATH}
+          type: Directory

@@ -1,0 +1,22 @@
+FROM python:3.11-slim
+
+# Create the directory
+RUN mkdir app
+COPY . app/
+WORKDIR /app
+
+# Make entrypoint script executable
+RUN chmod +x ./infra/development/entrypoint-development.sh
+
+# Install dependencies
+RUN apt-get update && apt-get install -y build-essential curl
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Install dependencies
+RUN poetry install --no-root
+
+# Use the entrypoint script
+ENTRYPOINT ["bash", "-c", "./infra/development/entrypoint-development.sh"]
