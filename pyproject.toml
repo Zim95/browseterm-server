@@ -12,6 +12,7 @@ container-maker-spec = {path = "./container-maker-spec"}
 grpcio = "^1.70.0"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
+httpx = "^0.28.1"
 
 
 [build-system]

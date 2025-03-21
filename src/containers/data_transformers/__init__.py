@@ -1,33 +1,33 @@
 from google.protobuf.message import Message
 from typing import TypeVar
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from pydantic import BaseModel
 
 
-T = TypeVar('T', bound=dataclass)
+T = TypeVar('T', bound=BaseModel)
 
 
 class InputDataTransformer(ABC):
     '''
-    Transform dataclass to protobuf message
+    Transform pydantic BaseModel to protobuf message
     '''
     @classmethod
     @abstractmethod
     def transform(cls, input_data: T) -> Message:
         '''
-        Transform dataclass to protobuf message
+        Transform pydantic BaseModel to protobuf message
         '''
         pass
 
 
 class OutputDataTransformer(ABC):
     '''
-    Transform protobuf message to dataclass
+    Transform protobuf message to pydantic BaseModel
     '''
     @classmethod
     @abstractmethod
     def transform(cls, output_data: Message) -> T:
         '''
-        Transform protobuf message to dataclass
+        Transform protobuf message to pydantic BaseModel
         '''
         pass
