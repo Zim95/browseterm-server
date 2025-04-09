@@ -13,7 +13,7 @@ class GRPCUtils:
         self,
         host: str,
         port: int,
-        stub_class: grpc.ClientCallableClass,
+        stub_class: any,
         secure: bool = True,
         client_key: bytes | None = None,
         client_cert: bytes | None = None,
@@ -39,7 +39,7 @@ class GRPCUtils:
         '''
         self.host: str = host
         self.port: int = port
-        self.stub_class: grpc.ClientCallableClass = stub_class
+        self.stub_class: any = stub_class
         self.secure: bool = secure
 
         # certificates
@@ -48,7 +48,7 @@ class GRPCUtils:
         self.ca_cert: bytes = ca_cert
 
         self._channel: grpc.Channel | None = None
-        self._stub: grpc.ClientCallableClass | None = None
+        self._stub: any | None = None
 
     @property
     def channel(self) -> grpc.Channel:
@@ -71,7 +71,7 @@ class GRPCUtils:
         return self._channel
 
     @property
-    def stub(self) -> grpc.ClientCallableClass:
+    def stub(self) -> any:
         '''
         Get the GRPC stub.
         '''

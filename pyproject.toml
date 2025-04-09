@@ -8,11 +8,12 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = ">=3.8,<3.12"
 ipython = "8.12.0"
-container-maker-spec = {path = "./container-maker-spec"}
 grpcio = "^1.70.0"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
 httpx = "^0.28.1"
+grpcio-tools = "1.70.0"
+container-maker-spec = {path = "./container-maker-spec"}
 
 
 [build-system]

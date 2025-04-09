@@ -23,7 +23,7 @@ async def create_container(request: CreateContainerModel) -> ContainerResponseMo
         # create a container maker client
         container_maker_client: ContainerMakerClient = ContainerMakerClient()
         # create a container
-        container_response_model: ContainerResponseModel = container_maker_client.create_container(request)
+        container_response_model: ContainerResponseModel = await container_maker_client.create_container(request)
         # return the response
         return container_response_model
     except Exception as e:

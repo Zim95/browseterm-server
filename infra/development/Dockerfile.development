@@ -17,6 +17,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 
 # Install dependencies
 RUN poetry install --no-root
+RUN cd container-maker-spec && poetry install && cd ..
 
 # Use the entrypoint script
 ENTRYPOINT ["bash", "-c", "./infra/development/entrypoint-development.sh"]
