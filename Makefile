@@ -1,8 +1,5 @@
-# Variables
-REPO_NAME ?= <REPO_NAME>
-USER_NAME ?= <USER_NAME>
-NAMESPACE ?= <NAMESPACE>
-HOST_DIR ?= <WORKDIR>
+include env.mk
+
 
 # Development
 dev_build:

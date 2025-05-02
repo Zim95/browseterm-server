@@ -13,77 +13,78 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
 2. Once `kubectl` is setup and you have the `docker-desktop` cluster ready. We can proceed further.
 
-3. First of all, make sure `./infra/development/entrypoint-development.sh` is an executable.
+3. Clone this repository.
+    ```
+    git clone https://github.com/namahshrestha/browseterm-server.git
+    ```
+    This will clone the repository into a folder called `browseterm-server`. Go into the folder.
+    ```
+    cd browseterm-server
+    ```
+
+4. First of all, make sure `./infra/development/entrypoint-development.sh` is an executable.
     ```
     chmod +x ./infra/k8s/development/entrypoint-development.sh
     ```
 
-4. Type the following to build the docker image for k8s development:
+4. Create an `env.mk` file with the following variables:
     ```
-    ./scripts/development/development-build.sh <docker-username> <docker-repository>
+    REPO_NAME=<your-dockerhub-username>
+    USER_NAME=<your-dockerhub-username>
+    NAMESPACE=<your-namespace>
+    HOST_DIR=<your-working-directory>
     ```
-    This will build the docker image required for k8s development.
 
-    OR
-
-    You can also edit the `Makefile`. Set values for your username and repository name.
-    Then you can use the following command to build the docker image:
+4. Run the development build script, if not already done.
     ```
     make dev_build
     ```
+    This will build the docker image required for k8s development.
 
-5. Next you can setup the development environment by hitting this command:
-    ```
-    ./scripts/development/development-setup.sh <namespace> <absolute-path-to-current-working-directory>
-    ```
-
-    OR
-
-    You can also edit the `Makefile`. Set values for your namespace and host directory.
-    Then you can use the following command to setup the development environment:
+5. Run the development setup script.
     ```
     make dev_setup
     ```
+    This will setup the development environment.
 
-6. Now, that we have setup, we can check the pods with the following command:
+6. Get inside the pod:
+    First check the pod status:
     ```
-    $ kubectl get pods -n <namespace>
+    kubectl get pods -n <your-namespace>  --watch
+    ```
+    You should see the pod being created and then it will be running.
+    ```
     NAME                                            READY   STATUS    RESTARTS   AGE
     browseterm-server-development-f8cd46fd4-cl4ht   1/1     Running   0          9s
-    grpc-cert-generator-5fb88464fb-xwf8q            1/1     Running   0          9m34s
     ```
+    Once the pod is running, get inside the pod:
+    ```
+    kubectl exec -it browseterm-server-development-f8cd46fd4-cl4ht -n <your-namespace> -- bash
+    ```
+    Now you are inside the pod.
 
-8. If the pod is running, exec into the pod:
+7. Now we test if your local working directory is mounted to the pod.
+    In your text editor outside the pod (in your local machine - working directory), create a new file and save it as `test.js`. Check if that file is present in the pod.
     ```
-    kubectl exec -it browseterm-server-development-f8cd46fd4-cl4ht -n <namespace> -- bash
+    ls
     ```
-    This will be the terminal where you run your code in.
+    You should see the `test.js` file.
+    This means that your local working directory is mounted to the pod. You can make changes in your working directory and they will be reflected in the pod.
+    You are free to develop the code and test the workings.
 
-9. Next from your local working directory, try creating a file.
-    ```
-    touch test1234
-    ```
-    This file should appear inside the pod. Type `ls` to check.
-
-10. Once the file appears, you are good. You can make changes to your current workspace folder and then run the code from within the pod.
-
-11. Finally, once done, you can delete everything by hitting this command:
-    ```
-    ./scripts/development/development-teardown.sh <namespace>
-    ```
-    Or
-    ```
-    make dev_teardown
-    ```
-
-12. Now, we need to activate teh virtual env once we are inside the container.
+8. Now, we need to activate teh virtual env once we are inside the container.
     ```
     source $(poetry env info --path)/bin/activate
     ```
 
-13. Install all dependencies with poetry.
+9. Install all dependencies with poetry.
     ```
     poetry install
+    ```
+
+10. Once done you can run the teardown script.
+    ```
+    make dev_teardown
     ```
 
 NOTE: To run anything inside the shell, activate the virtualenv. But to run anything as a container command, we need to use `poetry run`.
