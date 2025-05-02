@@ -35,19 +35,19 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
     HOST_DIR=<your-working-directory>
     ```
 
-4. Run the development build script, if not already done.
+5. Run the development build script, if not already done.
     ```
     make dev_build
     ```
     This will build the docker image required for k8s development.
 
-5. Run the development setup script.
+6. Run the development setup script.
     ```
     make dev_setup
     ```
     This will setup the development environment.
 
-6. Get inside the pod:
+7. Get inside the pod:
     First check the pod status:
     ```
     kubectl get pods -n <your-namespace>  --watch
@@ -63,7 +63,7 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
     ```
     Now you are inside the pod.
 
-7. Now we test if your local working directory is mounted to the pod.
+8. Now we test if your local working directory is mounted to the pod.
     In your text editor outside the pod (in your local machine - working directory), create a new file and save it as `test.js`. Check if that file is present in the pod.
     ```
     ls
@@ -72,17 +72,17 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
     This means that your local working directory is mounted to the pod. You can make changes in your working directory and they will be reflected in the pod.
     You are free to develop the code and test the workings.
 
-8. Now, we need to activate teh virtual env once we are inside the container.
+9. Now, we need to activate teh virtual env once we are inside the container.
     ```
     source $(poetry env info --path)/bin/activate
     ```
 
-9. Install all dependencies with poetry.
+10. Install all dependencies with poetry.
     ```
     poetry install
     ```
 
-10. Once done you can run the teardown script.
+11. Once done you can run the teardown script.
     ```
     make dev_teardown
     ```
