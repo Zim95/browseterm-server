@@ -18,6 +18,7 @@ spec:
       containers:
       - name: browseterm-server-development
         image: ${REPO_NAME}/browseterm-server-development:latest
+        imagePullPolicy: Always
         ports:
         - containerPort: 9999
         env:
