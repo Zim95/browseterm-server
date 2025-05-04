@@ -15,11 +15,15 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
 3. Clone this repository.
     ```
-    git clone https://github.com/namahshrestha/browseterm-server.git
+    git clone --recurse-submodules https://github.com/namahshrestha/browseterm-server.git
     ```
     This will clone the repository into a folder called `browseterm-server`. Go into the folder.
     ```
     cd browseterm-server
+    ```
+    In case you have already cloned the repository, you can update the submodules with the following command:
+    ```
+    git submodule update --init --recursive
     ```
 
 4. First of all, make sure `./infra/development/entrypoint-development.sh` is an executable.
@@ -64,11 +68,11 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
     Now you are inside the pod.
 
 8. Now we test if your local working directory is mounted to the pod.
-    In your text editor outside the pod (in your local machine - working directory), create a new file and save it as `test.js`. Check if that file is present in the pod.
+    In your text editor outside the pod (in your local machine - working directory), create a new file and save it as `test.txt`. Check if that file is present in the pod.
     ```
     ls
     ```
-    You should see the `test.js` file.
+    You should see the `test.txt` file.
     This means that your local working directory is mounted to the pod. You can make changes in your working directory and they will be reflected in the pod.
     You are free to develop the code and test the workings.
 

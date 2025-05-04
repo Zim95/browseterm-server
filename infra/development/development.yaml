@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: browseterm-server-development
-        image: zim95/browseterm-server-development:latest
+        image: ${REPO_NAME}/browseterm-server-development:latest
         ports:
         - containerPort: 9999
         env:
