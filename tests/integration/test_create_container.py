@@ -1,5 +1,7 @@
 # builtins
+import time
 from unittest import TestCase
+import socket
 # grpc
 import grpc
 from container_maker_spec.types_pb2 import CreateContainerRequest
@@ -11,19 +13,19 @@ from container_maker_spec.types_pb2 import DeleteContainerResponse
 from container_maker_spec.types_pb2 import ExposureLevel as GRPCExposureLevel
 from container_maker_spec.service_pb2_grpc import ContainerMakerAPIStub
 # config
+from src.common.config import CONTAINER_MAKER_CLIENT_CERT_ENV_VAR
+from src.common.config import CONTAINER_MAKER_CLIENT_KEY_ENV_VAR
 from src.common.config import CONTAINER_MAKER_CA_ENV_VAR
-from src.common.config import CONTAINER_MAKER_CERT_ENV_VAR
-from src.common.config import CONTAINER_MAKER_KEY_ENV_VAR
-from src.common.config import CONTAINER_MAKER_CA_FILE
-from src.common.config import CONTAINER_MAKER_CERT_FILE
-from src.common.config import CONTAINER_MAKER_KEY_FILE
 from src.common.config import CONTAINER_MAKER_HOST
 from src.common.config import CONTAINER_MAKER_PORT
+
 # modules
-from src.common.utils import read_certs
+from src.common.utils import read_cert_from_env_var
 from src.common.grpc_utils import GRPCUtils
+# thirdparty
+import paramiko
 
-
+# namespace name
 NAMESPACE_NAME: str = 'test-grpc-namespace'
 
 
@@ -48,9 +50,9 @@ class TestGRPCContainerStub(TestCase):
         print('Test: setUp TestGRPCContainerStub')  
         # creating the channel and stub.
         # read certificates
-        self.client_key: bytes = read_certs(CONTAINER_MAKER_KEY_ENV_VAR, CONTAINER_MAKER_KEY_FILE)
-        self.client_cert: bytes = read_certs(CONTAINER_MAKER_CERT_ENV_VAR, CONTAINER_MAKER_CERT_FILE)
-        self.ca_cert: bytes = read_certs(CONTAINER_MAKER_CA_ENV_VAR, CONTAINER_MAKER_CA_FILE)
+        self.client_key: bytes = read_cert_from_env_var(CONTAINER_MAKER_CLIENT_KEY_ENV_VAR)
+        self.client_cert: bytes = read_cert_from_env_var(CONTAINER_MAKER_CLIENT_CERT_ENV_VAR)
+        self.ca_cert: bytes = read_cert_from_env_var(CONTAINER_MAKER_CA_ENV_VAR)
 
         # create GRPC channel and stub
         self.grpc_utils: GRPCUtils = GRPCUtils(
@@ -87,9 +89,6 @@ class TestGRPCContainerStub(TestCase):
             publish_information=self.ssh_publish_information,
             environment_variables=self.ssh_environment_variables,
         )
-
-        # Websocket Container input variables.
-        # NOTE: We will add this once the other tests are done.
 
     def test_a_creation_and_removal_of_containers(self) -> None:
         '''
@@ -136,7 +135,7 @@ class TestGRPCContainerStub(TestCase):
     def test_b_creation_and_removal_of_duplicate_containers(self) -> None:
         '''
         Here we will test if the container is created and deleted.
-        Here also, we will use 
+        Here also, we will use only the SSH container.
         '''
         print('Test: test_b_creation_and_removal_of_duplicate_containers')
         list_container_request: ListContainerRequest = ListContainerRequest(network_name=self.namespace_name)
@@ -183,3 +182,33 @@ class TestGRPCContainerStub(TestCase):
         list_container_request: ListContainerRequest = ListContainerRequest(network_name=self.namespace_name)
         list_container_response = self.stub.listContainer(list_container_request)
         self.assertEqual(list_container_response, ListContainerResponse())
+
+    def test_c_ssh_container_communication(self) -> None:
+        '''
+        Here we will test if SSH works with the container.
+        We will use the SSH container to test this.
+        '''
+        print('Test: test_c_ssh_container_communication')
+        container_response: ContainerResponse = self.stub.createContainer(self.ssh_grpc_create_container_request, None)
+        print('Waiting for container to be ready')
+        time.sleep(10)
+        print('Service is ready')
+        ssh: paramiko.SSHClient = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            ssh.connect(
+                hostname=container_response.container_ip,
+                username=self.ssh_environment_variables['SSH_USERNAME'],
+                password=self.ssh_environment_variables['SSH_PASSWORD'],
+                port=container_response.ports[0].container_port
+            )
+            _, stdout, _ = ssh.exec_command('echo "SSH test successful"')
+            output = stdout.read().decode().strip()
+            self.assertEqual(output, "SSH test successful")
+        finally:
+            ssh.close()
+            self.stub.deleteContainer(DeleteContainerRequest(
+                container_id=container_response.container_id,
+                network_name=self.namespace_name,
+            ), None)
