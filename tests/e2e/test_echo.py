@@ -22,8 +22,8 @@ class TestEcho(TestCase):
         '''
         Test the echo endpoint.
         '''
-        test_message = "Hello, World!"
-        response = self.client.post("/echo", json={"message": test_message})
+        test_message: str = "Hello, World!"
+        response: Response = self.client.post("/echo", json={"message": test_message})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"message": test_message})
