@@ -1,0 +1,8 @@
+certificate_utils - Added new file containing certificate related utils for socket-ssh containers.
+test_socket_ssh_communication - Completed test for socket_ssh_communication.
+test_container_stub - Renamed test_create_container to test_container_stub.
+pyproject.toml - Added websocket and kubernetes.
+poetry.lock - New lock file generated.
+common/config.py - Renamed constant names, Added cert manager constants.
+infra/development.yaml - Added secrets, cronjobs and jobs management clusterrole, renamed env variable names,
+                        added new cert_manager_cron_job_name and cert_manager_cron_job_namespace env variables.

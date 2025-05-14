@@ -1,3 +1,34 @@
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: job-manager-service-account
+  namespace: ${NAMESPACE}
+---
+# Cluster Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: job-manager
+rules:
+- apiGroups: ["batch", ""]
+  resources: ["jobs", "cronjobs", "secrets"]
+  verbs: ["create", "delete", "update", "get", "list", "watch"]
+---
+# Cluster Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: job-manager-binding
+subjects:
+- kind: ServiceAccount
+  name: job-manager-service-account
+  namespace: ${NAMESPACE}
+roleRef:
+  kind: ClusterRole
+  name: job-manager
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +46,7 @@ spec:
       labels:
         app: browseterm-server-development
     spec:
+      serviceAccountName: job-manager-service-account
       containers:
       - name: browseterm-server-development
         image: ${REPO_NAME}/browseterm-server-development:latest
@@ -22,31 +54,35 @@ spec:
         ports:
         - containerPort: 9999
         env:
-        - name: SERVER_KEY
+        - name: CONTAINER_MAKER_SERVER_KEY
           valueFrom:
             secretKeyRef:
               name: container-maker-development-service-certs
               key: server.key
-        - name: SERVER_CRT
+        - name: CONTAINER_MAKER_SERVER_CRT
           valueFrom:
             secretKeyRef:
               name: container-maker-development-service-certs
               key: server.crt
-        - name: CLIENT_KEY
+        - name: CONTAINER_MAKER_CLIENT_KEY
           valueFrom:
             secretKeyRef:
               name: container-maker-development-service-certs
               key: client.key
-        - name: CLIENT_CRT
+        - name: CONTAINER_MAKER_CLIENT_CRT
           valueFrom:
             secretKeyRef:
               name: container-maker-development-service-certs
               key: client.crt
-        - name: CA_CRT
+        - name: CONTAINER_MAKER_CA_CRT
           valueFrom:
             secretKeyRef:
               name: container-maker-development-service-certs
               key: ca.crt
+        - name: CERT_MANAGER_CRON_JOB_NAME
+          value: cert-manager
+        - name: CERT_MANAGER_CRON_JOB_NAMESPACE
+          value: ${NAMESPACE}
         volumeMounts:
         - name: app-code
           mountPath: /app

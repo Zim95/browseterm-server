@@ -35,8 +35,8 @@ class TestGRPCContainerStub(TestCase):
     1. The actual creation and removal of containers.
     2. The creation and removal of duplicate containers.
     3. Test SSH container creation and communication.
-    4. Test Websocket container creation and communication.
-    5. Communication from websocket to ssh and retreival of data.
+
+    We will do this using the GRPC Stub.
 
     NOTE: This is the most important test, when it comes to functionality.
           We will write it very carefully.
