@@ -8,8 +8,8 @@ from container_maker_spec.types_pb2 import ExposureLevel as GRPCExposureLevel
 from container_maker_spec.types_pb2 import PortInformation as GRPCPortInformation
 
 # pydantic BaseModel(s)
-from src.data_models.containers import CreateContainerModel
-from src.data_models.containers import ExposureLevel as BaseModelExposureLevel
+from src.containers.dto.create_container_dto import CreateContainerModel
+from src.containers.enum.exposure_level_enum import ExposureLevel as BaseModelExposureLevel
 
 # data transformer
 from src.containers.data_transformers.create_container_transformer import CreateContainerInputDataTransformer

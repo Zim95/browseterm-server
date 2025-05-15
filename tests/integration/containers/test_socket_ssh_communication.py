@@ -41,7 +41,7 @@ from container_maker_spec.types_pb2 import DeleteContainerRequest
 from container_maker_spec.types_pb2 import DeleteContainerResponse
 from container_maker_spec.types_pb2 import ExposureLevel as GRPCExposureLevel
 
-from src.containers.certificate_utils import CertificateUtils
+from src.containers.containers_helpers import CertificateUtils
 
 
 # namespace name

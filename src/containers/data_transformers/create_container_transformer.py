@@ -9,9 +9,9 @@ from container_maker_spec.types_pb2 import PublishInformation as GRPCPublishInfo
 from container_maker_spec.types_pb2 import ExposureLevel as GRPCExposureLevel
 
 # pydantic BaseModel(s)
-from src.data_models.containers import CreateContainerModel
-from src.data_models.containers import ContainerResponseModel
-from src.data_models.containers import PortInformationModel
+from src.containers.dto.create_container_dto import CreateContainerModel
+from src.containers.dto.container_response_dto import ContainerResponseModel
+from src.containers.dto.port_information_dto import PortInformationModel
 
 
 class CreateContainerInputDataTransformer(InputDataTransformer):
