@@ -10,10 +10,11 @@ from container_maker_spec.types_pb2 import PortInformation as GRPCPortInformatio
 # pydantic BaseModel(s)
 from src.containers.dto.create_container_dto import CreateContainerModel
 from src.containers.enum.exposure_level_enum import ExposureLevel as BaseModelExposureLevel
-
+from src.containers.dto.container_response_dto import ContainerResponseModel
 # data transformer
 from src.containers.data_transformers.create_container_transformer import CreateContainerInputDataTransformer
 from src.containers.data_transformers.create_container_transformer import CreateContainerOutputDataTransformer
+
 
 class TestCreateContainerTransformer(TestCase):
     '''
@@ -100,9 +101,9 @@ class TestCreateContainerTransformer(TestCase):
         output_data_empty_env: CreateContainerRequest = CreateContainerInputDataTransformer.transform(emtpy_env_input_data)
         self.assertEqual(output_data_empty_env.environment_variables, {})
 
-    def test_transform_create_container_request_to_create_container_model(self) -> None:
+    def test_transform_container_response_to_container_response_model(self) -> None:
         # transform
-        output_data: CreateContainerModel = CreateContainerOutputDataTransformer.transform(self.output_data)
+        output_data: ContainerResponseModel = CreateContainerOutputDataTransformer.transform(self.output_data)
 
         # assert
         self.assertEqual(output_data.container_name, self.container_name)
