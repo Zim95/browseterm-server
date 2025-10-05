@@ -20,6 +20,60 @@
         <div class="loading-message">Loading terminals...</div>
     </div>
 </div>
+
+<!-- New Terminal Modal -->
+<div class="modal-overlay" id="modalOverlay">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Create New Terminal</h2>
+            <button class="modal-close" id="modalClose">&times;</button>
+        </div>
+        
+        <form class="modal-form" id="terminalForm">
+            <div class="form-group">
+                <label for="terminalName">Name:</label>
+                <input type="text" id="terminalName" name="name" required placeholder="Enter terminal name">
+            </div>
+            
+            <div class="form-group">
+                <label for="operatingSystem">Operating System:</label>
+                <select id="operatingSystem" name="os" required>
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="networkName">Network Name:</label>
+                <input type="text" id="networkName" name="network" required placeholder="Enter network name">
+            </div>
+            
+            <div class="form-group">
+                <label for="cpu">CPU:</label>
+                <div class="number-input-group">
+                    <button type="button" class="number-btn" id="cpuDecrease">-</button>
+                    <input type="number" id="cpu" name="cpu" value="1" min="1" max="30" readonly>
+                    <button type="button" class="number-btn" id="cpuIncrease">+</button>
+                    <span class="disabled-icon" title="Only available for Pro plan users">⚠️</span>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="memory">Memory:</label>
+                <div class="number-input-group">
+                    <button type="button" class="number-btn" id="memoryDecrease">-</button>
+                    <input type="number" id="memory" name="memory" value="1" min="1" max="30" readonly>
+                    <button type="button" class="number-btn" id="memoryIncrease">+</button>
+                    <span class="disabled-icon" title="Only available for Pro plan users">⚠️</span>
+                </div>
+            </div>
+            
+            <div class="modal-actions">
+                <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
+                <button type="submit" class="btn-submit" id="submitBtn">Create Terminal</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
