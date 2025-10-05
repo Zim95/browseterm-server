@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block title %}Home - BrowseTerm{% endblock %}
+
+{% block content %}
+<div class="content-container fade-in">
+    <h1 class="text-center">Hi</h1>
+    <p class="text-center mt-2">Welcome to BrowseTerm!</p>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    console.log('Home page loaded successfully!');
+
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Home page DOM is ready');
+
+        // Add any home page specific functionality here
+        const contentContainer = document.querySelector('.content-container');
+        if (contentContainer) {
+            contentContainer.addEventListener('click', function() {
+                console.log('Home container clicked!');
+            });
+        }
+    });
+</script>
+{% endblock %}

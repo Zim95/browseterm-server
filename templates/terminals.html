@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}Terminals - BrowseTerm{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<link rel="stylesheet" href="{{ url_for('static', path='/css/terminals.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="content-container fade-in">
+    <div class="terminals-header">
+        <button class="new-terminal-btn">+ New</button>
+        <div class="underline"></div>
+        <p class="note">NOTE: For now, Terminals are immutable. Their properties cannot be changed once created. We will add it soon.</p>
+    </div>
+    
+    <div class="terminals-list" id="terminalsList">
+        <!-- Terminals will be loaded dynamically by JavaScript -->
+        <div class="loading-message">Loading terminals...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='/js/terminals.js') }}"></script>
+{% endblock %}

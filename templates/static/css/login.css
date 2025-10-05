@@ -1,0 +1,91 @@
+body {
+    font-family: Arial, sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+    background-color: #A8FBD3;
+}
+
+.container {
+    text-align: center;
+    background: white;
+    padding: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    min-width: 300px;
+}
+
+.welcome-section {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.welcome-section h1 {
+    color: #333;
+    margin-bottom: 0.5rem;
+    font-size: 2.5rem;
+    font-weight: bold;
+}
+
+.welcome-section h2 {
+    color: #333;
+    margin-bottom: 0;
+    font-size: 1.2rem;
+    font-weight: normal;
+}
+
+.login-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.btn-icon {
+    font-size: 18px;
+    width: 20px;
+    text-align: center;
+}
+
+.btn-text {
+    flex: 1;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.btn-google {
+    background-color: #4285f4;
+    color: white;
+}
+
+.btn-google:hover {
+    background-color: #3367d6;
+}
+
+.btn-github {
+    background-color: #24292e;
+    color: white;
+}
+
+.btn-github:hover {
+    background-color: #1a1e22;
+}

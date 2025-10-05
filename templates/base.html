@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}BrowseTerm{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <!-- Sidebar -->
+    <nav class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">
+                <span class="logo-text">BrowseTerm</span>
+            </div>
+            <button class="hamburger" id="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </button>
+        </div>
+
+        <div class="sidebar-menu">
+            <ul class="menu-items">
+                <li class="menu-item">
+                    <a href="/" class="menu-link {% if request.url.path == '/' %}active{% endif %}">
+                        <span class="menu-icon">🏠</span>
+                        <span class="menu-text">Home</span>
+                    </a>
+                </li>
+                <li class="menu-item">
+                    <a href="/terminals" class="menu-link {% if request.url.path == '/terminals' %}active{% endif %}">
+                        <span class="menu-icon">💻</span>
+                        <span class="menu-text">Terminals</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+
+        <div class="sidebar-footer">
+            <button class="logout-btn" id="logoutBtn">
+                <span class="logout-icon">⏻</span>
+                <span class="logout-text">Logout</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content" id="mainContent">
+        {% block content %}{% endblock %}
+    </main>
+
+    <script src="{{ url_for('static', path='/js/base.js') }}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

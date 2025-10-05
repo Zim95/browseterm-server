@@ -1,0 +1,158 @@
+.terminals-header {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.new-terminal-btn {
+    background-color: #A8FBD3;
+    color: #333;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    margin-bottom: 1rem;
+}
+
+.new-terminal-btn:hover {
+    background-color: #8AE5B8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(168, 251, 211, 0.3);
+}
+
+.underline {
+    width: 200px;
+    height: 2px;
+    background-color: #ccc;
+    margin: 0 auto 1rem;
+}
+
+.note {
+    color: #666;
+    font-size: 14px;
+    font-style: italic;
+    margin: 0;
+}
+
+.terminals-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.terminal-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-left: 4px solid #A8FBD3;
+}
+
+.terminal-info {
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    flex: 1;
+}
+
+.terminal-name {
+    font-weight: 600;
+    color: #333;
+    min-width: 120px;
+}
+
+.terminal-ip {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 120px;
+}
+
+.ip-address {
+    font-weight: 500;
+    color: #333;
+}
+
+.port {
+    font-size: 12px;
+    color: #666;
+}
+
+.terminal-status {
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: uppercase;
+    min-width: 80px;
+    text-align: center;
+}
+
+.terminal-status.pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.terminal-status.running {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.terminal-status.active {
+    background-color: #d1ecf1;
+    color: #0c5460;
+}
+
+.terminal-status.stopped {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+.terminal-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.control-btn {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.play-btn {
+    background-color: #A8FBD3;
+    color: #333;
+}
+
+.play-btn:hover {
+    background-color: #8AE5B8;
+    transform: translateY(-2px);
+}
+
+.delete-btn {
+    background-color: #ff4757;
+    color: white;
+}
+
+.delete-btn:hover {
+    background-color: #ff3742;
+    transform: translateY(-2px);
+}
+
+.loading-message {
+    text-align: center;
+    color: #666;
+    font-style: italic;
+    padding: 2rem;
+}
