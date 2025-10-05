@@ -290,6 +290,10 @@ body {
     transform-origin: center;
 }
 
+.mobile-menu-btn.active {
+    left: calc(280px - 44px - 20px); /* Move to right edge of sidebar */
+}
+
 .mobile-menu-btn.active span:nth-child(1) {
     transform: rotate(45deg) translate(5px, 5px);
 }

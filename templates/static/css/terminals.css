@@ -156,3 +156,67 @@
     font-style: italic;
     padding: 2rem;
 }
+
+/* Mobile Responsive Design */
+@media (max-width: 768px) {
+    .terminal-item {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+    
+    .terminal-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    
+    .terminal-name {
+        min-width: auto;
+        font-size: 1.1rem;
+    }
+    
+    .terminal-ip {
+        min-width: auto;
+    }
+    
+    .terminal-status {
+        min-width: auto;
+        align-self: flex-start;
+    }
+    
+    .terminal-controls {
+        align-self: flex-end;
+        margin-top: 0.5rem;
+    }
+    
+    .new-terminal-btn {
+        font-size: 14px;
+        padding: 10px 20px;
+    }
+    
+    .underline {
+        width: 150px;
+    }
+}
+
+@media (max-width: 480px) {
+    .terminal-item {
+        padding: 0.75rem;
+    }
+    
+    .terminal-controls {
+        gap: 6px;
+    }
+    
+    .control-btn {
+        width: 32px;
+        height: 32px;
+    }
+    
+    .new-terminal-btn {
+        font-size: 13px;
+        padding: 8px 16px;
+    }
+}
