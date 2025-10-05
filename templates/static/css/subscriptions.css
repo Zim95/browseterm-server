@@ -1,0 +1,209 @@
+.subscriptions-header {
+    text-align: center;
+    margin-bottom: 3rem;
+}
+
+.subscriptions-header h1 {
+    color: #333;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+
+.subscriptions-header p {
+    color: #666;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.subscription-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.subscription-card {
+    background: white;
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+    border: 2px solid transparent;
+    transition: all 0.3s ease;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+}
+
+.subscription-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+}
+
+.subscription-card.popular {
+    border-color: #A8FBD3;
+    transform: scale(1.05);
+}
+
+.subscription-card.popular:hover {
+    transform: scale(1.05) translateY(-5px);
+}
+
+.popular-badge {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #A8FBD3;
+    color: #333;
+    padding: 0.5rem 1.5rem;
+    border-radius: 20px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.card-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid #eee;
+}
+
+.card-header h3 {
+    color: #333;
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+
+.price {
+    display: flex;
+    align-items: baseline;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.currency {
+    color: #333;
+    font-size: 1.2rem;
+    font-weight: 500;
+}
+
+.amount {
+    color: #333;
+    font-size: 3rem;
+    font-weight: bold;
+}
+
+.period {
+    color: #666;
+    font-size: 1rem;
+    font-weight: normal;
+}
+
+.card-features {
+    flex: 1;
+    margin-bottom: 2rem;
+}
+
+.feature {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    padding: 0.5rem 0;
+}
+
+.feature-icon {
+    font-size: 1.2rem;
+    width: 24px;
+    text-align: center;
+}
+
+.feature-text {
+    color: #333;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.feature.coming-soon {
+    opacity: 0.7;
+}
+
+.feature.coming-soon .feature-text {
+    color: #666;
+    font-style: italic;
+}
+
+.buy-btn {
+    background-color: #A8FBD3;
+    color: #333;
+    border: none;
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    margin-top: auto;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.buy-btn:hover {
+    background-color: #8AE5B8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(168, 251, 211, 0.3);
+}
+
+.current-plan-badge {
+    background-color: #8AE5B8;
+    color: #333;
+    padding: 1rem 2rem;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    text-align: center;
+    margin-top: auto;
+    border: 2px solid #A8FBD3;
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .subscription-cards {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+    .subscription-card.popular {
+        transform: none;
+    }
+    .subscription-card.popular:hover {
+        transform: translateY(-5px);
+    }
+    .subscriptions-header h1 {
+        font-size: 2rem;
+    }
+    .amount {
+        font-size: 2.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .subscription-card {
+        padding: 1.5rem;
+    }
+    .subscriptions-header h1 {
+        font-size: 1.8rem;
+    }
+    .amount {
+        font-size: 2rem;
+    }
+}

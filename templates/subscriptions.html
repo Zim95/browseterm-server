@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Subscriptions - BrowseTerm{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/subscriptions.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="content-container fade-in">
+    <div class="subscriptions-header">
+        <h1>Choose Your Plan</h1>
+        <p>Select the perfect plan for your terminal needs</p>
+    </div>
+    
+    <div class="subscription-cards" id="subscriptionCards">
+        <!-- Subscription cards will be loaded dynamically by JavaScript -->
+        <div class="loading-message">Loading subscription plans...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='/js/subscriptions.js') }}"></script>
+{% endblock %}

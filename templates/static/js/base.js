@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const hamburger = document.getElementById('hamburger');
     const mainContent = document.getElementById('mainContent');
     const logoutBtn = document.getElementById('logoutBtn');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
 
     // Check if sidebar should be collapsed by default (stored in localStorage)
     const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
@@ -19,10 +20,17 @@ document.addEventListener('DOMContentLoaded', function() {
         mainContent.classList.add('expanded');
     }
 
-    // Hamburger menu toggle
+    // Hamburger menu toggle (desktop)
     if (hamburger) {
         hamburger.addEventListener('click', function() {
             toggleSidebar();
+        });
+    }
+
+    // Mobile menu button toggle
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', function() {
+            toggleMobileMenu();
         });
     }
 
@@ -71,6 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
             sidebar.classList.remove('collapsed');
             sidebar.classList.remove('open');
             mainContent.classList.remove('expanded');
+            closeMobileMenu(); // Close mobile menu if open
         } else {
             // On desktop, restore saved state
             const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
@@ -81,6 +90,45 @@ document.addEventListener('DOMContentLoaded', function() {
                 sidebar.classList.remove('collapsed');
                 mainContent.classList.remove('expanded');
             }
+        }
+    }
+
+    // Mobile menu functionality
+    let mobileOverlay = null;
+
+    function createMobileOverlay() {
+        if (!mobileOverlay) {
+            mobileOverlay = document.createElement('div');
+            mobileOverlay.className = 'mobile-overlay';
+            document.body.appendChild(mobileOverlay);
+            
+            mobileOverlay.addEventListener('click', closeMobileMenu);
+        }
+        return mobileOverlay;
+    }
+
+    function openMobileMenu() {
+        sidebar.classList.add('open');
+        mobileMenuBtn.classList.add('active');
+        const overlay = createMobileOverlay();
+        overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeMobileMenu() {
+        sidebar.classList.remove('open');
+        mobileMenuBtn.classList.remove('active');
+        if (mobileOverlay) {
+            mobileOverlay.classList.remove('active');
+        }
+        document.body.style.overflow = '';
+    }
+
+    function toggleMobileMenu() {
+        if (sidebar.classList.contains('open')) {
+            closeMobileMenu();
+        } else {
+            openMobileMenu();
         }
     }
 

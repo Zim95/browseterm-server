@@ -35,6 +35,12 @@
                         <span class="menu-text">Terminals</span>
                     </a>
                 </li>
+                <li class="menu-item">
+                    <a href="/subscriptions" class="menu-link {% if request.url.path == '/subscriptions' %}active{% endif %}">
+                        <span class="menu-icon">💰</span>
+                        <span class="menu-text">Subscriptions</span>
+                    </a>
+                </li>
             </ul>
         </div>
 
@@ -45,6 +51,13 @@
             </button>
         </div>
     </nav>
+
+    <!-- Floating Mobile Menu Button -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn">
+        <span></span>
+        <span></span>
+        <span></span>
+    </button>
 
     <!-- Main Content -->
     <main class="main-content" id="mainContent">
