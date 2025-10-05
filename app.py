@@ -19,6 +19,7 @@ app.add_api_route(path="/echo", endpoint=handlers.echo, methods=["POST"])
 app.add_api_route(path="/", endpoint=handlers.home, methods=["GET"])
 app.add_api_route(path="/terminals", endpoint=handlers.terminals, methods=["GET"])
 app.add_api_route(path="/subscriptions", endpoint=handlers.subscriptions, methods=["GET"])
+app.add_api_route(path="/profile", endpoint=handlers.profile, methods=["GET"])
 app.add_api_route(path="/login", endpoint=handlers.login, methods=["GET"])
 
 # containers

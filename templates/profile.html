@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Profile - BrowseTerm{% endblock %}
+
+{% block content %}
+<div class="user-profile">
+    <div class="profile-header">
+        <h1>User Profile</h1>
+        <p>Your account settings</p>
+    </div>
+
+    <div class="profile-content">
+        <!-- Profile Photo Section -->
+        <div class="profile-photo-section">
+            <div class="photo-container">
+                <div class="profile-photo" id="profilePhoto">
+                    <i class="fas fa-camera photo-icon"></i>
+                </div>
+                <input type="file" id="photoUpload" accept="image/*" style="display: none;">
+                <button class="upload-btn" id="uploadBtn">Upload Photo</button>
+            </div>
+        </div>
+
+        <!-- User Details Section -->
+        <div class="user-details-section">
+            <div class="details-card">
+                <div class="detail-item">
+                    <label class="detail-label">Name:</label>
+                    <span class="detail-value" id="userName">Loading...</span>
+                </div>
+                <div class="detail-item">
+                    <label class="detail-label">Email:</label>
+                    <span class="detail-value" id="userEmail">Loading...</span>
+                </div>
+                <div class="detail-item">
+                    <label class="detail-label">Current Plan:</label>
+                    <span class="detail-value" id="currentPlan">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/profile.css') }}">
+{% endblock %}
+
+{% block extra_js %}
+<script src="{{ url_for('static', path='/js/profile.js') }}"></script>
+{% endblock %}
