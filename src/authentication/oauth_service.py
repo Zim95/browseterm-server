@@ -147,7 +147,7 @@ class GithubUserInfoService(OAuthUserInfoService):
 
     def format_user_info(self, user_info: dict) -> dict:
         return {
-            'provider_id': user_info.get('id'),
+            'provider_id': str(user_info.get('id')),
             'name': user_info.get('name'),
             'email': user_info.get('email'),
             'profile_picture_url': user_info.get('avatar_url'),
