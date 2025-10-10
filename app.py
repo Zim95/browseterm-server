@@ -22,6 +22,17 @@ app.add_api_route(path="/subscriptions", endpoint=handlers.subscriptions, method
 app.add_api_route(path="/profile", endpoint=handlers.profile, methods=["GET"])
 app.add_api_route(path="/login", endpoint=handlers.login, methods=["GET"])
 
+# authentication routes
+app.add_api_route(path="/google-login-redirect", endpoint=handlers.google_login_redirect, methods=["GET"])
+app.add_api_route(path="/github-login-redirect", endpoint=handlers.github_login_redirect, methods=["GET"])
+
+# OAuth token exchange routes
+app.add_api_route(path="/google-token-exchange", endpoint=handlers.google_token_exchange, methods=["POST"])
+app.add_api_route(path="/github-token-exchange", endpoint=handlers.github_token_exchange, methods=["POST"])
+
+# Logout route
+app.add_api_route(path="/logout", endpoint=handlers.logout, methods=["POST"])
+
 # containers
 app.add_api_route(path="/create_container", endpoint=handlers.create_container, methods=["POST"])
 # app.add_api_route(path="/list_container", endpoint=handlers.list_container, methods=["GET"])

@@ -47,5 +47,10 @@
 {% endblock %}
 
 {% block extra_js %}
+<script>
+    // Pass user info from backend to JavaScript
+    window.userInfo = {{ (userInfo or {}) | tojson | safe }};
+    console.log('User Info from profile.html:', window.userInfo);
+</script>
 <script src="{{ url_for('static', path='/js/profile.js') }}"></script>
 {% endblock %}

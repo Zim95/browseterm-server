@@ -63,10 +63,10 @@ const dummyUserData = {
 // Function to simulate API call
 async function fetchTerminals() {
     console.log('Fetching terminals...');
-    
+
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Return dummy data (in real app, this would be a fetch() call)
     return dummyTerminalsData;
 }
@@ -75,7 +75,7 @@ async function fetchTerminals() {
 function renderTerminalItem(terminal) {
     const statusClass = terminal.status.toLowerCase();
     const statusText = terminal.status.charAt(0).toUpperCase() + terminal.status.slice(1);
-    
+
     return `
         <div class="terminal-item" data-terminal-id="${terminal.id}">
             <div class="terminal-info">
@@ -101,15 +101,15 @@ function renderTerminalItem(terminal) {
 // Function to render terminals list
 function renderTerminalsList(terminals) {
     const terminalsList = document.getElementById('terminalsList');
-    
+
     if (terminals.length === 0) {
         terminalsList.innerHTML = '<div class="loading-message">No terminals found.</div>';
         return;
     }
-    
+
     const terminalsHTML = terminals.map(terminal => renderTerminalItem(terminal)).join('');
     terminalsList.innerHTML = terminalsHTML;
-    
+
     // Re-attach event listeners to new buttons
     attachEventListeners();
 }
@@ -126,15 +126,15 @@ function attachEventListeners() {
     const modalClose = document.getElementById('modalClose');
     const cancelBtn = document.getElementById('cancelBtn');
     const modalOverlay = document.getElementById('modalOverlay');
-    
+
     if (modalClose) {
         modalClose.addEventListener('click', closeModal);
     }
-    
+
     if (cancelBtn) {
         cancelBtn.addEventListener('click', closeModal);
     }
-    
+
     if (modalOverlay) {
         modalOverlay.addEventListener('click', function(e) {
             if (e.target === modalOverlay) {
@@ -155,7 +155,7 @@ function attachEventListeners() {
     // Play and delete buttons for existing terminals
     const playBtns = document.querySelectorAll('.play-btn');
     const deleteBtns = document.querySelectorAll('.delete-btn');
-    
+
     playBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             const terminalId = this.getAttribute('data-terminal-id');
@@ -163,7 +163,7 @@ function attachEventListeners() {
             // Add play functionality here
         });
     });
-    
+
     deleteBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             const terminalId = this.getAttribute('data-terminal-id');
@@ -188,13 +188,13 @@ async function loadTerminals() {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Terminals page DOM is ready');
-    
+
     // Load terminals from API
     loadTerminals();
-    
+
     // Attach event listeners
     attachEventListeners();
-    
+
     // Load operating systems for modal
     loadOperatingSystems();
 });
@@ -204,7 +204,7 @@ function openModal() {
     const modalOverlay = document.getElementById('modalOverlay');
     modalOverlay.classList.add('active');
     document.body.style.overflow = 'hidden';
-    
+
     // Reset form
     resetForm();
 }
@@ -218,7 +218,7 @@ function closeModal() {
 function resetForm() {
     const form = document.getElementById('terminalForm');
     form.reset();
-    
+
     // Reset CPU and Memory to 1
     document.getElementById('cpu').value = 1;
     document.getElementById('memory').value = 1;
@@ -240,12 +240,12 @@ async function loadOperatingSystems() {
 function populateOperatingSystems(operatingSystems) {
     const select = document.getElementById('operatingSystem');
     select.innerHTML = '';
-    
+
     if (operatingSystems.length === 0) {
         select.innerHTML = '<option value="">No operating systems available</option>';
         return;
     }
-    
+
     operatingSystems.forEach(os => {
         const option = document.createElement('option');
         option.value = os.id;
@@ -260,17 +260,17 @@ function setupNumberInputs() {
     const cpuDecrease = document.getElementById('cpuDecrease');
     const cpuIncrease = document.getElementById('cpuIncrease');
     const cpuInput = document.getElementById('cpu');
-    
+
     if (cpuDecrease && cpuIncrease && cpuInput) {
         cpuDecrease.addEventListener('click', () => adjustNumber(cpuInput, -1));
         cpuIncrease.addEventListener('click', () => adjustNumber(cpuInput, 1));
     }
-    
+
     // Memory controls
     const memoryDecrease = document.getElementById('memoryDecrease');
     const memoryIncrease = document.getElementById('memoryIncrease');
     const memoryInput = document.getElementById('memory');
-    
+
     if (memoryDecrease && memoryIncrease && memoryInput) {
         memoryDecrease.addEventListener('click', () => adjustNumber(memoryInput, -1));
         memoryIncrease.addEventListener('click', () => adjustNumber(memoryInput, 1));
@@ -280,7 +280,7 @@ function setupNumberInputs() {
 function adjustNumber(input, change) {
     const currentValue = parseInt(input.value) || 1;
     const newValue = currentValue + change;
-    
+
     // Enforce min/max limits
     if (newValue >= 1 && newValue <= 30) {
         input.value = newValue;
@@ -290,7 +290,7 @@ function adjustNumber(input, change) {
 // Form Submission
 async function handleFormSubmit(e) {
     e.preventDefault();
-    
+
     try {
         // Get form data
         const formData = new FormData(e.target);
@@ -301,26 +301,26 @@ async function handleFormSubmit(e) {
             cpu: parseInt(formData.get('cpu')),
             memory: parseInt(formData.get('memory'))
         };
-        
+
         // Get user data
         const userData = await fetchUser();
-        
+
         // Combine all data
         const submissionData = {
             terminal: terminalData,
             user: userData.user,
             timestamp: new Date().toISOString()
         };
-        
+
         // Console log the data as requested
         console.log('Terminal Creation Data:', submissionData);
-        
+
         // Show success message
         alert('Terminal creation data logged to console!');
-        
+
         // Close modal
         closeModal();
-        
+
     } catch (error) {
         console.error('Error submitting form:', error);
         alert('Error submitting form. Please try again.');

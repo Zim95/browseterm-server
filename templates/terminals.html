@@ -14,7 +14,7 @@
         <div class="underline"></div>
         <p class="note">NOTE: For now, Terminals are immutable. Their properties cannot be changed once created. We will add it soon.</p>
     </div>
-    
+
     <div class="terminals-list" id="terminalsList">
         <!-- Terminals will be loaded dynamically by JavaScript -->
         <div class="loading-message">Loading terminals...</div>
@@ -28,25 +28,25 @@
             <h2>Create New Terminal</h2>
             <button class="modal-close" id="modalClose">&times;</button>
         </div>
-        
+
         <form class="modal-form" id="terminalForm">
             <div class="form-group">
                 <label for="terminalName">Name:</label>
                 <input type="text" id="terminalName" name="name" required placeholder="Enter terminal name">
             </div>
-            
+
             <div class="form-group">
                 <label for="operatingSystem">Operating System:</label>
                 <select id="operatingSystem" name="os" required>
                     <option value="">Loading...</option>
                 </select>
             </div>
-            
+
             <div class="form-group">
                 <label for="networkName">Network Name:</label>
                 <input type="text" id="networkName" name="network" required placeholder="Enter network name">
             </div>
-            
+
             <div class="form-group">
                 <label for="cpu">CPU:</label>
                 <div class="number-input-group">
@@ -56,7 +56,7 @@
                     <span class="disabled-icon" title="Only available for Pro plan users">⚠️</span>
                 </div>
             </div>
-            
+
             <div class="form-group">
                 <label for="memory">Memory:</label>
                 <div class="number-input-group">
@@ -66,7 +66,7 @@
                     <span class="disabled-icon" title="Only available for Pro plan users">⚠️</span>
                 </div>
             </div>
-            
+
             <div class="modal-actions">
                 <button type="button" class="btn-cancel" id="cancelBtn">Cancel</button>
                 <button type="submit" class="btn-submit" id="submitBtn">Create Terminal</button>

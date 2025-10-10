@@ -1,20 +1,23 @@
-body {
-    font-family: Arial, sans-serif;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
-    background-color: #A8FBD3;
+/* Override base.css styles for login page */
+body.login-page {
+    font-family: Arial, sans-serif !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    background-color: #A8FBD3 !important;
+    overflow-x: hidden !important;
 }
 
-.container {
+.login-page .container {
     text-align: center;
     background: white;
     padding: 2rem;
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0,0,0,0.1);
     min-width: 300px;
+    max-width: 400px;
 }
 
 .welcome-section {

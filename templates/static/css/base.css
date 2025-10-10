@@ -332,25 +332,25 @@ body {
         transform: translateX(-100%);
         z-index: 1000;
     }
-    
+
     .sidebar.open {
         transform: translateX(0);
     }
-    
+
     .main-content {
         margin-left: 0;
         padding: 1rem;
     }
-    
+
     .content-container {
         padding: 1rem;
         min-height: calc(100vh - 2rem);
     }
-    
+
     .hamburger {
         display: none;
     }
-    
+
     .mobile-menu-btn {
         display: flex;
     }
@@ -360,7 +360,7 @@ body {
     .main-content {
         padding: 0.5rem;
     }
-    
+
     .content-container {
         padding: 1rem;
         border-radius: 0;
@@ -381,6 +381,192 @@ body {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+/* Notification System */
+.notification-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 2000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.notification {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    padding: 16px 20px;
+    min-width: 320px;
+    max-width: 400px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    pointer-events: auto;
+    position: relative;
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-left: 4px solid;
+    will-change: transform, opacity;
+}
+
+.notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.notification.hide {
+    transform: translateX(100%);
+    opacity: 0;
+}
+
+/* Notification Types */
+.notification.success {
+    border-left-color: #4CAF50;
+}
+
+.notification.error {
+    border-left-color: #F44336;
+}
+
+.notification.info {
+    border-left-color: var(--active-color);
+}
+
+.notification.warning {
+    border-left-color: #FF9800;
+}
+
+/* Notification Icon */
+.notification-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-size: 14px;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.notification.success .notification-icon {
+    background: #4CAF50;
+    color: white;
+}
+
+.notification.error .notification-icon {
+    background: #F44336;
+    color: white;
+}
+
+.notification.info .notification-icon {
+    background: var(--active-color);
+    color: white;
+}
+
+.notification.warning .notification-icon {
+    background: #FF9800;
+    color: white;
+}
+
+/* Notification Content */
+.notification-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.notification-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.notification-message {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 0;
+    line-height: 1.4;
+}
+
+/* Close Button */
+.notification-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    color: var(--text-secondary);
+    font-size: 16px;
+    line-height: 1;
+    transition: var(--transition);
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.notification-close:hover {
+    background: rgba(0, 0, 0, 0.1);
+    color: var(--text-primary);
+}
+
+/* Progress Bar */
+.notification-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 3px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+    overflow: hidden;
+}
+
+.notification-progress-bar {
+    height: 100%;
+    background: currentColor;
+    opacity: 0.3;
+    transition: width linear;
+    border-radius: 0 0 var(--border-radius) var(--border-radius);
+}
+
+.notification.success .notification-progress-bar {
+    background: #4CAF50;
+}
+
+.notification.error .notification-progress-bar {
+    background: #F44336;
+}
+
+.notification.info .notification-progress-bar {
+    background: var(--active-color);
+}
+
+.notification.warning .notification-progress-bar {
+    background: #FF9800;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .notification-container {
+        top: 10px;
+        right: 10px;
+        left: 10px;
+    }
+
+    .notification {
+        min-width: auto;
+        max-width: none;
     }
 }
 

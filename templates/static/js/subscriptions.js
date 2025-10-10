@@ -56,10 +56,10 @@ const dummyCurrentPlanData = {
 // Function to simulate API call for subscription plans
 async function fetchSubscriptionPlans() {
     console.log('Fetching subscription plans...');
-    
+
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
-    
+
     // Return dummy data (in real app, this would be a fetch() call)
     return dummyPlansData;
 }
@@ -67,10 +67,10 @@ async function fetchSubscriptionPlans() {
 // Function to simulate API call for current plan
 async function fetchCurrentPlan() {
     console.log('Fetching current plan...');
-    
+
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 500));
-    
+
     // Return dummy data (in real app, this would be a fetch() call)
     return dummyCurrentPlanData;
 }
@@ -80,7 +80,7 @@ function renderSubscriptionCard(plan, currentPlanId) {
     const popularClass = plan.popular ? 'popular' : '';
     const popularBadge = plan.popular ? '<div class="popular-badge">Most Popular</div>' : '';
     const isCurrentPlan = plan.id === currentPlanId;
-    
+
     // Build features based on plan fields
     const featuresHTML = `
         <div class="feature">
@@ -101,7 +101,7 @@ function renderSubscriptionCard(plan, currentPlanId) {
             </div>
         ` : ''}
     `;
-    
+
     // Determine button text and visibility
     let buttonHTML = '';
     if (!isCurrentPlan) {
@@ -110,7 +110,7 @@ function renderSubscriptionCard(plan, currentPlanId) {
     } else {
         buttonHTML = '<div class="current-plan-badge">Current Plan</div>';
     }
-    
+
     return `
         <div class="subscription-card ${popularClass}" data-plan-id="${plan.id}">
             ${popularBadge}
@@ -133,15 +133,15 @@ function renderSubscriptionCard(plan, currentPlanId) {
 // Function to render subscription cards
 function renderSubscriptionCards(plans, currentPlanId) {
     const subscriptionCards = document.getElementById('subscriptionCards');
-    
+
     if (plans.length === 0) {
         subscriptionCards.innerHTML = '<div class="loading-message">No subscription plans found.</div>';
         return;
     }
-    
+
     const cardsHTML = plans.map(plan => renderSubscriptionCard(plan, currentPlanId)).join('');
     subscriptionCards.innerHTML = cardsHTML;
-    
+
     // Re-attach event listeners to new buttons
     attachEventListeners();
 }
@@ -157,14 +157,14 @@ function attachEventListeners() {
             handlePlanPurchase(planId);
         });
     });
-    
+
     // Card hover effects
     const cards = document.querySelectorAll('.subscription-card');
     cards.forEach(card => {
         card.addEventListener('mouseenter', function() {
             this.style.transform = 'translateY(-5px)';
         });
-        
+
         card.addEventListener('mouseleave', function() {
             if (!this.classList.contains('popular')) {
                 this.style.transform = 'translateY(0)';
@@ -183,10 +183,10 @@ async function loadSubscriptionPlans() {
             fetchSubscriptionPlans(),
             fetchCurrentPlan()
         ]);
-        
+
         console.log('Subscription plans loaded:', plansData.plans);
         console.log('Current plan:', currentPlanData.currentPlan);
-        
+
         renderSubscriptionCards(plansData.plans, currentPlanData.currentPlan.id);
     } catch (error) {
         console.error('Error loading subscription plans:', error);
@@ -198,16 +198,16 @@ async function loadSubscriptionPlans() {
 function handlePlanPurchase(planId) {
     // Show confirmation dialog
     const message = `Are you sure you want to purchase the ${planId} plan?`;
-    
+
     if (confirm(message)) {
         console.log(`User confirmed purchase of ${planId} plan`);
-        
+
         // Add actual purchase logic here
         // This could involve:
         // - Redirecting to payment gateway
         // - Calling API to process subscription
         // - Updating user's subscription status
-        
+
         // For now, just show a success message
         alert(`Thank you for choosing the ${planId} plan! Payment processing will be implemented soon.`);
     } else {
@@ -217,7 +217,7 @@ function handlePlanPurchase(planId) {
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Subscriptions page DOM is ready');
-    
+
     // Load subscription plans from API
     loadSubscriptionPlans();
 });

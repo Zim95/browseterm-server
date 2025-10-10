@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authenticating with GitHub - BrowseTerm</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/oauth_redirect.css') }}">
+</head>
+<body>
+    <div class="auth-container">
+        <div class="spinner"></div>
+        <p class="auth-message">Authenticating... Please wait...</p>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <!-- Set provider and load scripts -->
+    <script>
+        window.provider = 'github';
+    </script>
+    <script src="{{ url_for('static', path='/js/base.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/oauth_callback.js') }}"></script>
+</body>
+</html>

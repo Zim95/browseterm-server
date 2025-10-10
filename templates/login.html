@@ -6,8 +6,9 @@
     <title>Login - BrowseTerm</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/login.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
 </head>
-<body>
+<body class="login-page">
     <div class="container">
         <h1>BrowseTerm</h1>
         <div class="login-buttons">
@@ -21,6 +22,30 @@
             </a>
         </div>
     </div>
+
+    <!-- Notification Container -->
+    <div id="notificationContainer" class="notification-container"></div>
+
+    <!-- Pass OAuth config to JavaScript -->
+    <script>
+        window.OAUTH_CONFIG = {
+            google: {
+                "client_id": "{{ Google.client_id }}",
+                "auth_meta_url": "{{ Google.auth_meta_url }}",
+                "auth_scope": "{{ Google.auth_scope }}",
+                "auth_redirect_uri": "{{ Google.auth_redirect_uri }}",
+            },
+            github: {
+                "client_id": "{{ Github.client_id }}",
+                "auth_meta_url": "{{ Github.auth_meta_url }}",
+                "auth_scope": "{{ Github.auth_scope }}",
+                "auth_redirect_uri": "{{ Github.auth_redirect_uri }}",
+            }
+        };
+    </script>
+
+    <!-- Load notification system first -->
+    <script src="{{ url_for('static', path='/js/base.js') }}"></script>
     <script src="{{ url_for('static', path='/js/login.js') }}"></script>
 </body>
 </html>
