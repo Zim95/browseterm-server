@@ -195,7 +195,7 @@ sqlalchemy = "^2.0.43"
 type = "git"
 url = "https://github.com/Zim95/browseterm-db.git"
 reference = "main"
-resolved_reference = "ee0d5b9d8c245c0832815db84dadc42228017050"
+resolved_reference = "aae05d2856bb78e1adc42df93dc4855f7217f71b"
 
 [[package]]
 name = "cachetools"
