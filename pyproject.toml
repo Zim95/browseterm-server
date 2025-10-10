@@ -6,7 +6,7 @@ authors = ["Zim95 <shresthanamah@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = ">=3.8,<3.12"
+python = ">=3.9,<3.12"
 ipython = "8.12.0"
 grpcio = "^1.70.0"
 fastapi = "^0.115.11"
@@ -17,6 +17,9 @@ container-maker-spec = {path = "./container-maker-spec"}
 paramiko = "^3.5.1"
 websocket-client = "^1.8.0"
 kubernetes = "^32.0.1"
+jinja2 = "^3.1.2"
+redis = "^5.0.0"
+browseterm-db = {git = "https://github.com/Zim95/browseterm-db.git", rev = "main"}
 
 
 [build-system]
