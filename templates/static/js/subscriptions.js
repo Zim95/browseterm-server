@@ -1,103 +1,53 @@
 // Subscriptions page JavaScript
 console.log('Subscriptions page loaded successfully!');
 
-// Dummy JSON data for subscription plans
-const dummyPlansData = {
-    "plans": [
-        {
-            "id": "free",
-            "name": "Free",
-            "price": 0,
-            "currency": "Rs.",
-            "period": "",
-            "cpu": "1 GB",
-            "memory": "1 GB",
-            "max_terminals": 1,
-            "extra": null,
-            "popular": false,
-            "comingSoon": false
-        },
-        {
-            "id": "basic",
-            "name": "Basic",
-            "price": 200,
-            "currency": "Rs.",
-            "period": "per month",
-            "cpu": "1 GB",
-            "memory": "1 GB",
-            "max_terminals": 10,
-            "extra": null,
-            "popular": true,
-            "comingSoon": false
-        },
-        {
-            "id": "pro",
-            "name": "Pro",
-            "price": 700,
-            "currency": "Rs.",
-            "period": "per month",
-            "cpu": "Configurable",
-            "memory": "Configurable",
-            "max_terminals": 30,
-            "extra": "Coming Soon",
-            "popular": false,
-            "comingSoon": true
-        }
-    ]
-};
-
-// Dummy current plan data
-const dummyCurrentPlanData = {
-    "currentPlan": {
-        "id": "free"
-    }
-};
+const subscriptionPlans = window.subscriptionPlans || [];
+const currentSubscriptionPlan = window.currentSubscriptionPlan || {};
 
 // Function to simulate API call for subscription plans
-async function fetchSubscriptionPlans() {
+async function getSubscriptionPlans() {
     console.log('Fetching subscription plans...');
-
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    // Return dummy data (in real app, this would be a fetch() call)
-    return dummyPlansData;
+    console.log('Subscription plans:', subscriptionPlans);
+    // Return subscription plans
+    return subscriptionPlans;
 }
 
 // Function to simulate API call for current plan
-async function fetchCurrentPlan() {
+async function getCurrentPlan() {
     console.log('Fetching current plan...');
-
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Return dummy data (in real app, this would be a fetch() call)
-    return dummyCurrentPlanData;
+    console.log('Current plan:', currentSubscriptionPlan);
+    // Return current plan
+    return currentSubscriptionPlan;
 }
 
 // Function to render subscription card
 function renderSubscriptionCard(plan, currentPlanId) {
-    const popularClass = plan.popular ? 'popular' : '';
-    const popularBadge = plan.popular ? '<div class="popular-badge">Most Popular</div>' : '';
+    // Determine if this is the "Basic" plan (most popular)
+    const popularClass = plan.name === 'Basic' ? 'popular' : '';
+    const popularBadge = plan.name === 'Basic' ? '<div class="popular-badge">Most Popular</div>' : '';
     const isCurrentPlan = plan.id === currentPlanId;
+    // Format CPU and memory display
+    const cpuDisplay = plan.cpu_limit_per_container ? `${plan.cpu_limit_per_container}` : 'Configurable';
+    const memoryDisplay = plan.memory_limit_per_container ? `${plan.memory_limit_per_container}` : 'Configurable';
 
     // Build features based on plan fields
     const featuresHTML = `
         <div class="feature">
             <span class="feature-icon">⌨</span>
-            <span class="feature-text">${plan.max_terminals} terminal${plan.max_terminals > 1 ? 's' : ''} per user</span>
+            <span class="feature-text">${plan.max_containers} container${plan.max_containers > 1 ? 's' : ''} per user</span>
         </div>
         <div class="feature">
             <span class="feature-icon">💾</span>
-            <span class="feature-text">${plan.memory} memory</span>
+            <span class="feature-text">${memoryDisplay} memory</span>
         </div>
         <div class="feature">
             <span class="feature-icon">⚡</span>
-            <span class="feature-text">${plan.cpu} CPU</span>
+            <span class="feature-text">${cpuDisplay} CPU</span>
         </div>
-        ${plan.extra ? `
+        ${plan.extra_message ? `
             <div class="feature coming-soon">
-                <span class="feature-text"><strong>${plan.extra}</strong></span>
+                <span class="feature-icon">✨</span>
+                <span class="feature-text"><strong>${plan.extra_message}</strong></span>
             </div>
         ` : ''}
     `;
@@ -105,11 +55,22 @@ function renderSubscriptionCard(plan, currentPlanId) {
     // Determine button text and visibility
     let buttonHTML = '';
     if (!isCurrentPlan) {
-        const buttonText = plan.price === 0 ? 'Get Started' : 'Select Plan';
-        buttonHTML = `<button class="buy-btn" data-plan-id="${plan.id}">${buttonText}</button>`;
+        const buttonText = plan.amount === 0 ? 'Get Started' : 'Select Plan';
+        // Check if plan is active
+        if (plan.is_active === false) {
+            buttonHTML = `
+                <button class="buy-btn disabled" data-plan-id="${plan.id}" data-disabled="true" title="Not active right now..coming soon">
+                    ${buttonText}
+                </button>
+            `;
+        } else {
+            buttonHTML = `<button class="buy-btn" data-plan-id="${plan.id}">${buttonText}</button>`;
+        }
     } else {
         buttonHTML = '<div class="current-plan-badge">Current Plan</div>';
     }
+    // Format period display
+    const periodDisplay = plan.duration_days > 0 ? `per ${plan.duration_days} days` : '';
 
     return `
         <div class="subscription-card ${popularClass}" data-plan-id="${plan.id}">
@@ -118,8 +79,8 @@ function renderSubscriptionCard(plan, currentPlanId) {
                 <h3>${plan.name}</h3>
                 <div class="price">
                     <span class="currency">${plan.currency}</span>
-                    <span class="amount">${plan.price}</span>
-                    ${plan.period ? `<span class="period">${plan.period}</span>` : ''}
+                    <span class="amount">${plan.amount}</span>
+                    ${periodDisplay ? `<span class="period">${periodDisplay}</span>` : ''}
                 </div>
             </div>
             <div class="card-features">
@@ -153,6 +114,14 @@ function attachEventListeners() {
     buyBtns.forEach(btn => {
         btn.addEventListener('click', function() {
             const planId = this.getAttribute('data-plan-id');
+            const isDisabled = this.getAttribute('data-disabled') === 'true';
+            
+            // If button is disabled, show alert
+            if (isDisabled) {
+                alert('Not active right now..coming soon');
+                return;
+            }
+            
             console.log(`Buy button clicked for plan: ${planId}`);
             handlePlanPurchase(planId);
         });
@@ -179,15 +148,15 @@ function attachEventListeners() {
 async function loadSubscriptionPlans() {
     try {
         // Fetch both plans and current plan in parallel
-        const [plansData, currentPlanData] = await Promise.all([
-            fetchSubscriptionPlans(),
-            fetchCurrentPlan()
+        const [plans, currentPlan] = await Promise.all([
+            getSubscriptionPlans(),
+            getCurrentPlan()
         ]);
 
-        console.log('Subscription plans loaded:', plansData.plans);
-        console.log('Current plan:', currentPlanData.currentPlan);
+        console.log('Subscription plans loaded:', plans);
+        console.log('Current plan:', currentPlan);
 
-        renderSubscriptionCards(plansData.plans, currentPlanData.currentPlan.id);
+        renderSubscriptionCards(plans, currentPlan.id);
     } catch (error) {
         console.error('Error loading subscription plans:', error);
         const subscriptionCards = document.getElementById('subscriptionCards');

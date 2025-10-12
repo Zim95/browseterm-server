@@ -24,6 +24,7 @@ from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.oauth_service import GoogleUserInfoService, GithubUserInfoService
 from src.common.config import REDIS_SESSION_EXPIRY
 from src.authentication.authentication_helpers import process_user_info
+from src.db_ops.subscription_db_ops import list_all_existing_subscription_types, get_or_create_free_subscription
 
 
 templates = Jinja2Templates(directory="templates")
@@ -51,7 +52,17 @@ async def subscriptions(request: Request) -> HTMLResponse:
     '''
     Subscriptions page template.
     '''
-    return templates.TemplateResponse("subscriptions.html", {"request": request})
+    subscriptions: list = await asyncio.to_thread(list_all_existing_subscription_types)
+    return templates.TemplateResponse(
+        "subscriptions.html",
+        {
+            "request": request,
+            "subscriptions": subscriptions,
+            "userInfo": request.state.user_info,
+            "subscriptionInfo": request.state.subscription_info,
+            "currentSubscriptionPlan": request.state.current_subscription_plan
+        }
+    )
 
 
 @authenticate_session
@@ -63,7 +74,9 @@ async def profile(request: Request) -> HTMLResponse:
         "profile.html", 
         {
             "request": request,
-            "userInfo": request.state.user_info
+            "userInfo": request.state.user_info,
+            "subscriptionInfo": request.state.subscription_info,
+            "currentSubscriptionPlan": request.state.current_subscription_plan
         }
     )
 

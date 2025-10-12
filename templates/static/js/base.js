@@ -68,6 +68,9 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Sidebar toggled:', !isCurrentlyCollapsed ? 'expanded' : 'collapsed');
     }
 
+    // Mobile menu functionality
+    let mobileOverlay = null;
+
     // Function to handle responsive sidebar behavior
     function handleResponsiveSidebar() {
         const isMobile = window.innerWidth <= 768;
@@ -89,9 +92,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
     }
-
-    // Mobile menu functionality
-    let mobileOverlay = null;
 
     function createMobileOverlay() {
         if (!mobileOverlay) {

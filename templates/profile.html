@@ -50,7 +50,7 @@
 <script>
     // Pass user info from backend to JavaScript
     window.userInfo = {{ (userInfo or {}) | tojson | safe }};
-    console.log('User Info from profile.html:', window.userInfo);
+    window.currentSubscriptionPlan = {{ (currentSubscriptionPlan or {}) | tojson | safe }};
 </script>
 <script src="{{ url_for('static', path='/js/profile.js') }}"></script>
 {% endblock %}

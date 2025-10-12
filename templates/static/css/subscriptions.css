@@ -160,6 +160,42 @@
     box-shadow: 0 4px 15px rgba(168, 251, 211, 0.3);
 }
 
+.buy-btn.disabled {
+    background-color: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+    position: relative;
+}
+
+.buy-btn.disabled:hover {
+    background-color: #bbbbbb;
+    transform: none;
+    box-shadow: none;
+}
+
+.buy-btn.disabled::after {
+    content: attr(title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: #333;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+    margin-bottom: 0.5rem;
+    z-index: 1000;
+}
+
+.buy-btn.disabled:hover::after {
+    opacity: 1;
+}
+
 .current-plan-badge {
     background-color: #8AE5B8;
     color: #333;

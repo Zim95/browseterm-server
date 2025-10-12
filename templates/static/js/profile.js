@@ -2,15 +2,8 @@
 console.log('User profile page loaded successfully!');
 
 // Get user info from template (passed from backend)
-const userInfo = window.userInfo || {};
-
-// Dummy current plan data (will be replaced with real API call)
-const dummyCurrentPlanData = {
-    "currentPlan": {
-        "id": "free",
-        "name": "Free"
-    }
-};
+const userInfo = window.userInfo || {}
+const currentSubscriptionPlan = window.currentSubscriptionPlan || {};
 
 // Function to get user data from template
 function getUserData() {
@@ -20,20 +13,17 @@ function getUserData() {
         "user": {
             "name": userInfo.name || "Unknown User",
             "email": userInfo.email || "No email",
-            "profile_picture": userInfo.profile_picture_url || null
+            "profile_picture_url": userInfo.profile_picture_url || null
         }
     };
 }
 
 // Function to simulate API call for current plan
-async function fetchCurrentPlan() {
-    console.log('Fetching current plan...');
-
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    // Return dummy data (in real app, this would be a fetch() call)
-    return dummyCurrentPlanData;
+async function getCurrentSubscription() {
+    console.log('Fetching current subscription...');
+    return {
+        "currentPlan": currentSubscriptionPlan
+    }
 }
 
 // Function to load user profile data
@@ -43,7 +33,7 @@ async function loadUserProfile() {
         const userData = getUserData();
 
         // Fetch current plan from API
-        const currentPlanData = await fetchCurrentPlan();
+        const currentPlanData = await getCurrentSubscription();
 
         console.log('User data loaded:', userData.user);
         console.log('Current plan:', currentPlanData.currentPlan);
@@ -64,7 +54,8 @@ function updateUserProfile(user, currentPlan) {
     document.getElementById('currentPlan').textContent = currentPlan.name;
 
     // Update profile picture if available
-    if (user.profile_picture) {
+    console.log('Checking profile picture...', user.profile_picture_url);
+    if (user.profile_picture_url) {
         const profilePhoto = document.getElementById('profilePhoto');
         const icon = profilePhoto.querySelector('.photo-icon');
         if (icon) {
@@ -75,9 +66,20 @@ function updateUserProfile(user, currentPlan) {
         if (!img) {
             img = document.createElement('img');
             profilePhoto.appendChild(img);
+        } else {
+            console.log('Using existing img element');
         }
-        img.src = user.profile_picture;
+        img.onerror = function() {
+            console.error('✗ Failed to load profile picture from:', user.profile_picture_url);
+        };
+        // Set referrer policy and crossorigin for Google images
+        img.referrerPolicy = 'no-referrer'; // prevent tracking
+        img.crossOrigin = 'anonymous'; // prevent tracking
+        img.src = user.profile_picture_url;
         img.alt = user.name;
+        console.log('Profile picture updated:', img.src);
+    } else {
+        console.log('No profile picture URL provided');
     }
 
     // Remove loading state

@@ -11,7 +11,10 @@ This handler handles: /<provider>-token-exchange
 
 # builtins
 from abc import abstractmethod
+import asyncio
 from typing import Dict, Any, Optional
+
+from src.db_ops.subscription_db_ops import get_or_create_free_subscription
 
 # local
 from src.common.config import (
@@ -85,6 +88,8 @@ class OAuthUserInfoService:
     @abstractmethod
     async def fetch_user_info(self, code: str) -> dict:
         '''
+        1. Get the user info from the provider.
+        2. Get the subscription info from the database.
         '''
         try:
             credentials: Optional[Dict[str, Any]] = await self.get_credentials(code)
