@@ -47,6 +47,31 @@ async def terminals(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("terminals.html", {"request": request})
 
 
+# NEW: Terminal page template
+@authenticate_session
+async def terminalpage(request: Request) -> HTMLResponse:
+    '''
+    Terminal page template - shows xterm.js terminal with ad banners.
+    '''
+    # Get terminal ID from query params
+    terminal_id = request.query_params.get('id', '')
+    # TODO: In production, fetch actual terminal info from database using terminal_id
+    # For now, using dummy data
+    terminal_info = {
+        "id": terminal_id,
+        "name": f"Terminal {terminal_id}",
+        "ipAddress": "192.168.1.100",
+        "port": "8080"
+    }
+    return templates.TemplateResponse(
+        "terminalpage.html",
+        {
+            "request": request,
+            "terminalInfo": terminal_info
+        }
+    )
+
+
 @authenticate_session
 async def subscriptions(request: Request) -> HTMLResponse:
     '''

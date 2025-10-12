@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>Terminal - BrowseTerm</title>
+
+    <!-- Xterm.js CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/terminalpage.css') }}">
+</head>
+<body>
+    <div class="terminal-container">
+        <!-- Main Terminal Area -->
+        <div class="terminal-main">
+            <div class="terminal-header">
+                <div class="terminal-title">
+                    <i class="fas fa-terminal"></i>
+                    <span id="terminalName">Terminal</span>
+                </div>
+                <div class="terminal-info">
+                    <span class="info-item">
+                        <i class="fas fa-network-wired"></i>
+                        <span id="terminalIp">Loading...</span>
+                    </span>
+                    <span class="info-item">
+                        <i class="fas fa-plug"></i>
+                        <span id="terminalPort">Loading...</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Xterm.js Terminal -->
+            <div id="terminal" class="xterm-container"></div>
+
+            <!-- Save Button -->
+            <div class="terminal-footer">
+                <button class="save-btn" id="saveBtn">
+                    <i class="fas fa-floppy-disk"></i>
+                    <span>Save Session</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Sidebar for Ads -->
+        <div class="ads-sidebar">
+            <div class="ad-banner">
+                <div class="ad-header">Advertisement</div>
+                <div class="ad-content">
+                    <p>Your Ad Here</p>
+                    <p class="ad-size">300 x 250</p>
+                </div>
+            </div>
+
+            <div class="ad-banner">
+                <div class="ad-header">Advertisement</div>
+                <div class="ad-content">
+                    <p>Your Ad Here</p>
+                    <p class="ad-size">300 x 250</p>
+                </div>
+            </div>
+
+            <div class="ad-banner">
+                <div class="ad-header">Advertisement</div>
+                <div class="ad-content">
+                    <p>Your Ad Here</p>
+                    <p class="ad-size">300 x 600</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Xterm.js JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+
+    <!-- Custom JavaScript -->
+    <script>
+        // Pass terminal info from backend to JavaScript
+        window.terminalInfo = {{ (terminalInfo or {}) | tojson | safe }};
+    </script>
+    <script src="{{ url_for('static', path='/js/terminalpage.js') }}"></script>
+</body>
+</html>
+

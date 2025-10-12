@@ -1,0 +1,369 @@
+/* Terminal Page Styles */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+    overflow: hidden;
+    height: 100vh;
+}
+
+.terminal-container {
+    display: flex;
+    height: 100vh;
+    width: 100vw;
+}
+
+/* Main Terminal Area */
+.terminal-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #252526;
+    overflow: hidden;
+}
+
+.terminal-header {
+    background-color: #2d2d30;
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #3e3e42;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.terminal-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #ffffff;
+}
+
+.terminal-title i {
+    color: #A8FBD3;
+    font-size: 1.3rem;
+}
+
+.terminal-info {
+    display: flex;
+    gap: 2rem;
+    align-items: center;
+}
+
+.info-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: #cccccc;
+}
+
+.info-item i {
+    color: #A8FBD3;
+}
+
+/* Xterm Container */
+.xterm-container {
+    flex: 1;
+    padding: 1rem;
+    overflow: hidden;
+}
+
+.xterm {
+    height: 100%;
+    width: 100%;
+}
+
+/* Terminal Footer */
+.terminal-footer {
+    background-color: #2d2d30;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid #3e3e42;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.save-btn {
+    background-color: #A8FBD3;
+    color: #333;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.save-btn:hover {
+    background-color: #8AE5B8;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(168, 251, 211, 0.3);
+}
+
+.save-btn:active {
+    transform: translateY(0);
+}
+
+.save-btn i {
+    font-size: 1.1rem;
+}
+
+/* Ads Sidebar */
+.ads-sidebar {
+    width: 320px;
+    background-color: #2d2d30;
+    border-left: 1px solid #3e3e42;
+    padding: 1rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.ad-banner {
+    background-color: #3e3e42;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.ad-header {
+    background-color: #252526;
+    padding: 0.5rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    text-align: center;
+    border-bottom: 1px solid #3e3e42;
+}
+
+.ad-content {
+    padding: 2rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 250px;
+    background: linear-gradient(135deg, #434343 0%, #2d2d30 100%);
+    color: #999;
+    text-align: center;
+}
+
+.ad-content p {
+    margin: 0.5rem 0;
+    font-size: 1rem;
+}
+
+.ad-size {
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 1rem;
+}
+
+/* Large ad banner */
+.ad-banner:last-child .ad-content {
+    min-height: 600px;
+}
+
+/* Scrollbar styling for ads sidebar */
+.ads-sidebar::-webkit-scrollbar {
+    width: 8px;
+}
+
+.ads-sidebar::-webkit-scrollbar-track {
+    background: #252526;
+}
+
+.ads-sidebar::-webkit-scrollbar-thumb {
+    background: #3e3e42;
+    border-radius: 4px;
+}
+
+.ads-sidebar::-webkit-scrollbar-thumb:hover {
+    background: #4e4e52;
+}
+
+/* Responsive Design */
+@media (max-width: 1200px) {
+    .ads-sidebar {
+        width: 280px;
+    }
+    
+    .ad-content {
+        padding: 1.5rem;
+    }
+}
+
+@media (max-width: 992px) {
+    .ads-sidebar {
+        display: none;
+    }
+    
+    .terminal-main {
+        width: 100%;
+    }
+}
+
+@media (max-width: 768px) {
+    .terminal-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+    
+    .terminal-info {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start;
+        width: 100%;
+    }
+    
+    .terminal-footer {
+        padding: 1rem;
+    }
+    
+    .save-btn {
+        width: 100%;
+        justify-content: center;
+    }
+    
+    /* Better terminal sizing on tablets */
+    .xterm-container {
+        padding: 0.75rem;
+    }
+    
+    .terminal-header {
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .terminal-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .terminal-title {
+        font-size: 1rem;
+    }
+    
+    .info-item {
+        font-size: 0.85rem;
+    }
+    
+    .save-btn {
+        padding: 0.6rem 1.2rem;
+        font-size: 0.9rem;
+    }
+    
+    /* Optimize terminal for small screens */
+    .xterm-container {
+        padding: 0.5rem;
+    }
+    
+    .terminal-footer {
+        padding: 0.75rem 1rem;
+    }
+    
+    /* Make text more readable on mobile */
+    .terminal-title i {
+        font-size: 1.1rem;
+    }
+    
+    .info-item i {
+        font-size: 0.9rem;
+    }
+}
+
+/* Landscape mode for mobile devices */
+@media (max-width: 768px) and (orientation: landscape) {
+    .terminal-header {
+        flex-direction: row;
+        justify-content: space-between;
+        padding: 0.5rem 1rem;
+    }
+    
+    .terminal-info {
+        flex-direction: row;
+        gap: 1rem;
+    }
+    
+    .terminal-footer {
+        padding: 0.5rem 1rem;
+    }
+    
+    .xterm-container {
+        padding: 0.5rem;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 360px) {
+    .terminal-title {
+        font-size: 0.9rem;
+    }
+    
+    .info-item {
+        font-size: 0.75rem;
+    }
+    
+    .save-btn {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+    
+    .save-btn i {
+        font-size: 0.9rem;
+    }
+}
+
+/* Touch device optimizations */
+@media (hover: none) and (pointer: coarse) {
+    .save-btn {
+        min-height: 48px; /* Minimum touch target size */
+        padding: 0.875rem 1.5rem;
+    }
+    
+    /* Increase button size for better touch interaction */
+    .save-btn:active {
+        transform: scale(0.98);
+    }
+}
+
+/* Animation for terminal cursor */
+@keyframes blink {
+    0%, 49% {
+        opacity: 1;
+    }
+    50%, 100% {
+        opacity: 0;
+    }
+}
+
+/* Loading animation */
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.5;
+    }
+}
+
+.loading {
+    animation: pulse 1.5s ease-in-out infinite;
+}
+

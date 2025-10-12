@@ -60,15 +60,31 @@ const dummyUserData = {
     }
 };
 
-// Function to simulate API call
+//NEW: Function to simulate API call
 async function fetchTerminals() {
     console.log('Fetching terminals...');
-
     // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
-
     // Return dummy data (in real app, this would be a fetch() call)
     return dummyTerminalsData;
+}
+
+// NEW: Function to simulate fetching operating systems
+async function fetchOperatingSystems() {
+    console.log('Fetching operating systems...');
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    // Return dummy data
+    return dummyOperatingSystemsData;
+}
+
+// NEW: Function to simulate fetching user data
+async function fetchUser() {
+    console.log('Fetching user data...');
+    // Simulate API delay
+    await new Promise(resolve => setTimeout(resolve, 200));
+    // Return dummy data
+    return dummyUserData;
 }
 
 // Function to render terminal item
@@ -160,7 +176,8 @@ function attachEventListeners() {
         btn.addEventListener('click', function() {
             const terminalId = this.getAttribute('data-terminal-id');
             console.log('Play button clicked for terminal:', terminalId);
-            // Add play functionality here
+            // Open terminal page in new tab
+            window.open(`/terminalpage?id=${terminalId}`, '_blank');
         });
     });
 
