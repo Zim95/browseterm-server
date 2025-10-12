@@ -12,6 +12,29 @@
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Dark Mode Variables */
+body.dark-mode,
+html.dark-mode-loading {
+    --text-primary: #d4d4d4;
+    --text-secondary: #cccccc;
+    --background: #1e1e1e;
+    --sidebar-bg: #2d2d30;
+    --shadow: 0 2px 8px rgba(0,0,0,0.5);
+    --card-bg: #252526;
+    --card-border: #3e3e42;
+    --hover-bg: #3e3e42;
+}
+
+/* Apply dark mode styles to html element during loading */
+html.dark-mode-loading {
+    background-color: #1e1e1e;
+}
+
+html.dark-mode-loading body {
+    background-color: #1e1e1e;
+    color: #d4d4d4;
+}
+
 /* Reset and Base Styles */
 * {
     margin: 0;
@@ -567,6 +590,154 @@ body {
     .notification {
         min-width: auto;
         max-width: none;
+    }
+}
+
+/* Dark Mode Toggle Button */
+.dark-mode-toggle {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: var(--sidebar-bg);
+    border: 2px solid var(--primary-color);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    transition: var(--transition);
+    z-index: 1002; /* Higher than mobile menu button and sidebar */
+    box-shadow: var(--shadow);
+    pointer-events: auto; /* Ensure it can receive clicks */
+    user-select: none; /* Prevent text selection */
+}
+
+.dark-mode-toggle:hover {
+    transform: scale(1.1) rotate(15deg);
+    box-shadow: 0 4px 15px rgba(168, 251, 211, 0.3);
+}
+
+.dark-mode-toggle:active {
+    transform: scale(0.95);
+}
+
+.dark-mode-toggle .sun-icon,
+.dark-mode-toggle .moon-icon {
+    position: absolute;
+    transition: all 0.3s ease;
+    pointer-events: none; /* Let clicks pass through to button */
+}
+
+.dark-mode-toggle .moon-icon {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+/* Dark mode active state */
+body.dark-mode .dark-mode-toggle {
+    background: var(--card-bg);
+    border-color: var(--card-border);
+}
+
+body.dark-mode .dark-mode-toggle .sun-icon {
+    opacity: 0;
+    transform: rotate(-180deg) scale(0);
+}
+
+body.dark-mode .dark-mode-toggle .moon-icon {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+/* Dark Mode Styles */
+body.dark-mode {
+    background-color: var(--background);
+    color: var(--text-primary);
+}
+
+body.dark-mode .main-content {
+    background-color: #252526; /* Slightly less dark canvas */
+}
+
+body.dark-mode .content-container {
+    background-color: #252526; /* Slightly less dark canvas for content containers */
+}
+
+body.dark-mode .sidebar {
+    background: var(--sidebar-bg);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .sidebar-header {
+    border-bottom: 1px solid var(--card-border);
+}
+
+body.dark-mode .logo-text {
+    color: var(--text-primary);
+}
+
+body.dark-mode .menu-link {
+    color: var(--text-primary);
+}
+
+body.dark-mode .menu-link:hover {
+    background: var(--hover-bg);
+}
+
+body.dark-mode .menu-link.active {
+    background: var(--active-color);
+    color: #ffffff;
+}
+
+body.dark-mode .logout-btn {
+    background: var(--active-color);
+    color: #ffffff;
+}
+
+body.dark-mode .logout-btn:hover {
+    background: #4A5A8A;
+}
+
+body.dark-mode .hamburger span {
+    background: var(--text-primary);
+}
+
+body.dark-mode .mobile-menu-btn span {
+    background: var(--text-primary);
+}
+
+body.dark-mode .mobile-menu-btn {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+}
+
+body.dark-mode .mobile-menu-btn:hover {
+    background: var(--hover-bg);
+}
+
+/* Responsive adjustments for dark mode toggle */
+@media (max-width: 768px) {
+    .dark-mode-toggle {
+        top: 1rem;
+        right: 1rem;
+        width: 45px;
+        height: 45px;
+        font-size: 1.3rem;
+        z-index: 1002; /* Higher than mobile menu button */
+    }
+}
+
+@media (max-width: 480px) {
+    .dark-mode-toggle {
+        top: 0.75rem;
+        right: 0.75rem;
+        width: 40px;
+        height: 40px;
+        font-size: 1.2rem;
+        z-index: 1002; /* Higher than mobile menu button */
     }
 }
 

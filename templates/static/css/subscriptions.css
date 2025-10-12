@@ -243,3 +243,60 @@
         font-size: 2rem;
     }
 }
+
+/* Dark Mode Styles */
+body.dark-mode .subscriptions-header h1 {
+    color: #d4d4d4;
+}
+
+body.dark-mode .subscriptions-header p {
+    color: #cccccc;
+}
+
+body.dark-mode .subscription-card {
+    background: #252526;
+    border-color: #3e3e42;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .subscription-card:hover {
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+}
+
+body.dark-mode .subscription-card.popular {
+    border-color: #637AB9;
+}
+
+body.dark-mode .popular-badge {
+    background: #637AB9;
+    color: #ffffff;
+}
+
+body.dark-mode .card-header {
+    border-bottom: 1px solid #3e3e42;
+}
+
+body.dark-mode .card-header h3 {
+    color: #d4d4d4;
+}
+
+body.dark-mode .currency,
+body.dark-mode .amount {
+    color: #d4d4d4;
+}
+
+body.dark-mode .period {
+    color: #cccccc;
+}
+
+body.dark-mode .feature-text {
+    color: #d4d4d4;
+}
+
+body.dark-mode .feature.coming-soon .feature-text {
+    color: #cccccc;
+}
+
+body.dark-mode .loading-message {
+    color: #cccccc;
+}

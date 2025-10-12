@@ -6,12 +6,46 @@
     box-sizing: border-box;
 }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+/* Light Mode Variables (Default) */
+:root {
+    --bg-primary: #f8f9fa;
+    --bg-secondary: #ffffff;
+    --bg-tertiary: #f0f0f0;
+    --text-primary: #333333;
+    --text-secondary: #666666;
+    --border-color: #ddd;
+    --shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Dark Mode Variables */
+body.dark-mode,
+html.dark-mode-loading {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #252526;
+    --bg-tertiary: #2d2d30;
+    --text-primary: #d4d4d4;
+    --text-secondary: #cccccc;
+    --border-color: #3e3e42;
+    --shadow: 0 2px 8px rgba(0,0,0,0.5);
+}
+
+/* Apply dark mode styles during loading */
+html.dark-mode-loading {
+    background-color: #1e1e1e;
+}
+
+html.dark-mode-loading body {
     background-color: #1e1e1e;
     color: #d4d4d4;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
     overflow: hidden;
     height: 100vh;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 .terminal-container {
@@ -25,14 +59,14 @@ body {
     flex: 1;
     display: flex;
     flex-direction: column;
-    background-color: #252526;
+    background-color: var(--bg-secondary);
     overflow: hidden;
 }
 
 .terminal-header {
-    background-color: #2d2d30;
+    background-color: var(--bg-tertiary);
     padding: 1rem 1.5rem;
-    border-bottom: 1px solid #3e3e42;
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -44,11 +78,11 @@ body {
     gap: 0.75rem;
     font-size: 1.2rem;
     font-weight: 600;
-    color: #ffffff;
+    color: var(--text-primary);
 }
 
 .terminal-title i {
-    color: #A8FBD3;
+    color: #637AB9;
     font-size: 1.3rem;
 }
 
@@ -63,11 +97,11 @@ body {
     align-items: center;
     gap: 0.5rem;
     font-size: 0.9rem;
-    color: #cccccc;
+    color: var(--text-secondary);
 }
 
 .info-item i {
-    color: #A8FBD3;
+    color: #637AB9;
 }
 
 /* Xterm Container */
@@ -84,9 +118,9 @@ body {
 
 /* Terminal Footer */
 .terminal-footer {
-    background-color: #2d2d30;
+    background-color: var(--bg-tertiary);
     padding: 1rem 1.5rem;
-    border-top: 1px solid #3e3e42;
+    border-top: 1px solid var(--border-color);
     display: flex;
     justify-content: flex-end;
 }
@@ -123,8 +157,8 @@ body {
 /* Ads Sidebar */
 .ads-sidebar {
     width: 320px;
-    background-color: #2d2d30;
-    border-left: 1px solid #3e3e42;
+    background-color: var(--bg-tertiary);
+    border-left: 1px solid var(--border-color);
     padding: 1rem;
     overflow-y: auto;
     display: flex;
@@ -133,22 +167,23 @@ body {
 }
 
 .ad-banner {
-    background-color: #3e3e42;
+    background-color: var(--bg-secondary);
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
 }
 
 .ad-header {
-    background-color: #252526;
+    background-color: var(--bg-tertiary);
     padding: 0.5rem 1rem;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #999;
+    color: var(--text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.5px;
     text-align: center;
-    border-bottom: 1px solid #3e3e42;
+    border-bottom: 1px solid var(--border-color);
 }
 
 .ad-content {
@@ -158,8 +193,8 @@ body {
     align-items: center;
     justify-content: center;
     min-height: 250px;
-    background: linear-gradient(135deg, #434343 0%, #2d2d30 100%);
-    color: #999;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
     text-align: center;
 }
 
@@ -185,16 +220,75 @@ body {
 }
 
 .ads-sidebar::-webkit-scrollbar-track {
-    background: #252526;
+    background: var(--bg-tertiary);
 }
 
 .ads-sidebar::-webkit-scrollbar-thumb {
-    background: #3e3e42;
+    background: var(--border-color);
     border-radius: 4px;
 }
 
 .ads-sidebar::-webkit-scrollbar-thumb:hover {
-    background: #4e4e52;
+    background: var(--text-secondary);
+}
+
+/* Dark Mode Toggle Button */
+.dark-mode-toggle {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: #A8FBD3;
+    border: 2px solid #637AB9;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1002;
+    box-shadow: var(--shadow);
+    pointer-events: auto;
+    user-select: none;
+}
+
+.dark-mode-toggle:hover {
+    transform: scale(1.1) rotate(15deg);
+    box-shadow: 0 4px 15px rgba(168, 251, 211, 0.3);
+}
+
+.dark-mode-toggle:active {
+    transform: scale(0.95);
+}
+
+.dark-mode-toggle .sun-icon,
+.dark-mode-toggle .moon-icon {
+    position: absolute;
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+.dark-mode-toggle .moon-icon {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+/* Dark mode active state */
+body.dark-mode .dark-mode-toggle {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+body.dark-mode .dark-mode-toggle .sun-icon {
+    opacity: 0;
+    transform: rotate(-180deg) scale(0);
+}
+
+body.dark-mode .dark-mode-toggle .moon-icon {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
 }
 
 /* Responsive Design */
@@ -205,6 +299,12 @@ body {
     
     .ad-content {
         padding: 1.5rem;
+    }
+    
+    .dark-mode-toggle {
+        width: 45px;
+        height: 45px;
+        font-size: 1.3rem;
     }
 }
 
@@ -249,6 +349,14 @@ body {
     .terminal-header {
         padding: 1rem;
     }
+    
+    .dark-mode-toggle {
+        top: 1rem;
+        right: 1rem;
+        width: 45px;
+        height: 45px;
+        font-size: 1.3rem;
+    }
 }
 
 @media (max-width: 480px) {
@@ -285,6 +393,14 @@ body {
     
     .info-item i {
         font-size: 0.9rem;
+    }
+    
+    .dark-mode-toggle {
+        top: 0.75rem;
+        right: 0.75rem;
+        width: 40px;
+        height: 40px;
+        font-size: 1.2rem;
     }
 }
 

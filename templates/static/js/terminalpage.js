@@ -16,6 +16,9 @@ let fitAddon;
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Terminal page DOM is ready');
     
+    // Initialize dark mode
+    initializeDarkMode();
+    
     // Initialize terminal
     initializeTerminal();
     
@@ -33,39 +36,53 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 
+// Initialize dark mode on page load
+function initializeDarkMode() {
+    const savedTheme = localStorage.getItem('theme');
+    
+    // Set default to 'light' if no preference is saved
+    if (!savedTheme) {
+        localStorage.setItem('theme', 'light');
+    }
+    
+    // Apply dark mode if explicitly saved as 'dark'
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+    }
+    
+    // Remove loading class
+    document.documentElement.classList.remove('dark-mode-loading');
+    
+    console.log('Terminal page dark mode initialized:', document.body.classList.contains('dark-mode') ? 'enabled' : 'disabled');
+}
+
 // Initialize Xterm.js terminal
 function initializeTerminal() {
     console.log('Initializing terminal...');
+    
+    // Determine theme based on dark mode
+    const isDarkMode = document.body.classList.contains('dark-mode');
+    const terminalTheme = getXtermTheme(isDarkMode);
     
     // Create terminal instance
     term = new Terminal({
         cursorBlink: true,
         fontSize: 14,
         fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-        theme: {
-            background: '#1e1e1e',
-            foreground: '#d4d4d4',
-            cursor: '#d4d4d4',
-            black: '#000000',
-            red: '#cd3131',
-            green: '#0dbc79',
-            yellow: '#e5e510',
-            blue: '#2472c8',
-            magenta: '#bc3fbc',
-            cyan: '#11a8cd',
-            white: '#e5e5e5',
-            brightBlack: '#666666',
-            brightRed: '#f14c4c',
-            brightGreen: '#23d18b',
-            brightYellow: '#f5f543',
-            brightBlue: '#3b8eea',
-            brightMagenta: '#d670d6',
-            brightCyan: '#29b8db',
-            brightWhite: '#ffffff'
-        },
+        theme: terminalTheme,
         rows: 30,
         cols: 100
     });
+    
+    // Store xterm theme manager globally
+    window.xtermTheme = {
+        applyTheme: function(isDark) {
+            if (term) {
+                term.options.theme = getXtermTheme(isDark);
+                console.log('Xterm theme updated:', isDark ? 'dark' : 'light');
+            }
+        }
+    };
     
     // Create fit addon
     fitAddon = new FitAddon.FitAddon();
@@ -155,6 +172,57 @@ function connectToTerminal(terminalInfo) {
     // term.onData(data => {
     //     ws.send(data);
     // });
+}
+
+// Get xterm theme based on dark mode
+function getXtermTheme(isDark) {
+    if (isDark) {
+        // Dark theme
+        return {
+            background: '#1e1e1e',
+            foreground: '#d4d4d4',
+            cursor: '#d4d4d4',
+            black: '#000000',
+            red: '#cd3131',
+            green: '#0dbc79',
+            yellow: '#e5e510',
+            blue: '#2472c8',
+            magenta: '#bc3fbc',
+            cyan: '#11a8cd',
+            white: '#e5e5e5',
+            brightBlack: '#666666',
+            brightRed: '#f14c4c',
+            brightGreen: '#23d18b',
+            brightYellow: '#f5f543',
+            brightBlue: '#3b8eea',
+            brightMagenta: '#d670d6',
+            brightCyan: '#29b8db',
+            brightWhite: '#ffffff'
+        };
+    } else {
+        // Light theme
+        return {
+            background: '#ffffff',
+            foreground: '#333333',
+            cursor: '#333333',
+            black: '#000000',
+            red: '#cd3131',
+            green: '#00BC00',
+            yellow: '#949800',
+            blue: '#0451a5',
+            magenta: '#bc05bc',
+            cyan: '#0598bc',
+            white: '#555555',
+            brightBlack: '#666666',
+            brightRed: '#cd3131',
+            brightGreen: '#23d18b',
+            brightYellow: '#b5ba00',
+            brightBlue: '#0451a5',
+            brightMagenta: '#bc05bc',
+            brightCyan: '#0598bc',
+            brightWhite: '#a5a5a5'
+        };
+    }
 }
 
 // Helper function to write colored text to terminal

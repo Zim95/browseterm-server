@@ -428,3 +428,120 @@
         padding: 8px 16px;
     }
 }
+
+/* Dark Mode Styles */
+body.dark-mode .note {
+    color: #cccccc;
+}
+
+body.dark-mode .underline {
+    background-color: #3e3e42;
+}
+
+body.dark-mode .terminal-item {
+    background: #252526 !important;
+    border-color: #3e3e42;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .terminal-item:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    border-color: #637AB9;
+}
+
+body.dark-mode .terminal-name {
+    color: #d4d4d4;
+}
+
+body.dark-mode .ip-address,
+body.dark-mode .port {
+    color: #cccccc;
+}
+
+body.dark-mode .terminal-status {
+    color: #ffffff;
+    font-weight: 600;
+}
+
+body.dark-mode .terminal-status.running {
+    background: #0dbc79;
+    color: #ffffff;
+}
+
+body.dark-mode .terminal-status.stopped {
+    background: #cd3131;
+    color: #ffffff;
+}
+
+body.dark-mode .terminal-status.pending {
+    background: #e5e510;
+    color: #1e1e1e;
+}
+
+body.dark-mode .terminal-status.active {
+    background: #2472c8;
+    color: #ffffff;
+}
+
+body.dark-mode .loading-message {
+    color: #cccccc;
+}
+
+/* Dark mode modal styles */
+body.dark-mode .modal {
+    background: #252526;
+    border: 1px solid #3e3e42;
+}
+
+body.dark-mode .modal-header {
+    background: #2d2d30;
+    border-bottom: 1px solid #3e3e42;
+}
+
+body.dark-mode .modal-header h2 {
+    color: #d4d4d4;
+}
+
+body.dark-mode .modal-close {
+    color: #d4d4d4;
+}
+
+body.dark-mode .modal-close:hover {
+    color: #ffffff;
+    background: #3e3e42;
+}
+
+body.dark-mode .form-group label {
+    color: #d4d4d4;
+}
+
+body.dark-mode .form-group input,
+body.dark-mode .form-group select {
+    background: #3e3e42;
+    border-color: #4e4e52;
+    color: #d4d4d4;
+}
+
+body.dark-mode .form-group input:focus,
+body.dark-mode .form-group select:focus {
+    border-color: #637AB9;
+    background: #2d2d30;
+}
+
+body.dark-mode .number-btn {
+    background: #3e3e42;
+    color: #d4d4d4;
+}
+
+body.dark-mode .number-btn:hover {
+    background: #4e4e52;
+}
+
+body.dark-mode .btn-cancel {
+    background: #3e3e42;
+    color: #d4d4d4;
+}
+
+body.dark-mode .btn-cancel:hover {
+    background: #4e4e52;
+}

@@ -1,6 +1,8 @@
 // Base JavaScript for sidebar functionality
 console.log('Base template loaded successfully!');
 
+// Note: window.toggleDarkModeGlobal is defined in base.html head for early availability
+
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Base template DOM is ready');
 
@@ -10,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const mainContent = document.getElementById('mainContent');
     const logoutBtn = document.getElementById('logoutBtn');
     const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const darkModeToggle = document.getElementById('darkModeToggle');
 
     // Check if sidebar should be collapsed by default (stored in localStorage)
     const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
@@ -19,6 +22,9 @@ document.addEventListener('DOMContentLoaded', function() {
         sidebar.classList.add('collapsed');
         mainContent.classList.add('expanded');
     }
+
+    // Initialize dark mode
+    initializeDarkMode();
 
     // Hamburger menu toggle (desktop)
     if (hamburger) {
@@ -184,6 +190,32 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     console.log('Sidebar functionality initialized');
+
+    // Dark Mode Functions
+    function initializeDarkMode() {
+        // Check if user has a saved preference
+        const savedTheme = localStorage.getItem('theme');
+
+        // Set default to 'light' if no preference is saved
+        if (!savedTheme) {
+            localStorage.setItem('theme', 'light');
+        }
+
+        // Only apply dark mode if explicitly saved as 'dark' (default is light mode)
+        if (savedTheme === 'dark') {
+            document.body.classList.add('dark-mode');
+        }
+
+        // Remove the loading class from html if it exists (from head script)
+        document.documentElement.classList.remove('dark-mode-loading');
+
+        console.log('Dark mode initialized:', document.body.classList.contains('dark-mode') ? 'enabled' : 'disabled');
+    }
+
+    // Note: Dark mode toggle is handled via inline onclick in HTML
+    // The global function window.toggleDarkModeGlobal is defined in the head
+    // No event listener needed here to avoid double-firing
+    console.log('Dark mode toggle handled via inline onclick handler');
 });
 
 // Notification System

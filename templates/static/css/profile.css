@@ -211,3 +211,35 @@
         font-size: 0.9rem;
     }
 }
+
+/* Dark Mode Styles */
+body.dark-mode .profile-header h1 {
+    color: #d4d4d4;
+}
+
+body.dark-mode .profile-header p {
+    color: #cccccc;
+}
+
+body.dark-mode .details-card {
+    background: #252526;
+    border-color: #3e3e42;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+}
+
+body.dark-mode .details-card:hover {
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    border-color: #637AB9;
+}
+
+body.dark-mode .detail-item {
+    border-bottom: 1px solid #3e3e42;
+}
+
+body.dark-mode .detail-label {
+    color: #A8FBD3;
+}
+
+body.dark-mode .detail-value {
+    color: #d4d4d4;
+}

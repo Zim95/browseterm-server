@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
     <title>{% block title %}BrowseTerm{% endblock %}</title>
+
+    <!-- Apply dark mode immediately to prevent flash -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+
+            // Set default to 'light' if no preference is saved
+            if (!savedTheme) {
+                localStorage.setItem('theme', 'light');
+            }
+
+            // Only apply dark mode if explicitly saved as 'dark'
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark-mode-loading');
+            }
+        })();
+
+        // Define global toggle function immediately (before base.js loads)
+        window.toggleDarkModeGlobal = function() {
+            console.log('Global dark mode toggle called from inline script!');
+            document.body.classList.toggle('dark-mode');
+            const isDarkMode = document.body.classList.contains('dark-mode');
+
+            // Save preference to localStorage
+            localStorage.setItem('theme', isDarkMode ? 'dark' : 'light');
+
+            console.log('Dark mode toggled:', isDarkMode ? 'enabled' : 'disabled');
+
+            // Add a smooth transition effect
+            document.body.style.transition = 'background-color 0.3s ease, color 0.3s ease';
+            setTimeout(function() {
+                document.body.style.transition = '';
+            }, 300);
+        };
+    </script>
+
     <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
     {% block extra_css %}{% endblock %}
 </head>
@@ -64,6 +100,12 @@
         <span></span>
         <span></span>
         <span></span>
+    </button>
+
+    <!-- Dark Mode Toggle -->
+    <button class="dark-mode-toggle" id="darkModeToggle" aria-label="Toggle dark mode" onclick="window.toggleDarkModeGlobal && window.toggleDarkModeGlobal()">
+        <span class="sun-icon">☀️</span>
+        <span class="moon-icon">🌙</span>
     </button>
 
     <!-- Main Content -->
