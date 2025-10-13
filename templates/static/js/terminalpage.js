@@ -60,9 +60,8 @@ function initializeDarkMode() {
 function initializeTerminal() {
     console.log('Initializing terminal...');
     
-    // Determine theme based on dark mode
-    const isDarkMode = document.body.classList.contains('dark-mode');
-    const terminalTheme = getXtermTheme(isDarkMode);
+    // Terminal is always dark - only the UI changes with theme toggle
+    const terminalTheme = getXtermTheme();
     
     // Create terminal instance
     term = new Terminal({
@@ -74,13 +73,12 @@ function initializeTerminal() {
         cols: 100
     });
     
-    // Store xterm theme manager globally
+    // Note: Terminal theme doesn't change with dark mode toggle
+    // Only the surrounding UI changes
     window.xtermTheme = {
         applyTheme: function(isDark) {
-            if (term) {
-                term.options.theme = getXtermTheme(isDark);
-                console.log('Xterm theme updated:', isDark ? 'dark' : 'light');
-            }
+            // Terminal stays dark regardless of UI theme
+            console.log('UI theme updated:', isDark ? 'dark' : 'light', '(terminal stays dark)');
         }
     };
     
@@ -174,55 +172,30 @@ function connectToTerminal(terminalInfo) {
     // });
 }
 
-// Get xterm theme based on dark mode
-function getXtermTheme(isDark) {
-    if (isDark) {
-        // Dark theme
-        return {
-            background: '#1e1e1e',
-            foreground: '#d4d4d4',
-            cursor: '#d4d4d4',
-            black: '#000000',
-            red: '#cd3131',
-            green: '#0dbc79',
-            yellow: '#e5e510',
-            blue: '#2472c8',
-            magenta: '#bc3fbc',
-            cyan: '#11a8cd',
-            white: '#e5e5e5',
-            brightBlack: '#666666',
-            brightRed: '#f14c4c',
-            brightGreen: '#23d18b',
-            brightYellow: '#f5f543',
-            brightBlue: '#3b8eea',
-            brightMagenta: '#d670d6',
-            brightCyan: '#29b8db',
-            brightWhite: '#ffffff'
-        };
-    } else {
-        // Light theme
-        return {
-            background: '#ffffff',
-            foreground: '#333333',
-            cursor: '#333333',
-            black: '#000000',
-            red: '#cd3131',
-            green: '#00BC00',
-            yellow: '#949800',
-            blue: '#0451a5',
-            magenta: '#bc05bc',
-            cyan: '#0598bc',
-            white: '#555555',
-            brightBlack: '#666666',
-            brightRed: '#cd3131',
-            brightGreen: '#23d18b',
-            brightYellow: '#b5ba00',
-            brightBlue: '#0451a5',
-            brightMagenta: '#bc05bc',
-            brightCyan: '#0598bc',
-            brightWhite: '#a5a5a5'
-        };
-    }
+// Get xterm theme - Terminal is always dark
+function getXtermTheme() {
+    // Terminal always uses dark theme for better readability
+    return {
+        background: '#1e1e1e',
+        foreground: '#d4d4d4',
+        cursor: '#d4d4d4',
+        black: '#000000',
+        red: '#cd3131',
+        green: '#0dbc79',
+        yellow: '#e5e510',
+        blue: '#2472c8',
+        magenta: '#bc3fbc',
+        cyan: '#11a8cd',
+        white: '#e5e5e5',
+        brightBlack: '#666666',
+        brightRed: '#f14c4c',
+        brightGreen: '#23d18b',
+        brightYellow: '#f5f543',
+        brightBlue: '#3b8eea',
+        brightMagenta: '#d670d6',
+        brightCyan: '#29b8db',
+        brightWhite: '#ffffff'
+    };
 }
 
 // Helper function to write colored text to terminal
