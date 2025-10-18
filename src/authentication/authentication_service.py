@@ -7,11 +7,10 @@ Handles OAuth login, session management, and user authentication.
 # builtins
 import asyncio
 from typing import Optional
-from urllib.parse import quote
 
 # fastapi
 from fastapi import Request, HTTPException
-from fastapi.responses import Response, RedirectResponse
+from fastapi.responses import Response
 import json
 
 # local services
@@ -57,11 +56,11 @@ class AuthenticationService:
         1. Exchange code for user info (provider-specific via fetch_user_info)
         2. Create or update user in database
         3. Create session
-        4. Return response with session cookie OR redirect to login on error
+        4. Return response with session cookie OR error JSON
         Args:
             request: TokenExchangeRequestModel containing OAuth code
         Returns:
-            Response with session cookie and user data, or RedirectResponse to login on error
+            Response with session cookie and user data, or error response with details
         '''
         try:
             # Fetch user info from the provider
@@ -69,18 +68,20 @@ class AuthenticationService:
             if not user_info:
                 error_message: str = "Failed to fetch user information from authentication provider. Please try again."
                 print(f"Login error: {error_message}")
-                return RedirectResponse(
-                    url=f"/login?auth_result=error&error_message={quote(error_message)}",
-                    status_code=302
+                return Response(
+                    content=json.dumps({"error": error_message, "detail": error_message}),
+                    media_type="application/json",
+                    status_code=400
                 )
             # Process user info and create session
             session_response: SessionResponseModel = await process_user_info(user_info)
             if not session_response.session_id:
                 error_message: str = "Failed to create session. Please try again."
                 print(f"Login error: {error_message}")
-                return RedirectResponse(
-                    url=f"/login?auth_result=error&error_message={quote(error_message)}",
-                    status_code=302
+                return Response(
+                    content=json.dumps({"error": error_message, "detail": error_message}),
+                    media_type="application/json",
+                    status_code=500
                 )
             # Create response with session cookie
             response_data: dict = session_response.model_dump()
@@ -100,12 +101,13 @@ class AuthenticationService:
             return response
         except Exception as e:
             print(f"Login error: {e}")
-            # Redirect to login page with error details
+            # Return error response with details
             error_detail: str = str(e) if str(e) else "An unexpected error occurred"
             error_message: str = f"Login failed: {error_detail}"
-            return RedirectResponse(
-                url=f"/login?auth_result=error&error_message={quote(error_message)}",
-                status_code=302
+            return Response(
+                content=json.dumps({"error": error_message, "detail": error_message}),
+                media_type="application/json",
+                status_code=500
             )
 
     async def logout(self, session_id: Optional[str] = None) -> Response:
