@@ -93,12 +93,16 @@ class TestGoogleAuthenticationService(TestCase):
         # Mock fetch_user_info returning None
         mock_fetch_user_info.return_value = None
 
-        # Execute and assert exception
-        with self.assertRaises(HTTPException) as context:
-            self.loop.run_until_complete(self.service.login(self.request))
+        # Execute and check redirect response
+        response: Response = self.loop.run_until_complete(self.service.login(self.request))
 
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn('Failed to fetch user information', context.exception.detail)
+        # Should return RedirectResponse to login with error
+        self.assertEqual(response.status_code, 302)
+        location: str = response.headers['location']
+        self.assertIn('/login?auth_result=error', location)
+        # Check for URL-encoded error message
+        self.assertIn('error_message=', location)
+        self.assertIn('Failed', location)  # Part of the error message (works with URL encoding)
 
     @patch('src.authentication.authentication_service.process_user_info')
     @patch.object(GoogleAuthenticationService, 'fetch_user_info')
@@ -118,12 +122,16 @@ class TestGoogleAuthenticationService(TestCase):
         )
         mock_process_user_info.return_value = mock_session_response
 
-        # Execute and assert exception
-        with self.assertRaises(HTTPException) as context:
-            self.loop.run_until_complete(self.service.login(self.request))
+        # Execute and check redirect response
+        response: Response = self.loop.run_until_complete(self.service.login(self.request))
 
-        self.assertEqual(context.exception.status_code, 500)
-        self.assertIn('Failed to create session', context.exception.detail)
+        # Should return RedirectResponse to login with error
+        self.assertEqual(response.status_code, 302)
+        location: str = response.headers['location']
+        self.assertIn('/login?auth_result=error', location)
+        # Check for URL-encoded error message
+        self.assertIn('error_message=', location)
+        self.assertIn('session', location)  # Part of the error message (works with URL encoding)
 
     @patch.object(GoogleUserInfoService, 'get_credentials')
     @patch('httpx.AsyncClient')
@@ -246,12 +254,16 @@ class TestGithubAuthenticationService(TestCase):
         # Mock fetch_user_info returning None
         mock_fetch_user_info.return_value = None
 
-        # Execute and assert exception
-        with self.assertRaises(HTTPException) as context:
-            self.loop.run_until_complete(self.service.login(self.request))
+        # Execute and check redirect response
+        response: Response = self.loop.run_until_complete(self.service.login(self.request))
 
-        self.assertEqual(context.exception.status_code, 400)
-        self.assertIn('Failed to fetch user information', context.exception.detail)
+        # Should return RedirectResponse to login with error
+        self.assertEqual(response.status_code, 302)
+        location: str = response.headers['location']
+        self.assertIn('/login?auth_result=error', location)
+        # Check for URL-encoded error message
+        self.assertIn('error_message=', location)
+        self.assertIn('Failed', location)  # Part of the error message (works with URL encoding)
 
     @patch.object(GithubUserInfoService, 'get_credentials')
     @patch('httpx.AsyncClient')
