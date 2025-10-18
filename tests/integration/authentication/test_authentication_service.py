@@ -98,7 +98,7 @@ class TestGoogleAuthenticationService(TestCase):
             self.loop.run_until_complete(self.service.login(self.request))
 
         self.assertEqual(context.exception.status_code, 400)
-        self.assertIn('Failed to exchange token', context.exception.detail)
+        self.assertIn('Failed to fetch user information', context.exception.detail)
 
     @patch('src.authentication.authentication_service.process_user_info')
     @patch.object(GoogleAuthenticationService, 'fetch_user_info')
@@ -251,7 +251,7 @@ class TestGithubAuthenticationService(TestCase):
             self.loop.run_until_complete(self.service.login(self.request))
 
         self.assertEqual(context.exception.status_code, 400)
-        self.assertIn('Failed to exchange token', context.exception.detail)
+        self.assertIn('Failed to fetch user information', context.exception.detail)
 
     @patch.object(GithubUserInfoService, 'get_credentials')
     @patch('httpx.AsyncClient')

@@ -68,7 +68,10 @@ class AuthenticationService:
             # Fetch user info from the provider
             user_info: Optional[UserInfoModel] = await self.fetch_user_info(request.code)
             if not user_info:
-                raise HTTPException(status_code=400, detail="Failed to exchange token")
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Failed to fetch user information from authentication provider. Please try again."
+                )
             # Process user info and create session
             session_response: SessionResponseModel = await process_user_info(user_info)
             if not session_response.session_id:
@@ -93,7 +96,9 @@ class AuthenticationService:
             raise
         except Exception as e:
             print(f"Login error: {e}")
-            raise HTTPException(status_code=500, detail="Internal server error")
+            # Include actual error details in the response
+            error_detail: str = str(e) if str(e) else "Internal server error"
+            raise HTTPException(status_code=500, detail=f"Login failed: {error_detail}")
 
     async def logout(self, session_id: Optional[str] = None) -> Response:
         '''

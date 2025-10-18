@@ -62,7 +62,8 @@ class OAuthTokenExchangeService:
                 headers=self.credentials.token_exchange_headers
             )
             if response.status_code != 200:
-                print(f"Token exchange failed: {response.status_code}")
+                error_msg: str = f"Token exchange failed with status {response.status_code}"
+                print(f"{error_msg}: {response.text[:200]}")
                 return None
             token_result: dict = response.json()
             access_token: str = token_result.get('access_token')
@@ -98,14 +99,16 @@ class OAuthUserInfoService:
         try:
             credentials: Optional[OAuthCredentialsModel] = await self.get_credentials(code)
             if not credentials:
-                print("Credentials not found for provider.")
-                return None
+                error_msg: str = "OAuth credentials not configured for this provider"
+                print(f"Credentials error: {error_msg}")
+                raise Exception(error_msg)
             # Exchange token
             token_service: OAuthTokenExchangeService = OAuthTokenExchangeService(credentials)
             token_info: Optional[TokenExchangeResponseModel] = await token_service.exchange_token(code)
             if not token_info:
-                print("Token info not found for provider.")
-                return None
+                error_msg: str = "Failed to exchange authorization code for access token"
+                print(f"Token exchange error: {error_msg}")
+                raise Exception(error_msg)
             # Fetch user info from provider API
             async with httpx.AsyncClient() as client:
                 user_response: httpx.Response = await client.get(
@@ -113,15 +116,17 @@ class OAuthUserInfoService:
                     headers={'Authorization': f'Bearer {token_info.access_token}'}
                 )
                 if user_response.status_code != 200:
-                    print(f"Failed to fetch user info: {user_response.status_code}")
-                    return None
+                    error_msg: str = f"Provider API returned status {user_response.status_code}: {user_response.text[:200]}"
+                    print(f"User info API error: {error_msg}")
+                    raise Exception(error_msg)
                 # Transform to UserInfoModel
                 return self.transform_user_info(user_response.json())
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
         except Exception as e:
             print(f"Error fetching user info: {e}")
-            raise Exception(e)
+            # Re-raise with the original message to propagate to frontend
+            raise Exception(str(e))
 
 
 class GoogleUserInfoService(OAuthUserInfoService):
