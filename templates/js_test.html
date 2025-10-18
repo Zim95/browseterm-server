@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JavaScript Tests - BrowseTerm</title>
+
+    <!-- Apply dark mode immediately -->
+    <script>
+        (function() {
+            const savedTheme = localStorage.getItem('theme');
+            if (!savedTheme) {
+                localStorage.setItem('theme', 'light');
+            }
+            if (savedTheme === 'dark') {
+                document.documentElement.classList.add('dark-mode-loading');
+            }
+        })();
+    </script>
+
+    <!-- Mocha CSS for assertion library -->
+    <link rel="stylesheet" href="https://unpkg.com/mocha@10.2.0/mocha.css">
+
+    <!-- Custom Test UI CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', path='/css/js_test.css') }}">
+</head>
+<body>
+    <div class="test-container">
+        <header class="test-header">
+            <h1>🧪 JavaScript Test Suite</h1>
+            <button class="run-all-btn" id="runAllBtn">▶️ Run All Tests</button>
+        </header>
+
+        <div class="test-summary" id="testSummary">
+            <div class="summary-stat">
+                <span class="stat-label">Total:</span>
+                <span class="stat-value" id="totalTests">0</span>
+            </div>
+            <div class="summary-stat success">
+                <span class="stat-label">Passed:</span>
+                <span class="stat-value" id="passedTests">0</span>
+            </div>
+            <div class="summary-stat failure">
+                <span class="stat-label">Failed:</span>
+                <span class="stat-value" id="failedTests">0</span>
+            </div>
+            <div class="summary-stat">
+                <span class="stat-label">Duration:</span>
+                <span class="stat-value" id="duration">0ms</span>
+            </div>
+        </div>
+
+        <div class="test-files-container" id="testFilesContainer">
+            <!-- Test file cards will be inserted here -->
+        </div>
+
+        <!-- Hidden Mocha container (for running tests, but we won't display it) -->
+        <div id="mocha" style="display: none;"></div>
+    </div>
+
+    <!-- Mocha + Chai -->
+    <script src="https://unpkg.com/mocha@10.2.0/mocha.js"></script>
+    <script src="https://unpkg.com/chai@4.3.10/chai.js"></script>
+
+    <!-- Setup Mocha -->
+    <script>
+        mocha.setup('bdd');
+        const expect = chai.expect;
+    </script>
+
+    <!-- Load application JS files (files to test) -->
+    <script src="{{ url_for('static', path='/js/base_class.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/oauth_callback.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/login.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/profile.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/home.js') }}"></script>
+
+    <!-- Load test files -->
+    <script src="{{ url_for('static', path='/js/js_tests/test_base_class.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/js_tests/test_oauth_callback.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/js_tests/test_login.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/js_tests/test_profile.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/js_tests/test_home.js') }}"></script>
+
+    <!-- Custom test runner UI -->
+    <script src="{{ url_for('static', path='/js/js_tests/js_test_runner.js') }}"></script>
+</body>
+</html>
+

@@ -36,15 +36,22 @@ document.addEventListener('DOMContentLoaded', function() {
     const urlParams = new URLSearchParams(window.location.search);
     const authResult = urlParams.get('auth_result');
     const errorMessage = urlParams.get('error_message');
+    
+    console.log('Login page - URL parameters:');
+    console.log('  auth_result:', authResult);
+    console.log('  error_message:', errorMessage);
 
     // Show notifications based on URL parameters
     if (authResult === 'success') {
-        notifications.success("Login Successful!", "Welcome to BrowseTerm!", 4000);
+        console.log('Showing success notification');
+        window.notifications.success("Login Successful!", "Welcome to BrowseTerm!", 4000);
     } else if (authResult === 'error') {
         const message = errorMessage || "Authentication failed. Please try again.";
-        notifications.error("Login Failed", message, 6000);
+        console.log('Showing error notification with message:', message);
+        window.notifications.error("Login Failed", message, 10000);  // Increased to 10 seconds
     } else if (authResult === 'cancelled') {
-        notifications.warning("Login Cancelled", "You cancelled the authentication process", 4000);
+        console.log('Showing cancelled notification');
+        window.notifications.warning("Login Cancelled", "You cancelled the authentication process", 4000);
     }
 
     // Add click events to login buttons

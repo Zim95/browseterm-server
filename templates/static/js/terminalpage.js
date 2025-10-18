@@ -15,19 +15,14 @@ let fitAddon;
 
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Terminal page DOM is ready');
-    
     // Initialize dark mode
     initializeDarkMode();
-    
     // Initialize terminal
     initializeTerminal();
-    
     // Load terminal info
     loadTerminalInfo();
-    
     // Attach event listeners
     attachEventListeners();
-    
     // Handle window resize
     window.addEventListener('resize', () => {
         if (fitAddon) {
@@ -39,30 +34,24 @@ document.addEventListener('DOMContentLoaded', function() {
 // Initialize dark mode on page load
 function initializeDarkMode() {
     const savedTheme = localStorage.getItem('theme');
-    
     // Set default to 'light' if no preference is saved
     if (!savedTheme) {
         localStorage.setItem('theme', 'light');
     }
-    
     // Apply dark mode if explicitly saved as 'dark'
     if (savedTheme === 'dark') {
         document.body.classList.add('dark-mode');
     }
-    
     // Remove loading class
     document.documentElement.classList.remove('dark-mode-loading');
-    
     console.log('Terminal page dark mode initialized:', document.body.classList.contains('dark-mode') ? 'enabled' : 'disabled');
 }
 
 // Initialize Xterm.js terminal
 function initializeTerminal() {
     console.log('Initializing terminal...');
-    
     // Terminal is always dark - only the UI changes with theme toggle
     const terminalTheme = getXtermTheme();
-    
     // Create terminal instance
     term = new Terminal({
         cursorBlink: true,
@@ -72,7 +61,6 @@ function initializeTerminal() {
         rows: 30,
         cols: 100
     });
-    
     // Note: Terminal theme doesn't change with dark mode toggle
     // Only the surrounding UI changes
     window.xtermTheme = {
@@ -81,18 +69,14 @@ function initializeTerminal() {
             console.log('UI theme updated:', isDark ? 'dark' : 'light', '(terminal stays dark)');
         }
     };
-    
     // Create fit addon
     fitAddon = new FitAddon.FitAddon();
     term.loadAddon(fitAddon);
-    
     // Open terminal in the container
     const terminalElement = document.getElementById('terminal');
     term.open(terminalElement);
-    
     // Fit terminal to container
     fitAddon.fit();
-    
     // Write welcome message
     term.writeln('\x1b[1;32m╔══════════════════════════════════════════╗\x1b[0m');
     term.writeln('\x1b[1;32m║                                          ║\x1b[0m');
@@ -104,14 +88,12 @@ function initializeTerminal() {
     term.writeln('');
     term.writeln('\x1b[33mTerminal ID: ' + terminalId + '\x1b[0m');
     term.writeln('');
-    
     // Handle terminal input (for now, just echo)
     term.onData(data => {
         // For now, just write the data back (echo)
         // In production, this would send data to the backend via WebSocket
         console.log('Terminal input:', data);
     });
-    
     console.log('Terminal initialized successfully!');
 }
 
@@ -119,20 +101,16 @@ function initializeTerminal() {
 function loadTerminalInfo() {
     console.log('Loading terminal info...');
     console.log('Terminal info from backend:', terminalInfo);
-    
     // Update UI with terminal info
     if (terminalInfo.name) {
         document.getElementById('terminalName').textContent = terminalInfo.name;
     }
-    
     if (terminalInfo.ipAddress) {
         document.getElementById('terminalIp').textContent = terminalInfo.ipAddress;
     }
-    
     if (terminalInfo.port) {
         document.getElementById('terminalPort').textContent = terminalInfo.port;
     }
-    
     // TODO: In production, establish WebSocket connection here
     // connectToTerminal(terminalInfo);
 }
@@ -140,7 +118,6 @@ function loadTerminalInfo() {
 // Attach event listeners
 function attachEventListeners() {
     const saveBtn = document.getElementById('saveBtn');
-    
     if (saveBtn) {
         saveBtn.addEventListener('click', handleSaveSession);
     }
@@ -149,7 +126,6 @@ function attachEventListeners() {
 // Handle save session button click
 function handleSaveSession() {
     console.log('Save session button clicked');
-    
     // TODO: Implement session saving logic
     // For now, just show an alert
     alert('Session save functionality will be implemented soon!\n\nThis will save your terminal history and state.');
@@ -210,7 +186,6 @@ function writeColoredText(text, color) {
         white: '\x1b[37m',
         reset: '\x1b[0m'
     };
-    
     term.writeln(colorCodes[color] + text + colorCodes.reset);
 }
 
