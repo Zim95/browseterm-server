@@ -161,4 +161,3 @@ If tests fail:
 - 📝 **home.js**: 2 placeholder tests
 
 **Add more tests as you build new features!**
-

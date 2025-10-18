@@ -1,204 +1,223 @@
-// Base JavaScript for sidebar functionality
-console.log('Base template loaded successfully!');
-
-// Note: window.toggleDarkModeGlobal is defined in base.html head for early availability
-
-document.addEventListener('DOMContentLoaded', function() {
-    console.log('Base template DOM is ready');
-
-    // Get elements
-    const sidebar = document.getElementById('sidebar');
-    const hamburger = document.getElementById('hamburger');
-    const mainContent = document.getElementById('mainContent');
-    const logoutBtn = document.getElementById('logoutBtn');
-    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-    const darkModeToggle = document.getElementById('darkModeToggle');
-
-    // Check if sidebar should be collapsed by default (stored in localStorage)
-    const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-
-    // Initialize sidebar state
-    if (isCollapsed) {
-        sidebar.classList.add('collapsed');
-        mainContent.classList.add('expanded');
+/**
+ * BaseUtilities
+ * Utility methods for base functionality
+ */
+class BaseUtilities {
+    /**
+     * Get value from localStorage with default fallback
+     * @param {string} key - Storage key
+     * @param {string} defaultValue - Default value if key not found
+     * @returns {string} Stored value or default
+     */
+    static getFromLocalStorage(key, defaultValue = null) {
+        return localStorage.getItem(key) || defaultValue;
     }
 
-    // Initialize dark mode
-    initializeDarkMode();
-
-    // Hamburger menu toggle (desktop)
-    if (hamburger) {
-        hamburger.addEventListener('click', function() {
-            toggleSidebar();
-        });
+    /**
+     * Set value in localStorage
+     * @param {string} key - Storage key
+     * @param {string} value - Value to store
+     */
+    static setInLocalStorage(key, value) {
+        localStorage.setItem(key, value);
     }
 
-    // Mobile menu button toggle
-    if (mobileMenuBtn) {
-        mobileMenuBtn.addEventListener('click', function() {
-            toggleMobileMenu();
-        });
+    /**
+     * Remove value from localStorage
+     * @param {string} key - Storage key
+     */
+    static removeFromLocalStorage(key) {
+        localStorage.removeItem(key);
     }
 
-    // Logout button functionality
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', function() {
-            console.log('Logout button clicked!');
-            // Add logout logic here
-            handleLogout();
-        });
+    /**
+     * Check if viewport is mobile
+     * @returns {boolean} True if mobile viewport
+     */
+    static isMobile() {
+        return window.innerWidth <= 768;
+    }
+}
+
+/**
+ * SidebarManager
+ * Handles sidebar collapse/expand, mobile menu, and responsive behavior
+ */
+class SidebarManager {
+    /**
+     * Initialize the sidebar manager
+     * @param {HTMLElement} sidebar - Sidebar element
+     * @param {HTMLElement} mainContent - Main content element
+     * @param {HTMLElement} hamburger - Hamburger button element
+     * @param {HTMLElement} mobileMenuBtn - Mobile menu button element
+     */
+    constructor(sidebar, mainContent, hamburger, mobileMenuBtn) {
+        this.sidebar = sidebar;
+        this.mainContent = mainContent;
+        this.hamburger = hamburger;
+        this.mobileMenuBtn = mobileMenuBtn;
+        this.mobileOverlay = null;
+        console.log('SidebarManager initialized');
     }
 
-    // Handle window resize for mobile responsiveness
-    window.addEventListener('resize', function() {
-        handleResponsiveSidebar();
-    });
+    /**
+     * Initialize sidebar state and event listeners
+     */
+    initialize() {
+        // Set initial state from localStorage
+        const isCollapsed = BaseUtilities.getFromLocalStorage('sidebarCollapsed') === 'true';
+        if (isCollapsed) {
+            this.sidebar.classList.add('collapsed');
+            this.mainContent.classList.add('expanded');
+        }
 
-    // Initialize responsive behavior
-    handleResponsiveSidebar();
+        // Setup event listeners
+        this.setupEventListeners();
 
-    // Function to toggle sidebar
-    function toggleSidebar() {
-        const isCurrentlyCollapsed = sidebar.classList.contains('collapsed');
+        // Initialize responsive behavior
+        this.handleResponsiveSidebar();
+    }
+
+    /**
+     * Setup event listeners for sidebar controls
+     */
+    setupEventListeners() {
+        // Hamburger menu toggle (desktop)
+        if (this.hamburger) {
+            this.hamburger.addEventListener('click', () => this.toggleSidebar());
+        }
+
+        // Mobile menu button toggle
+        if (this.mobileMenuBtn) {
+            this.mobileMenuBtn.addEventListener('click', () => this.toggleMobileMenu());
+        }
+
+        // Handle window resize for mobile responsiveness
+        window.addEventListener('resize', () => this.handleResponsiveSidebar());
+    }
+
+    /**
+     * Toggle sidebar collapse/expand (desktop)
+     */
+    toggleSidebar() {
+        const isCurrentlyCollapsed = this.sidebar.classList.contains('collapsed');
         if (isCurrentlyCollapsed) {
             // Expand sidebar
-            sidebar.classList.remove('collapsed');
-            mainContent.classList.remove('expanded');
-            localStorage.setItem('sidebarCollapsed', 'false');
+            this.sidebar.classList.remove('collapsed');
+            this.mainContent.classList.remove('expanded');
+            BaseUtilities.setInLocalStorage('sidebarCollapsed', 'false');
         } else {
             // Collapse sidebar
-            sidebar.classList.add('collapsed');
-            mainContent.classList.add('expanded');
-            localStorage.setItem('sidebarCollapsed', 'true');
+            this.sidebar.classList.add('collapsed');
+            this.mainContent.classList.add('expanded');
+            BaseUtilities.setInLocalStorage('sidebarCollapsed', 'true');
         }
-        console.log('Sidebar toggled:', !isCurrentlyCollapsed ? 'expanded' : 'collapsed');
+        console.log('Sidebar toggled:', !isCurrentlyCollapsed ? 'collapsed' : 'expanded');
     }
 
-    // Mobile menu functionality
-    let mobileOverlay = null;
-
-    // Function to handle responsive sidebar behavior
-    function handleResponsiveSidebar() {
-        const isMobile = window.innerWidth <= 768;
+    /**
+     * Handle responsive sidebar behavior based on viewport
+     */
+    handleResponsiveSidebar() {
+        const isMobile = BaseUtilities.isMobile();
         if (isMobile) {
             // On mobile, sidebar should be hidden by default
-            sidebar.classList.remove('collapsed');
-            sidebar.classList.remove('open');
-            mainContent.classList.remove('expanded');
-            closeMobileMenu(); // Close mobile menu if open
+            this.sidebar.classList.remove('collapsed');
+            this.sidebar.classList.remove('open');
+            this.mainContent.classList.remove('expanded');
+            this.closeMobileMenu();
         } else {
             // On desktop, restore saved state
-            const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+            const isCollapsed = BaseUtilities.getFromLocalStorage('sidebarCollapsed') === 'true';
             if (isCollapsed) {
-                sidebar.classList.add('collapsed');
-                mainContent.classList.add('expanded');
+                this.sidebar.classList.add('collapsed');
+                this.mainContent.classList.add('expanded');
             } else {
-                sidebar.classList.remove('collapsed');
-                mainContent.classList.remove('expanded');
+                this.sidebar.classList.remove('collapsed');
+                this.mainContent.classList.remove('expanded');
             }
         }
     }
 
-    function createMobileOverlay() {
-        if (!mobileOverlay) {
-            mobileOverlay = document.createElement('div');
-            mobileOverlay.className = 'mobile-overlay';
-            document.body.appendChild(mobileOverlay);
-
-            mobileOverlay.addEventListener('click', closeMobileMenu);
+    /**
+     * Create mobile overlay for sidebar
+     * @returns {HTMLElement} Overlay element
+     */
+    createMobileOverlay() {
+        if (!this.mobileOverlay) {
+            this.mobileOverlay = document.createElement('div');
+            this.mobileOverlay.className = 'mobile-overlay';
+            document.body.appendChild(this.mobileOverlay);
+            this.mobileOverlay.addEventListener('click', () => this.closeMobileMenu());
         }
-        return mobileOverlay;
+        return this.mobileOverlay;
     }
 
-    function openMobileMenu() {
-        sidebar.classList.add('open');
-        mobileMenuBtn.classList.add('active');
-        const overlay = createMobileOverlay();
+    /**
+     * Open mobile menu
+     */
+    openMobileMenu() {
+        this.sidebar.classList.add('open');
+        this.mobileMenuBtn.classList.add('active');
+        const overlay = this.createMobileOverlay();
         overlay.classList.add('active');
         document.body.style.overflow = 'hidden';
     }
 
-    function closeMobileMenu() {
-        sidebar.classList.remove('open');
-        mobileMenuBtn.classList.remove('active');
-        if (mobileOverlay) {
-            mobileOverlay.classList.remove('active');
+    /**
+     * Close mobile menu
+     */
+    closeMobileMenu() {
+        this.sidebar.classList.remove('open');
+        if (this.mobileMenuBtn) {
+            this.mobileMenuBtn.classList.remove('active');
+        }
+        if (this.mobileOverlay) {
+            this.mobileOverlay.classList.remove('active');
         }
         document.body.style.overflow = '';
     }
 
-    function toggleMobileMenu() {
-        if (sidebar.classList.contains('open')) {
-            closeMobileMenu();
+    /**
+     * Toggle mobile menu open/close
+     */
+    toggleMobileMenu() {
+        if (this.sidebar.classList.contains('open')) {
+            this.closeMobileMenu();
         } else {
-            openMobileMenu();
+            this.openMobileMenu();
         }
     }
+}
 
-    // Function to handle logout
-    async function handleLogout() {
-        // Show confirmation dialog
-        if (confirm('Are you sure you want to logout?')) {
-            console.log('User confirmed logout');
-
-            try {
-                // Call logout endpoint to clear HTTP-only cookie
-                const response = await fetch('/logout', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    }
-                });
-
-                if (response.ok) {
-                    console.log('Logout successful');
-                    // Redirect to login page
-                    window.location.href = '/login';
-                } else {
-                    console.error('Logout failed');
-                    // Still redirect to login page even if logout fails
-                    window.location.href = '/login';
-                }
-            } catch (error) {
-                console.error('Logout error:', error);
-                // Still redirect to login page even if logout fails
-                window.location.href = '/login';
-            }
-        }
+/**
+ * DarkModeManager
+ * Handles dark mode initialization and toggling
+ * 
+ * Note: The dark mode toggle button uses an inline onclick handler that calls
+ * window.toggleDarkModeGlobal (defined in base.html head). This manager is
+ * only responsible for initializing the dark mode state on page load.
+ * The toggle() method exists for programmatic use if needed, but is not
+ * directly called by the UI button.
+ */
+class DarkModeManager {
+    /**
+     * Initialize the dark mode manager
+     */
+    constructor() {
+        console.log('DarkModeManager initialized');
     }
 
-    // Add smooth transitions for menu items
-    const menuLinks = document.querySelectorAll('.menu-link');
-    menuLinks.forEach(link => {
-        link.addEventListener('mouseenter', function() {
-            this.style.transform = 'translateX(4px)';
-        });
-
-        link.addEventListener('mouseleave', function() {
-            this.style.transform = 'translateX(0)';
-        });
-    });
-
-    // Add click animation to buttons
-    const buttons = document.querySelectorAll('button');
-    buttons.forEach(button => {
-        button.addEventListener('click', function() {
-            this.style.transform = 'scale(0.95)';
-            setTimeout(() => {
-                this.style.transform = '';
-            }, 150);
-        });
-    });
-    console.log('Sidebar functionality initialized');
-
-    // Dark Mode Functions
-    function initializeDarkMode() {
+    /**
+     * Initialize dark mode from localStorage
+     */
+    initialize() {
         // Check if user has a saved preference
-        const savedTheme = localStorage.getItem('theme');
+        const savedTheme = BaseUtilities.getFromLocalStorage('theme');
 
         // Set default to 'light' if no preference is saved
         if (!savedTheme) {
-            localStorage.setItem('theme', 'light');
+            BaseUtilities.setInLocalStorage('theme', 'light');
         }
 
         // Only apply dark mode if explicitly saved as 'dark' (default is light mode)
@@ -211,14 +230,60 @@ document.addEventListener('DOMContentLoaded', function() {
 
         console.log('Dark mode initialized:', document.body.classList.contains('dark-mode') ? 'enabled' : 'disabled');
     }
+}
 
-    // Note: Dark mode toggle is handled via inline onclick in HTML
-    // The global function window.toggleDarkModeGlobal is defined in the head
-    // No event listener needed here to avoid double-firing
-    console.log('Dark mode toggle handled via inline onclick handler');
-});
+/**
+ * LogoutManager
+ * Handles user logout functionality
+ */
+class LogoutManager {
+    /**
+     * Initialize the logout manager
+     */
+    constructor() {
+        console.log('LogoutManager initialized');
+    }
 
-// Notification System
+    /**
+     * Handle logout with confirmation
+     */
+    async handleLogout() {
+        // Show confirmation dialog
+        if (!confirm('Are you sure you want to logout?')) {
+            return;
+        }
+
+        console.log('User confirmed logout');
+
+        try {
+            // Call logout endpoint to clear HTTP-only cookie
+            const response = await fetch('/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+
+            if (response.ok) {
+                console.log('Logout successful');
+                window.location.href = '/login';
+            } else {
+                console.error('Logout failed');
+                // Still redirect to login page even if logout fails
+                window.location.href = '/login';
+            }
+        } catch (error) {
+            console.error('Logout error:', error);
+            // Still redirect to login page even if logout fails
+            window.location.href = '/login';
+        }
+    }
+}
+
+/**
+ * NotificationManager
+ * Manages toast notifications throughout the application
+ */
 class NotificationManager {
     constructor() {
         this.container = document.getElementById('notificationContainer');
@@ -283,6 +348,7 @@ class NotificationManager {
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.setAttribute('data-id', id);
+
         // Get icon based on type
         const defaultIcons = {
             success: '✓',
@@ -291,6 +357,7 @@ class NotificationManager {
             warning: '⚠'
         };
         const iconText = icon || defaultIcons[type] || defaultIcons.info;
+
         // Create notification HTML
         notification.innerHTML = `
             <div class="notification-icon">${iconText}</div>
@@ -303,11 +370,13 @@ class NotificationManager {
                 <div class="notification-progress-bar"></div>
             </div>
         `;
+
         // Add close button event listener
         if (closable) {
             const closeBtn = notification.querySelector('.notification-close');
             closeBtn.addEventListener('click', () => this.remove(id));
         }
+
         return notification;
     }
 
@@ -375,22 +444,150 @@ class NotificationManager {
     generateId() {
         return 'notification_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     }
+
     /**
      * Convenience methods
      */
     success(title, message, duration) {
         return this.show({ type: 'success', title, message, duration });
     }
+
     error(title, message, duration) {
         return this.show({ type: 'error', title, message, duration });
     }
+
     info(title, message, duration) {
         return this.show({ type: 'info', title, message, duration });
     }
+
     warning(title, message, duration) {
         return this.show({ type: 'warning', title, message, duration });
     }
 }
+
+/**
+ * UIAnimationManager
+ * Handles UI animations for buttons and links
+ */
+class UIAnimationManager {
+    /**
+     * Initialize UI animations
+     */
+    constructor() {
+        console.log('UIAnimationManager initialized');
+    }
+
+    /**
+     * Add animations to all interactive elements
+     */
+    initialize() {
+        this.addMenuLinkAnimations();
+        this.addButtonAnimations();
+    }
+
+    /**
+     * Add smooth transitions for menu items
+     */
+    addMenuLinkAnimations() {
+        const menuLinks = document.querySelectorAll('.menu-link');
+        menuLinks.forEach(link => {
+            link.addEventListener('mouseenter', function() {
+                this.style.transform = 'translateX(4px)';
+            });
+
+            link.addEventListener('mouseleave', function() {
+                this.style.transform = 'translateX(0)';
+            });
+        });
+    }
+
+    /**
+     * Add click animation to buttons
+     */
+    addButtonAnimations() {
+        const buttons = document.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.addEventListener('click', function() {
+                this.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    this.style.transform = '';
+                }, 150);
+            });
+        });
+    }
+}
+
+/**
+ * BaseApp
+ * Main application controller that orchestrates all managers
+ */
+class BaseApp {
+    /**
+     * Initialize the base app
+     */
+    constructor() {
+        console.log('BaseApp initialized');
+        this.sidebarManager = null;
+        this.darkModeManager = null;
+        this.logoutManager = null;
+        this.uiAnimationManager = null;
+    }
+
+    /**
+     * Initialize all managers and functionality
+     */
+    initialize() {
+        console.log('Base template DOM is ready');
+
+        // Get elements
+        const sidebar = document.getElementById('sidebar');
+        const hamburger = document.getElementById('hamburger');
+        const mainContent = document.getElementById('mainContent');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+
+        // Initialize managers
+        this.sidebarManager = new SidebarManager(sidebar, mainContent, hamburger, mobileMenuBtn);
+        this.sidebarManager.initialize();
+
+        this.darkModeManager = new DarkModeManager();
+        this.darkModeManager.initialize();
+
+        this.logoutManager = new LogoutManager();
+
+        this.uiAnimationManager = new UIAnimationManager();
+        this.uiAnimationManager.initialize();
+
+        // Setup event listeners
+        this.setupEventListeners(logoutBtn);
+
+        console.log('Sidebar functionality initialized');
+        // Note: Dark mode toggle is handled via inline onclick in HTML
+        // The global function window.toggleDarkModeGlobal is defined in base.html head
+        // No event listener needed here to avoid double-firing
+        console.log('Dark mode toggle handled via inline onclick handler');
+    }
+
+    /**
+     * Setup event listeners for global actions
+     */
+    setupEventListeners(logoutBtn) {
+        // Logout button functionality
+        if (logoutBtn) {
+            logoutBtn.addEventListener('click', () => {
+                this.logoutManager.handleLogout();
+            });
+        }
+    }
+}
+
+
+document.addEventListener('DOMContentLoaded', function() {
+    const app = new BaseApp();
+    app.initialize();
+    // Make dark mode manager available globally for inline onclick handler
+    window.baseApp = app;
+});
 
 // Create global notification manager instance
 window.notifications = new NotificationManager();
