@@ -11,10 +11,7 @@ This handler handles: /<provider>-token-exchange
 
 # builtins
 from abc import abstractmethod
-import asyncio
-from typing import Dict, Any, Optional
-
-from src.db_ops.subscription_db_ops import get_or_create_free_subscription
+from typing import Optional
 
 # local
 from src.common.config import (
@@ -26,34 +23,44 @@ from src.common.config import (
 
 # modules
 import httpx
-from browseterm_db.models.users import AuthProvider
+
+# dtos
+from src.authentication.dto.oauth_credentials_dto import OAuthCredentialsModel
+from src.authentication.dto.token_exchange_dto import TokenExchangeResponseModel
+from src.authentication.dto.user_info_dto import UserInfoModel
+
+# transformers
+from src.authentication.data_transformers.token_exchange_transformer import TokenExchangeTransformer
+from src.authentication.data_transformers.google_user_info_transformer import GoogleUserInfoTransformer
+from src.authentication.data_transformers.github_user_info_transformer import GithubUserInfoTransformer
 
 
 class OAuthTokenExchangeService:
 
-    def __init__(self, client_id: str, client_secret: str, redirect_uri: str, access_token_url: str, token_exchange_headers: dict) -> None:
+    def __init__(self, credentials: OAuthCredentialsModel) -> None:
         '''
         Initialize the OAuth token exchange service.
         '''
-        self.client_id: str = client_id
-        self.client_secret: str = client_secret
-        self.redirect_uri: str = redirect_uri
-        self.access_token_url: str = access_token_url
-        self.token_exchange_headers: dict = token_exchange_headers
+        self.credentials: OAuthCredentialsModel = credentials
 
-    async def exchange_token(self, code: str) -> Optional[Dict[str, Any]]:
+    async def exchange_token(self, code: str) -> Optional[TokenExchangeResponseModel]:
         '''
         Exchange token for provider.
+        Returns TokenExchangeResponseModel or None on failure
         '''
         token_data: dict = {
             'grant_type': 'authorization_code',
             'code': code,
-            'client_id': self.client_id,
-            'client_secret': self.client_secret,
-            'redirect_uri': self.redirect_uri
+            'client_id': self.credentials.client_id,
+            'client_secret': self.credentials.client_secret,
+            'redirect_uri': self.credentials.redirect_uri
         }
         async with httpx.AsyncClient() as client:
-            response: httpx.Response = await client.post(self.access_token_url, data=token_data, headers=self.token_exchange_headers)
+            response: httpx.Response = await client.post(
+                self.credentials.access_token_url, 
+                data=token_data, 
+                headers=self.credentials.token_exchange_headers
+            )
             if response.status_code != 200:
                 print(f"Token exchange failed: {response.status_code}")
                 return None
@@ -62,55 +69,54 @@ class OAuthTokenExchangeService:
             if not access_token:
                 print("No access token received")
                 return None
-            return {
-                'access_token': access_token,
-                'refresh_token': token_result.get('refresh_token'),
-                'expires_in': token_result.get('expires_in')
-            }
+            # Transform to DTO
+            return TokenExchangeTransformer.transform(token_result)
 
 
 class OAuthUserInfoService:
 
     @abstractmethod
-    async def get_credentials(self, code: str) -> Optional[Dict[str, Any]]:
+    async def get_credentials(self, code: str) -> Optional[OAuthCredentialsModel]:
         '''
-        Exchange token for provider. To be implemented by the subclass.
+        Get OAuth credentials for provider. To be implemented by the subclass.
         '''
         raise NotImplementedError("Please implement get_credentials!")
 
     @abstractmethod
-    def format_user_info(self, user_info: dict) -> dict:
+    def transform_user_info(self, user_info: dict) -> UserInfoModel:
         '''
-        Format user info from provider. To be implemented by the subclass.
+        Transform user info from provider to UserInfoModel. To be implemented by the subclass.
         '''
-        raise NotImplementedError("Please implement get_user_info!")
+        raise NotImplementedError("Please implement transform_user_info!")
 
-    @abstractmethod
-    async def fetch_user_info(self, code: str) -> dict:
+    async def fetch_user_info(self, code: str) -> Optional[UserInfoModel]:
         '''
         1. Get the user info from the provider.
-        2. Get the subscription info from the database.
+        2. Transform to standardized UserInfoModel
+        Returns None if credentials or token exchange fails, raises exception for other errors
         '''
         try:
-            credentials: Optional[Dict[str, Any]] = await self.get_credentials(code)
+            credentials: Optional[OAuthCredentialsModel] = await self.get_credentials(code)
             if not credentials:
-                raise ValueError("Credentials not found for provider.")
-            token_info: Optional[Dict[str, Any]] = await OAuthTokenExchangeService(
-                client_id=credentials['client_id'],
-                client_secret=credentials['client_secret'],
-                redirect_uri=credentials['redirect_uri'],
-                access_token_url=credentials['access_token_url'],
-                token_exchange_headers=credentials['token_exchange_headers']
-            ).exchange_token(code)
+                print("Credentials not found for provider.")
+                return None
+            # Exchange token
+            token_service: OAuthTokenExchangeService = OAuthTokenExchangeService(credentials)
+            token_info: Optional[TokenExchangeResponseModel] = await token_service.exchange_token(code)
             if not token_info:
-                raise ValueError("Token info not found for provider.")
-            access_token: str = token_info.get('access_token')
-            if not access_token:
-                raise ValueError("Access token not found for provider.")
+                print("Token info not found for provider.")
+                return None
+            # Fetch user info from provider API
             async with httpx.AsyncClient() as client:
                 user_response: httpx.Response = await client.get(
-                    credentials['user_info_url'], headers={'Authorization': f'Bearer {access_token}'})
-                return self.format_user_info(user_response.json())
+                    credentials.user_info_url, 
+                    headers={'Authorization': f'Bearer {token_info.access_token}'}
+                )
+                if user_response.status_code != 200:
+                    print(f"Failed to fetch user info: {user_response.status_code}")
+                    return None
+                # Transform to UserInfoModel
+                return self.transform_user_info(user_response.json())
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
         except Exception as e:
@@ -119,42 +125,30 @@ class OAuthUserInfoService:
 
 
 class GoogleUserInfoService(OAuthUserInfoService):
-    async def get_credentials(self, code: str) -> Optional[Dict[str, Any]]:
-        return {
-            'client_id': GOOGLE_CLIENT_ID,
-            'client_secret': GOOGLE_CLIENT_SECRET,
-            'redirect_uri': GOOGLE_AUTH_REDIRECT_URI,
-            'access_token_url': GOOGLE_ACCESS_TOKEN_URL,
-            'user_info_url': GOOGLE_USER_INFO_URL,
-            'token_exchange_headers': GOOGLE_TOKEN_EXCHANGE_HEADERS
-        }
+    async def get_credentials(self, code: str) -> Optional[OAuthCredentialsModel]:
+        return OAuthCredentialsModel(
+            client_id=GOOGLE_CLIENT_ID,
+            client_secret=GOOGLE_CLIENT_SECRET,
+            redirect_uri=GOOGLE_AUTH_REDIRECT_URI,
+            access_token_url=GOOGLE_ACCESS_TOKEN_URL,
+            user_info_url=GOOGLE_USER_INFO_URL,
+            token_exchange_headers=GOOGLE_TOKEN_EXCHANGE_HEADERS
+        )
 
-    def format_user_info(self, user_info: dict) -> dict:
-        return {
-            'provider_id': user_info.get('id'),
-            'name': user_info.get('name'),
-            'email': user_info.get('email'),
-            'profile_picture_url': user_info.get('picture'),
-            'provider': AuthProvider.GOOGLE
-        }
+    def transform_user_info(self, user_info: dict) -> UserInfoModel:
+        return GoogleUserInfoTransformer.transform(user_info)
 
 
 class GithubUserInfoService(OAuthUserInfoService):
-    async def get_credentials(self, code: str) -> Optional[Dict[str, Any]]:
-        return {
-            'client_id': GITHUB_CLIENT_ID,
-            'client_secret': GITHUB_CLIENT_SECRET,
-            'redirect_uri': GITHUB_AUTH_REDIRECT_URI,
-            'access_token_url': GITHUB_ACCESS_TOKEN_URL,
-            'user_info_url': GITHUB_USER_INFO_URL,
-            'token_exchange_headers': GITHUB_TOKEN_EXCHANGE_HEADERS
-        }
+    async def get_credentials(self, code: str) -> Optional[OAuthCredentialsModel]:
+        return OAuthCredentialsModel(
+            client_id=GITHUB_CLIENT_ID,
+            client_secret=GITHUB_CLIENT_SECRET,
+            redirect_uri=GITHUB_AUTH_REDIRECT_URI,
+            access_token_url=GITHUB_ACCESS_TOKEN_URL,
+            user_info_url=GITHUB_USER_INFO_URL,
+            token_exchange_headers=GITHUB_TOKEN_EXCHANGE_HEADERS
+        )
 
-    def format_user_info(self, user_info: dict) -> dict:
-        return {
-            'provider_id': str(user_info.get('id')),
-            'name': user_info.get('name'),
-            'email': user_info.get('email'),
-            'profile_picture_url': user_info.get('avatar_url'),
-            'provider': AuthProvider.GITHUB
-        }
+    def transform_user_info(self, user_info: dict) -> UserInfoModel:
+        return GithubUserInfoTransformer.transform(user_info)

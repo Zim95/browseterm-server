@@ -10,21 +10,21 @@ from fastapi.responses import HTMLResponse, Response
 import json
 
 
-from src.containers.containers_service import ContainerMakerClient
+from src.containers.containers_service import ContainerService
 from src.containers.dto.create_container_dto import CreateContainerModel
 from src.containers.dto.container_response_dto import ContainerResponseModel
 
-from src.data_models.auth import TokenExchangeRequest
 from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.common.config import (
     GOOGLE_CLIENT_ID, GOOGLE_AUTH_META_URL, GOOGLE_AUTH_SCOPE, GOOGLE_AUTH_REDIRECT_URI,
     GITHUB_CLIENT_ID, GITHUB_AUTH_META_URL, GITHUB_AUTH_SCOPE, GITHUB_AUTH_REDIRECT_URI
 )
 from src.authentication.authentication_helpers import authenticate_session
-from src.authentication.oauth_service import GoogleUserInfoService, GithubUserInfoService
-from src.common.config import REDIS_SESSION_EXPIRY
-from src.authentication.authentication_helpers import process_user_info
-from src.db_ops.subscription_db_ops import list_all_existing_subscription_types, get_or_create_free_subscription
+from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
+from src.db_ops.subscription_db_ops import list_all_existing_subscription_types
+
+# dtos
+from src.authentication.dto.token_exchange_dto import TokenExchangeRequestModel
 
 
 templates = Jinja2Templates(directory="templates")
@@ -142,92 +142,31 @@ async def github_login_redirect(request: Request) -> HTMLResponse:
     return templates.TemplateResponse("github_login_redirect.html", {"request": request})
 
 
-async def google_token_exchange(request: TokenExchangeRequest) -> Response:
+async def google_token_exchange(request: TokenExchangeRequestModel) -> Response:
     '''
     Exchange Google OAuth code for tokens, fetch user details and create session.
+    Uses GoogleAuthenticationService following Open-Closed Principle.
     '''
-    try:
-        user_info: dict = await GoogleUserInfoService().fetch_user_info(request.code)
-        if not user_info:
-            raise HTTPException(status_code=400, detail="Failed to exchange Google token")
-        response_data: dict = await process_user_info(user_info)
-        if not response_data['session_id']:
-            raise HTTPException(status_code=500, detail="Failed to create session")
-        response = Response(
-            content=json.dumps(response_data),
-            media_type="application/json",
-            status_code=200
-        )
-        response.set_cookie(
-            key="session",
-            value=response_data['session_id'],
-            max_age=REDIS_SESSION_EXPIRY,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-        return response
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Google token exchange error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    auth_service: GoogleAuthenticationService = GoogleAuthenticationService()
+    return await auth_service.login(request)
 
 
-async def github_token_exchange(request: TokenExchangeRequest) -> Response:
+async def github_token_exchange(request: TokenExchangeRequestModel) -> Response:
     '''
     Exchange GitHub OAuth code for tokens and create session.
+    Uses GithubAuthenticationService following Open-Closed Principle.
     '''
-    try:
-        user_info = await GithubUserInfoService().fetch_user_info(request.code)
-        if not user_info:
-            raise HTTPException(status_code=400, detail="Failed to exchange GitHub token")
-        response_data: dict = await process_user_info(user_info)
-        if not response_data['session_id']:
-            raise HTTPException(status_code=500, detail="Failed to create session")
-        response = Response(
-            content=json.dumps(response_data),
-            media_type="application/json",
-            status_code=200
-        )
-        response.set_cookie(
-            key="session",
-            value=response_data['session_id'],
-            max_age=REDIS_SESSION_EXPIRY,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-        return response
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"GitHub token exchange error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    auth_service: GithubAuthenticationService = GithubAuthenticationService()
+    return await auth_service.login(request)
 
 
 async def logout() -> Response:
     '''
     Logout user by clearing session cookie and removing from Redis.
+    Uses GoogleAuthenticationService (can use any auth service for logout).
     '''
-    try:
-        response = Response(
-            content=json.dumps({"message": "Logged out successfully"}),
-            media_type="application/json",
-            status_code=200
-        )
-        response.set_cookie(
-            key="session",
-            value="",
-            max_age=0,
-            httponly=True,
-            secure=True,
-            samesite="strict"
-        )
-        return response
-    except Exception as e:
-        print(f"Logout error: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+    auth_service: GoogleAuthenticationService = GoogleAuthenticationService()
+    return await auth_service.logout()
 
 
 ############################################ API ROUTES ############################################
@@ -246,7 +185,7 @@ async def create_container(request: CreateContainerModel) -> ContainerResponseMo
     '''
     try:
         # create a container maker client
-        container_maker_client: ContainerMakerClient = ContainerMakerClient()
+        container_maker_client: ContainerService = ContainerService()
         # create a container
         container_response_model: ContainerResponseModel = await container_maker_client.create_container(request)
         # return the response

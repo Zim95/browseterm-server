@@ -12,12 +12,17 @@ from src.authentication.session_manager import RedisSessionManager
 from src.db_ops.user_db_ops import create_or_update_user
 from src.db_ops.subscription_db_ops import get_or_create_free_subscription, get_current_subscription_plan
 
+# dtos
+from src.authentication.dto.session_dto import SessionDataModel, SessionResponseModel, SessionValidationModel
+from src.authentication.dto.user_info_dto import UserInfoModel
+from src.authentication.data_transformers.session_transformer import SessionInputTransformer, SessionResponseTransformer
 
-def create_session(session_payload: Dict[str, Any]) -> str:
+
+def create_session(session_data: SessionDataModel) -> str:
     '''
     Create a session for the user.
     Args:
-        session_payload: Dictionary containing session information
+        session_data: SessionDataModel containing session information
     Returns:
         str: Session ID
     Raises:
@@ -25,7 +30,7 @@ def create_session(session_payload: Dict[str, Any]) -> str:
     '''
     try:
         session_manager: RedisSessionManager = RedisSessionManager()
-        session_id: str = session_manager.create_session(session_payload)
+        session_id: str = session_manager.create_session(session_data)
         return session_id
     except Exception as e:
         print(f"Error creating session: {e}")
@@ -47,35 +52,40 @@ def extend_session(session_id: str, expiry: int | None = None) -> None:
         raise Exception(f"Error extending session: {str(e)}")
 
 
-async def process_user_info(user_info: Dict[str, Any]) -> Dict[str, Any]:
+async def process_user_info(user_info: UserInfoModel) -> SessionResponseModel:
     '''
     Process user info.
     1. Create or update the user in the database
     2. Get or create a free subscription for the user
-    2. Create a session for the user
+    3. Create a session for the user
     Args:
-        user_info: Dictionary containing user information
+        user_info: UserInfoModel containing user information
     Returns:
-        Dict containing user info and session id
+        SessionResponseModel containing user info and session id
     Raises:
         Exception: If session creation fails
     '''
     try:
-        updated_user_info: Dict[str, Any] = await asyncio.to_thread(create_or_update_user, user_info)
+        # Convert UserInfoModel to dict for database operations
+        user_info_dict: Dict[str, Any] = user_info.model_dump()
+        # Database operations
+        updated_user_info: Dict[str, Any] = await asyncio.to_thread(create_or_update_user, user_info_dict)
         subscription_info: Dict[str, Any] = await asyncio.to_thread(get_or_create_free_subscription, updated_user_info['id'])
         current_subscription_plan: Dict[str, Any] = await asyncio.to_thread(get_current_subscription_plan, subscription_info['id'], subscription_info['subscription_type_id'])
-        session_payload: Dict[str, Any] = {
+        # Create session data model
+        session_data: SessionDataModel = SessionInputTransformer.transform({
             'user_info': updated_user_info,
             'subscription_info': subscription_info,
             'current_subscription_plan': current_subscription_plan
-        }
-        session_id: str = await asyncio.to_thread(create_session, session_payload)
-        return {
-            'user_info': session_payload.get('user_info'),
-            'subscription_info': session_payload.get('subscription_info'),
-            'current_subscription_plan': session_payload.get('current_subscription_plan'),
-            'session_id': session_id
-        }
+        })
+        # Create session
+        session_id: str = await asyncio.to_thread(create_session, session_data)
+        # Return SessionResponseModel
+        return SessionResponseTransformer.transform(session_id, {
+            'user_info': updated_user_info,
+            'subscription_info': subscription_info,
+            'current_subscription_plan': current_subscription_plan
+        })
     except Exception as e:
         print(f"Error processing user info: {e}")
         raise Exception(f"Error processing user info: {str(e)}")
@@ -93,28 +103,22 @@ def authenticate_session(func: callable) -> callable:
         session_id: str = request.cookies.get('session')
         if not session_id:
             return RedirectResponse(url="/login", status_code=302)
+
         session_manager: RedisSessionManager = RedisSessionManager()
-        session_ttl: int = session_manager.get_session_ttl(session_id)
-        # session does not exist
-        if session_ttl == -2:
+
+        # Validate session using the new validate_session method
+        validation: SessionValidationModel = session_manager.validate_session(session_id)
+
+        if not validation.is_valid or not validation.session_data:
             return RedirectResponse(url="/login", status_code=302)
-        # session exists but has expired (ttl == 0)
-        if session_ttl == 0:
-            session_manager.delete_session(session_id)
-            return RedirectResponse(url="/login", status_code=302)
-        # session exists and is valid (ttl > 0 or ttl == -1)
-        session: Optional[Dict[str, Any]] = session_manager.get_session(session_id)
-        user_info: Optional[Dict[str, Any]] = session.get('user_info')
-        subscription_info: Optional[Dict[str, Any]] = session.get('subscription_info')
-        current_subscription_plan: Optional[Dict[str, Any]] = session.get('current_subscription_plan')
-        if not user_info:
-            session_manager.delete_session(session_id)
-            return RedirectResponse(url="/login", status_code=302)
-        extend_session(session_id, expiry=1800) # 30 minutes
-        # add user info and session id to request.state
-        request.state.user_info = user_info
-        request.state.subscription_info = subscription_info
-        request.state.current_subscription_plan = current_subscription_plan
+
+        # Session is valid, extend it
+        extend_session(session_id, expiry=1800)  # 30 minutes
+
+        # Add session data to request.state
+        request.state.user_info = validation.session_data.user_info
+        request.state.subscription_info = validation.session_data.subscription_info
+        request.state.current_subscription_plan = validation.session_data.current_subscription_plan
         request.state.session_id = session_id
         return await func(*args, **kwargs)
     return wrapper

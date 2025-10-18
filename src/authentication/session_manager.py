@@ -17,6 +17,8 @@ from src.common.config import (
     REDIS_USERNAME, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD, REDIS_DB, 
     REDIS_SESSION_PREFIX, REDIS_SESSION_EXPIRY
 )
+from src.authentication.dto.session_dto import SessionDataModel, SessionValidationModel
+from src.authentication.enum.session_status_enum import SessionStatus
 
 
 class RedisSessionManager:
@@ -37,60 +39,61 @@ class RedisSessionManager:
         """Generate a unique session ID."""
         return str(uuid.uuid4())
 
-    def create_session(self, user_info: Dict[str, Any]) -> str:
+    def create_session(self, session_data: SessionDataModel) -> str:
         """
-        Create a new session with encoded user info.
+        Create a new session with encoded session data.
         Args:
-            user_info: Dictionary containing user information
+            session_data: SessionDataModel containing user info, subscription info, etc.
         Returns:
             str: Session ID
         """
         session_id: str = self.generate_session_id()
         session_key: str = f"{self.session_prefix}{session_id}"
-        # Encode user info as JSON
-        encoded_user_info: str = json.dumps(user_info)
+        # Convert Pydantic model to dict and encode as JSON
+        encoded_session_data: str = json.dumps(session_data.model_dump())
         # Store in Redis with expiry
         self.redis_client.setex(
             name=session_key, 
             time=self.session_expiry, 
-            value=encoded_user_info
+            value=encoded_session_data
         )
         return session_id
 
-    def get_session(self, session_id: str) -> Optional[Dict[str, Any]]:
+    def get_session(self, session_id: str) -> Optional[SessionDataModel]:
         """
-        Retrieve user info from session.
+        Retrieve session data from session.
         Args:
             session_id: Session ID to retrieve
         Returns:
-            Dict containing user info or None if not found
+            SessionDataModel or None if not found
         """
         session_key: str = f"{self.session_prefix}{session_id}"
         try:
-            encoded_user_info: str = self.redis_client.get(session_key)
-            if encoded_user_info:
-                return json.loads(encoded_user_info)
+            encoded_session_data: str = self.redis_client.get(session_key)
+            if encoded_session_data:
+                session_dict: dict = json.loads(encoded_session_data)
+                return SessionDataModel(**session_dict)
             return None
         except (json.JSONDecodeError, redis.RedisError) as e:
             print(f"Error retrieving session {session_id}: {e}")
             return None
 
-    def update_session(self, session_id: str, user_info: Dict[str, Any]) -> bool:
+    def update_session(self, session_id: str, session_data: SessionDataModel) -> bool:
         """
-        Update existing session with new user info.
+        Update existing session with new session data.
         Args:
             session_id: Session ID to update
-            user_info: New user information
+            session_data: New session data
         Returns:
             bool: True if successful, False otherwise
         """
         session_key: str = f"{self.session_prefix}{session_id}"
         try:
-            encoded_user_info: str = json.dumps(user_info)
+            encoded_session_data: str = json.dumps(session_data.model_dump())
             self.redis_client.setex(
                 name=session_key, 
                 time=self.session_expiry, 
-                value=encoded_user_info
+                value=encoded_session_data
             )
             return True
         except (json.JSONDecodeError, redis.RedisError) as e:
@@ -145,6 +148,28 @@ class RedisSessionManager:
         except redis.RedisError as e:
             print(f"Error checking session {session_id}: {e}")
             return -2
+
+    def validate_session(self, session_id: str) -> SessionValidationModel:
+        """
+        Validate a session and return its status and data.
+        Args:
+            session_id: Session ID to validate
+        Returns:
+            SessionValidationModel with validation result
+        """
+        ttl: int = self.get_session_ttl(session_id)
+        # Session doesn't exist
+        if ttl == -2:
+            return SessionValidationModel(is_valid=False, session_data=None, ttl=ttl)
+        # Session expired (ttl == 0)
+        if ttl == 0:
+            self.delete_session(session_id)
+            return SessionValidationModel(is_valid=False, session_data=None, ttl=ttl)
+        # Session is valid (ttl > 0 or ttl == -1)
+        session_data: Optional[SessionDataModel] = self.get_session(session_id)
+        if not session_data:
+            return SessionValidationModel(is_valid=False, session_data=None, ttl=ttl)        
+        return SessionValidationModel(is_valid=True, session_data=session_data, ttl=ttl)
 
 
 # Global session manager instance
