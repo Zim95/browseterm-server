@@ -1,189 +1,383 @@
-// User Profile JavaScript
-console.log('User profile page loaded successfully!');
+/**
+ * ProfileUtilities
+ * Utility methods for profile page functionality
+ */
+class ProfileUtilities {
+    /**
+     * Get user data from window object (passed from backend template)
+     * @returns {Object} User data object
+     */
+    static getUserDataFromTemplate() {
+        const userInfo = window.userInfo || {};
+        return {
+            name: userInfo.name || 'Unknown User',
+            email: userInfo.email || 'No email',
+            profile_picture_url: userInfo.profile_picture_url || null
+        };
+    }
 
-// Get user info from template (passed from backend)
-const userInfo = window.userInfo || {}
-const currentSubscriptionPlan = window.currentSubscriptionPlan || {};
+    /**
+     * Get current subscription plan from window object
+     * @returns {Object} Subscription plan object
+     */
+    static getCurrentPlanFromTemplate() {
+        return window.currentSubscriptionPlan || {};
+    }
 
-// Function to get user data from template
-function getUserData() {
-    console.log('Getting user data from template...');
-    // Return user info from backend
-    return {
-        "user": {
-            "name": userInfo.name || "Unknown User",
-            "email": userInfo.email || "No email",
-            "profile_picture_url": userInfo.profile_picture_url || null
+    /**
+     * Validate image file
+     * @param {File} file - File to validate
+     * @returns {Object} { valid: boolean, error: string|null }
+     */
+    static validateImageFile(file) {
+        // Check if file is an image
+        if (!file.type.startsWith('image/')) {
+            return { valid: false, error: 'Please select a valid image file.' };
         }
-    };
-}
 
-// Function to simulate API call for current plan
-async function getCurrentSubscription() {
-    console.log('Fetching current subscription...');
-    return {
-        "currentPlan": currentSubscriptionPlan
+        // Check file size (max 5MB)
+        const maxSize = 5 * 1024 * 1024; // 5MB
+        if (file.size > maxSize) {
+            return { valid: false, error: 'File size must be less than 5MB.' };
+        }
+
+        return { valid: true, error: null };
+    }
+
+    /**
+     * Convert file to data URL for preview
+     * @param {File} file - File to convert
+     * @returns {Promise<string>} Data URL
+     */
+    static fileToDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target.result);
+            reader.onerror = (e) => reject(e);
+            reader.readAsDataURL(file);
+        });
+    }
+
+    /**
+     * Show notification
+     * @param {string} type - Notification type
+     * @param {string} title - Notification title
+     * @param {string} message - Notification message
+     * @param {number} duration - Duration in milliseconds
+     */
+    static showNotification(type, title, message, duration) {
+        if (typeof window.notifications === 'undefined' || window.notifications === null) {
+            console.warn('Notification system not available');
+            return;
+        }
+        if (typeof window.notifications[type] !== 'function') {
+            console.warn('Notification type not available');
+            return;
+        }
+        window.notifications[type](title, message, duration);
     }
 }
 
-// Function to load user profile data
-async function loadUserProfile() {
-    try {
-        // Get user data from template (immediate)
-        const userData = getUserData();
-
-        // Fetch current plan from API
-        const currentPlanData = await getCurrentSubscription();
-
-        console.log('User data loaded:', userData.user);
-        console.log('Current plan:', currentPlanData.currentPlan);
-
-        // Update UI with fetched data
-        updateUserProfile(userData.user, currentPlanData.currentPlan);
-    } catch (error) {
-        console.error('Error loading user profile:', error);
-        showError('Error loading user profile. Please try again.');
+/**
+ * ProfileHandler
+ * Handles user profile page functionality
+ */
+class ProfileHandler {
+    /**
+     * Initialize the profile handler
+     */
+    constructor() {
+        console.log('ProfileHandler initialized');
+        this.elements = {};
+        this.userData = null;
+        this.currentPlan = null;
     }
-}
 
-// Function to update user profile UI
-function updateUserProfile(user, currentPlan) {
-    // Update user details
-    document.getElementById('userName').textContent = user.name;
-    document.getElementById('userEmail').textContent = user.email;
-    document.getElementById('currentPlan').textContent = currentPlan.name;
+    /**
+     * Initialize profile page
+     */
+    async init() {
+        console.log('User profile page loaded successfully!');
 
-    // Update profile picture if available
-    console.log('Checking profile picture...', user.profile_picture_url);
-    if (user.profile_picture_url) {
-        const profilePhoto = document.getElementById('profilePhoto');
-        const icon = profilePhoto.querySelector('.photo-icon');
+        // Cache DOM elements
+        this.cacheElements();
+
+        // Load user profile data
+        await this.loadUserProfile();
+
+        // Setup event listeners
+        this.setupEventListeners();
+    }
+
+    /**
+     * Cache DOM elements
+     */
+    cacheElements() {
+        this.elements = {
+            userName: document.getElementById('userName'),
+            userEmail: document.getElementById('userEmail'),
+            currentPlan: document.getElementById('currentPlan'),
+            profilePhoto: document.getElementById('profilePhoto'),
+            uploadBtn: document.getElementById('uploadBtn'),
+            photoUpload: document.getElementById('photoUpload')
+        };
+    }
+
+    /**
+     * Load user profile data
+     */
+    async loadUserProfile() {
+        try {
+            console.log('Loading user profile...');
+
+            // Get user data from template
+            this.userData = ProfileUtilities.getUserDataFromTemplate();
+            console.log('User data loaded:', this.userData);
+
+            // Get current subscription plan
+            this.currentPlan = await this.getCurrentSubscription();
+            console.log('Current plan:', this.currentPlan);
+
+            // Update UI
+            this.updateUI();
+
+        } catch (error) {
+            console.error('Error loading user profile:', error);
+            this.showError('Error loading user profile. Please try again.');
+            ProfileUtilities.showNotification(
+                'error',
+                'Profile Error',
+                'Failed to load profile data',
+                5000
+            );
+        }
+    }
+
+    /**
+     * Get current subscription (simulated API call)
+     * @returns {Promise<Object>} Subscription plan object
+     */
+    async getCurrentSubscription() {
+        console.log('Fetching current subscription...');
+        // For now, just return the plan from template
+        // In the future, this could be an actual API call
+        return ProfileUtilities.getCurrentPlanFromTemplate();
+    }
+
+    /**
+     * Update UI with user data
+     */
+    updateUI() {
+        // Update text content
+        this.elements.userName.textContent = this.userData.name;
+        this.elements.userEmail.textContent = this.userData.email;
+        this.elements.currentPlan.textContent = this.currentPlan.name || 'No Plan';
+
+        // Update profile picture
+        this.updateProfilePicture(this.userData.profile_picture_url);
+
+        // Remove loading states
+        this.removeLoadingStates();
+    }
+
+    /**
+     * Update profile picture
+     * @param {string|null} pictureUrl - URL of profile picture
+     */
+    updateProfilePicture(pictureUrl) {
+        console.log('Updating profile picture...', pictureUrl);
+
+        if (!pictureUrl) {
+            console.log('No profile picture URL provided');
+            return;
+        }
+
+        // Remove icon if exists
+        const icon = this.elements.profilePhoto.querySelector('.photo-icon');
         if (icon) {
             icon.remove();
         }
 
-        let img = profilePhoto.querySelector('img');
+        // Get or create img element
+        let img = this.elements.profilePhoto.querySelector('img');
         if (!img) {
             img = document.createElement('img');
-            profilePhoto.appendChild(img);
-        } else {
-            console.log('Using existing img element');
+            this.elements.profilePhoto.appendChild(img);
         }
-        img.onerror = function() {
-            console.error('✗ Failed to load profile picture from:', user.profile_picture_url);
+
+        // Setup error handler
+        img.onerror = () => {
+            console.error('Failed to load profile picture from:', pictureUrl);
+            ProfileUtilities.showNotification(
+                'warning',
+                'Profile Picture',
+                'Failed to load profile picture',
+                3000
+            );
         };
-        // Set referrer policy and crossorigin for Google images
-        img.referrerPolicy = 'no-referrer'; // prevent tracking
-        img.crossOrigin = 'anonymous'; // prevent tracking
-        img.src = user.profile_picture_url;
-        img.alt = user.name;
+
+        // Set attributes for external images (Google, GitHub, etc.)
+        img.referrerPolicy = 'no-referrer';  // this is to prevent tracking - So that our profile picture gets loaded properly.
+        img.crossOrigin = 'anonymous';  // this is to prevent tracking - So that our profile picture gets loaded properly.
+        img.src = pictureUrl;
+        img.alt = this.userData.name;
+
         console.log('Profile picture updated:', img.src);
-    } else {
-        console.log('No profile picture URL provided');
     }
 
-    // Remove loading state
-    document.getElementById('userName').classList.remove('loading');
-    document.getElementById('userEmail').classList.remove('loading');
-    document.getElementById('currentPlan').classList.remove('loading');
-}
+    /**
+     * Remove loading states from elements
+     */
+    removeLoadingStates() {
+        this.elements.userName.classList.remove('loading');
+        this.elements.userEmail.classList.remove('loading');
+        this.elements.currentPlan.classList.remove('loading');
+    }
 
-// Function to show error message
-function showError(message) {
-    const userName = document.getElementById('userName');
-    const userEmail = document.getElementById('userEmail');
-    const currentPlan = document.getElementById('currentPlan');
+    /**
+     * Show error message in UI
+     * @param {string} message - Error message to display
+     */
+    showError(message) {
+        this.elements.userName.textContent = message;
+        this.elements.userEmail.textContent = message;
+        this.elements.currentPlan.textContent = message;
 
-    userName.textContent = message;
-    userEmail.textContent = message;
-    currentPlan.textContent = message;
+        this.elements.userName.classList.add('error');
+        this.elements.userEmail.classList.add('error');
+        this.elements.currentPlan.classList.add('error');
+    }
 
-    userName.classList.add('loading');
-    userEmail.classList.add('loading');
-    currentPlan.classList.add('loading');
-}
-
-// Function to handle photo upload
-function handlePhotoUpload() {
-    const fileInput = document.getElementById('photoUpload');
-    const profilePhoto = document.getElementById('profilePhoto');
-
-    fileInput.addEventListener('change', function(event) {
-        const file = event.target.files[0];
-        if (file) {
-            // Validate file type
-            if (!file.type.startsWith('image/')) {
-                alert('Please select a valid image file.');
-                return;
-            }
-
-            // Validate file size (max 5MB)
-            if (file.size > 5 * 1024 * 1024) {
-                alert('File size must be less than 5MB.');
-                return;
-            }
-
-            // Create image preview
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                // Remove icon and add image
-                const icon = profilePhoto.querySelector('.photo-icon');
-                if (icon) {
-                    icon.remove();
-                }
-
-                // Create or update image
-                let img = profilePhoto.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    profilePhoto.appendChild(img);
-                }
-                img.src = e.target.result;
-
-                console.log('Profile photo updated:', file.name);
-            };
-            reader.readAsDataURL(file);
+    /**
+     * Setup event listeners
+     */
+    setupEventListeners() {
+        // Upload button - currently disabled (coming soon)
+        if (this.elements.uploadBtn) {
+            this.elements.uploadBtn.addEventListener('click', () => {
+                this.handleUploadClick();
+            });
         }
-    });
+
+        // Profile photo click - currently disabled (coming soon)
+        if (this.elements.profilePhoto) {
+            this.elements.profilePhoto.addEventListener('click', () => {
+                this.handleProfilePhotoClick();
+            });
+        }
+
+        // File input change handler (for when upload is enabled)
+        if (this.elements.photoUpload) {
+            this.elements.photoUpload.addEventListener('change', (e) => {
+                this.handlePhotoUpload(e);
+            });
+        }
+    }
+
+    /**
+     * Handle upload button click
+     * Currently shows "Coming soon" alert
+     */
+    handleUploadClick() {
+        ProfileUtilities.showNotification(
+            'info',
+            'Coming Soon',
+            'Photo upload feature will be available soon!',
+            3000
+        );
+    }
+
+    /**
+     * Handle profile photo click
+     * Currently shows "Coming soon" alert
+     */
+    handleProfilePhotoClick() {
+        ProfileUtilities.showNotification(
+            'info',
+            'Coming Soon',
+            'Photo upload feature will be available soon!',
+            3000
+        );
+    }
+
+    /**
+     * Handle photo upload
+     * @param {Event} event - File input change event
+     */
+    async handlePhotoUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        console.log('Photo upload triggered:', file.name);
+
+        // Validate file
+        const validation = ProfileUtilities.validateImageFile(file);
+        if (!validation.valid) {
+            ProfileUtilities.showNotification(
+                'error',
+                'Invalid File',
+                validation.error,
+                5000
+            );
+            return;
+        }
+
+        try {
+            // Convert to data URL for preview
+            const dataURL = await ProfileUtilities.fileToDataURL(file);
+
+            // Update preview
+            this.updateProfilePicturePreview(dataURL);
+
+            console.log('Profile photo preview updated:', file.name);
+
+            ProfileUtilities.showNotification(
+                'success',
+                'Preview Updated',
+                'Photo preview updated. Click Save to upload.',
+                3000
+            );
+
+        } catch (error) {
+            console.error('Error processing photo:', error);
+            ProfileUtilities.showNotification(
+                'error',
+                'Upload Error',
+                'Failed to process photo. Please try again.',
+                5000
+            );
+        }
+    }
+
+    /**
+     * Update profile picture preview
+     * @param {string} dataURL - Data URL of image
+     */
+    updateProfilePicturePreview(dataURL) {
+        // Remove icon if exists
+        const icon = this.elements.profilePhoto.querySelector('.photo-icon');
+        if (icon) {
+            icon.remove();
+        }
+
+        // Get or create img element
+        let img = this.elements.profilePhoto.querySelector('img');
+        if (!img) {
+            img = document.createElement('img');
+            this.elements.profilePhoto.appendChild(img);
+        }
+
+        // Set attributes for external images (Google, GitHub, etc.)
+        img.referrerPolicy = 'no-referrer';  // this is to prevent tracking - So that our profile picture gets loaded properly.
+        img.crossOrigin = 'anonymous';  // this is to prevent tracking - So that our profile picture gets loaded properly.
+        img.src = dataURL;
+        img.alt = 'Profile Preview';
+    }
 }
 
-// Function to attach event listeners
-function attachEventListeners() {
-    // Upload button click - commented out for now
-    const uploadBtn = document.getElementById('uploadBtn');
-    const fileInput = document.getElementById('photoUpload');
-
-    uploadBtn.addEventListener('click', function() {
-        alert('Coming soon');
-    });
-
-    /* Commented out - original button click implementation
-    uploadBtn.addEventListener('click', function() {
-        fileInput.click();
-    });
-    */
-
-    // Profile photo click - commented out for now
-    const profilePhoto = document.getElementById('profilePhoto');
-    profilePhoto.addEventListener('click', function() {
-        alert('Coming soon');
-    });
-
-    /* Commented out - original profile photo click implementation
-    profilePhoto.addEventListener('click', function() {
-        fileInput.click();
-    });
-    */
-
-    // Handle photo upload - commented out since button clicks are disabled
-    // handlePhotoUpload();
-}
-
-// Initialize when DOM is loaded
+// Initialize profile handler when DOM is ready
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('User profile DOM is ready');
-    // Load user profile data
-    loadUserProfile();
-    // Attach event listeners
-    attachEventListeners();
+    console.log('User profile class DOM is ready');
+    const profileHandler = new ProfileHandler();
+    profileHandler.init();
 });
