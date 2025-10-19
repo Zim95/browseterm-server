@@ -211,7 +211,6 @@ class SubscriptionHandler {
      */
     buildFeaturesHTML(plan, cpuDisplay, memoryDisplay) {
         const containerText = plan.max_containers > 1 ? 's' : '';
-        
         return `
             <div class="feature">
                 <span class="feature-icon">⌨</span>
