@@ -126,3 +126,11 @@ async def github_login_redirect(request: Request) -> HTMLResponse:
     Github login redirect page template.
     '''
     return templates.TemplateResponse("github_login_redirect.html", {"request": request})
+
+
+async def js_test(request: Request) -> HTMLResponse:
+    '''
+    JavaScript test runner page.
+    Hidden route - not in sidebar navigation.
+    '''
+    return templates.TemplateResponse("js_test.html", {"request": request})

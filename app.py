@@ -4,7 +4,8 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 # local
-import src.handlers as handlers
+import src.template_handlers as template_handlers
+import src.api_handlers as api_handlers
 
 
 app = FastAPI()
@@ -13,29 +14,30 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="templates/static"), name="static")
 
 # health checkup
-app.add_api_route(path="/echo", endpoint=handlers.echo, methods=["POST"])
+app.add_api_route(path="/echo", endpoint=api_handlers.echo, methods=["POST"])
 
-# template routes
-app.add_api_route(path="/", endpoint=handlers.home, methods=["GET"])
-app.add_api_route(path="/terminals", endpoint=handlers.terminals, methods=["GET"])
-app.add_api_route(path="/terminalpage", endpoint=handlers.terminalpage, methods=["GET"])
-app.add_api_route(path="/subscriptions", endpoint=handlers.subscriptions, methods=["GET"])
-app.add_api_route(path="/profile", endpoint=handlers.profile, methods=["GET"])
-app.add_api_route(path="/login", endpoint=handlers.login, methods=["GET"])
+# application templates
+app.add_api_route(path="/", endpoint=template_handlers.home, methods=["GET"])
+app.add_api_route(path="/terminals", endpoint=template_handlers.terminals, methods=["GET"])
+app.add_api_route(path="/terminalpage", endpoint=template_handlers.terminalpage, methods=["GET"])
+app.add_api_route(path="/subscriptions", endpoint=template_handlers.subscriptions, methods=["GET"])
+app.add_api_route(path="/profile", endpoint=template_handlers.profile, methods=["GET"])
+app.add_api_route(path="/login", endpoint=template_handlers.login, methods=["GET"])
 
-# authentication routes
-app.add_api_route(path="/google-login-redirect", endpoint=handlers.google_login_redirect, methods=["GET"])
-app.add_api_route(path="/github-login-redirect", endpoint=handlers.github_login_redirect, methods=["GET"])
+# authentication templates
+app.add_api_route(path="/google-login-redirect", endpoint=template_handlers.google_login_redirect, methods=["GET"])
+app.add_api_route(path="/github-login-redirect", endpoint=template_handlers.github_login_redirect, methods=["GET"])
 
-# OAuth token exchange routes
-app.add_api_route(path="/google-token-exchange", endpoint=handlers.google_token_exchange, methods=["POST"])
-app.add_api_route(path="/github-token-exchange", endpoint=handlers.github_token_exchange, methods=["POST"])
+# hidden routes (not in sidebar)
+app.add_api_route(path="/js-test", endpoint=template_handlers.js_test, methods=["GET"])
 
-# Logout route
-app.add_api_route(path="/logout", endpoint=handlers.logout, methods=["POST"])
+# authentication apis
+app.add_api_route(path="/google-token-exchange", endpoint=api_handlers.google_token_exchange, methods=["POST"])
+app.add_api_route(path="/github-token-exchange", endpoint=api_handlers.github_token_exchange, methods=["POST"])
+app.add_api_route(path="/logout", endpoint=api_handlers.logout, methods=["POST"])
 
-# containers
-app.add_api_route(path="/create_container", endpoint=handlers.create_container, methods=["POST"])
+# container apis
+app.add_api_route(path="/create_container", endpoint=api_handlers.create_container, methods=["POST"])
 # app.add_api_route(path="/list_container", endpoint=handlers.list_container, methods=["GET"])
 # app.add_api_route(path="/get_container", endpoint=handlers.get_container, methods=["GET"])
 # app.add_api_route(path="/delete_container", endpoint=handlers.delete_container, methods=["DELETE"])
