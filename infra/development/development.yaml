@@ -54,6 +54,10 @@ spec:
         ports:
         - containerPort: 9999
         env:
+        - name: CONTAINER_MAKER_HOST
+          value: "${CONTAINER_MAKER_DEVELOPMENT_HOST}"
+        - name: CONTAINER_MAKER_PORT
+          value: "${CONTAINER_MAKER_DEVELOPMENT_PORT}"
         - name: CONTAINER_MAKER_SERVER_KEY
           valueFrom:
             secretKeyRef:
