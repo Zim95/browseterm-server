@@ -1,4 +1,6 @@
 # modules
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -6,9 +8,21 @@ import uvicorn
 # local
 import src.template_handlers as template_handlers
 import src.api_handlers as api_handlers
+from src.status_listener import status_listener_service
 
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Startup and shutdown events for the application."""
+    # Startup: Start the status listener service
+    loop = asyncio.get_event_loop()
+    status_listener_service.start(loop)
+    yield
+    # Shutdown: Stop the status listener service
+    status_listener_service.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="templates/static"), name="static")
@@ -37,10 +51,15 @@ app.add_api_route(path="/github-token-exchange", endpoint=api_handlers.github_to
 app.add_api_route(path="/logout", endpoint=api_handlers.logout, methods=["POST"])
 
 # container apis
-app.add_api_route(path="/create_container", endpoint=api_handlers.create_container, methods=["POST"])
-# app.add_api_route(path="/list_container", endpoint=handlers.list_container, methods=["GET"])
-# app.add_api_route(path="/get_container", endpoint=handlers.get_container, methods=["GET"])
-# app.add_api_route(path="/delete_container", endpoint=handlers.delete_container, methods=["DELETE"])
+app.add_api_route(path="/create-container-in-db", endpoint=api_handlers.create_container_in_db, methods=["POST"])
+app.add_api_route(path="/create-container-in-k8s", endpoint=api_handlers.create_container_in_k8s, methods=["POST"])
+app.add_api_route(path="/update-container", endpoint=api_handlers.update_container, methods=["POST"])
+app.add_api_route(path="/list-user-containers", endpoint=api_handlers.list_user_containers, methods=["GET"])
+app.add_api_route(path="/delete-container-in-db", endpoint=api_handlers.delete_container_in_db, methods=["POST"])
+app.add_api_route(path="/delete-container-in-k8s", endpoint=api_handlers.delete_container_in_k8s, methods=["POST"])
+
+# SSE endpoints for real-time updates
+app.add_api_route(path="/container-status-stream", endpoint=api_handlers.container_status_sse, methods=["GET"])
 
 
 if __name__ == "__main__":

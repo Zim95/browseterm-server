@@ -1,4 +1,7 @@
+from ast import Dict
 import time
+from typing import Any
+import re
 
 # kubernetes
 from kubernetes import client, config
@@ -7,6 +10,9 @@ from kubernetes.client.rest import ApiException
 # common
 from src.common.config import CERT_MANAGER_CRON_JOB_NAME
 from src.common.config import CERT_MANAGER_CRON_JOB_NAMESPACE
+from src.db_ops.container_db_ops import list_user_containers
+from src.db_ops.subscription_db_ops import get_user_current_subscription_plan
+from src.db_ops.dto.subscription_dto import GetUserSubscriptionPlanModel
 
 
 class CertificateUtils:
@@ -131,3 +137,65 @@ class CertificateUtils:
         except ApiException as e:
             print(f"Error deleting secret: {e}")
             raise
+
+
+async def is_user_within_container_limit(user_id: str) -> Dict:
+    '''
+    Check if the user is within the container limit.
+    Args:
+        user_id: User ID
+    Returns:
+        Dict containing the container limit information
+    Raises:
+        Exception: If database operation fails
+    '''
+    try:
+        # get the current subscription plan of the user and get the max containers a user can have.
+        current_subscription_plan: Dict[str, Any] = await get_user_current_subscription_plan(GetUserSubscriptionPlanModel(user_id=user_id))
+        current_subscription_plan_max_containers: int = current_subscription_plan['max_containers']
+        # get the number of containers the user has
+        number_of_containers: int = len(await list_user_containers(user_id))
+        # return True if the user is within the container limit, False otherwise
+        return {
+            'is_within_limit': number_of_containers < current_subscription_plan_max_containers,
+            'number_of_containers': number_of_containers,
+            'current_subscription_plan_max_containers': current_subscription_plan_max_containers
+        }
+    except Exception as e:
+        print(f"Error checking user container limit: {e}")
+        raise Exception(f"Error checking user container limit: {str(e)}")
+
+
+def sanitize_container_name(container_name: str) -> str:
+    '''
+    Sanitize the container name for Kubernetes compatibility.
+    - Convert to lowercase
+    - Replace spaces and underscores with hyphens
+    - Remove special characters (keep only alphanumeric and hyphens)
+    
+    Args:
+        container_name: Container name
+        
+    Returns:
+        Sanitized container name safe for Kubernetes
+        
+    Raises:
+        Exception: If container name is invalid
+    '''
+    try:
+        if not container_name or not isinstance(container_name, str):
+            raise Exception("Container name is invalid")
+        # Convert to lowercase and trim whitespace
+        lowered: str = container_name.strip().lower()        
+        # Replace spaces and underscores with hyphens
+        hyphenated: str = lowered.replace(' ', '-').replace('_', '-')
+        # Remove special characters (keep only alphanumeric and hyphens)
+        sanitized: str = re.sub(r'[^a-z0-9-]', '', hyphenated)
+        # Ensure it starts and ends with alphanumeric characters
+        sanitized = re.sub(r'^-+|-+$', '', sanitized)  # Remove leading/trailing hyphens
+        if not sanitized:
+            sanitized = 'container'  # Fallback if name becomes empty
+        return sanitized
+    except Exception as e:
+        print(f"Error sanitizing container name: {e}")
+        raise Exception(f"Error sanitizing container name: {str(e)}")

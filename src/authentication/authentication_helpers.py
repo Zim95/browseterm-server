@@ -16,6 +16,8 @@ from src.db_ops.subscription_db_ops import get_or_create_free_subscription, get_
 from src.authentication.dto.session_dto import SessionDataModel, SessionResponseModel, SessionValidationModel
 from src.authentication.dto.user_info_dto import UserInfoModel
 from src.authentication.data_transformers.session_transformer import SessionInputTransformer, SessionResponseTransformer
+from src.db_ops.dto.user_dto import CreateOrUpdateUserModel
+from src.db_ops.dto.subscription_dto import GetOrCreateSubscriptionModel, GetSubscriptionPlanModel
 
 
 def create_session(session_data: SessionDataModel) -> str:
@@ -66,12 +68,25 @@ async def process_user_info(user_info: UserInfoModel) -> SessionResponseModel:
         Exception: If session creation fails
     '''
     try:
-        # Convert UserInfoModel to dict for database operations
-        user_info_dict: Dict[str, Any] = user_info.model_dump()
+        # Convert UserInfoModel to CreateOrUpdateUserModel for database operations
+        create_user_model = CreateOrUpdateUserModel(
+            provider_id=user_info.provider_id,
+            provider=user_info.provider.value if hasattr(user_info.provider, 'value') else user_info.provider,
+            name=user_info.name,
+            email=user_info.email,
+            profile_picture_url=user_info.profile_picture_url
+        )
         # Database operations
-        updated_user_info: Dict[str, Any] = await asyncio.to_thread(create_or_update_user, user_info_dict)
-        subscription_info: Dict[str, Any] = await asyncio.to_thread(get_or_create_free_subscription, updated_user_info['id'])
-        current_subscription_plan: Dict[str, Any] = await asyncio.to_thread(get_current_subscription_plan, subscription_info['id'], subscription_info['subscription_type_id'])
+        updated_user_info: Dict[str, Any] = await create_or_update_user(create_user_model)
+        subscription_info: Dict[str, Any] = await get_or_create_free_subscription(
+            GetOrCreateSubscriptionModel(user_id=updated_user_info['id'])
+        )
+        current_subscription_plan: Dict[str, Any] = await get_current_subscription_plan(
+            GetSubscriptionPlanModel(
+                subscription_id=subscription_info['id'],
+                subscription_type_id=subscription_info['subscription_type_id']
+            )
+        )
         # Create session data model
         session_data: SessionDataModel = SessionInputTransformer.transform({
             'user_info': updated_user_info,

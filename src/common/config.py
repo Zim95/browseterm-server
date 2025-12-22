@@ -3,20 +3,16 @@ from browseterm_db.common.config import DBConfig
 
 
 # Container Maker Config
-CONTAINER_MAKER_HOST: str = "container-maker-development-service"
-CONTAINER_MAKER_PORT: int = 50052
+CONTAINER_MAKER_HOST: str = os.getenv("CONTAINER_MAKER_HOST", "container-maker-development-service")
+CONTAINER_MAKER_PORT: int = int(os.getenv("CONTAINER_MAKER_PORT", "50052"))
 
-CONTAINER_MAKER_SERVER_KEY_FILE: str = "./cert/server.key"
-CONTAINER_MAKER_SERVER_CERT_FILE: str = "./cert/server.crt"
-CONTAINER_MAKER_CLIENT_KEY_FILE: str = "./cert/client.key"
-CONTAINER_MAKER_CLIENT_CERT_FILE: str = "./cert/client.crt"
-CONTAINER_MAKER_CA_FILE: str = "./cert/ca.crt"
-
-CONTAINER_MAKER_SERVER_CERT_ENV_VAR: str = "CONTAINER_MAKER_SERVER_CRT"
-CONTAINER_MAKER_SERVER_KEY_ENV_VAR: str = "CONTAINER_MAKER_SERVER_KEY"
-CONTAINER_MAKER_CLIENT_CERT_ENV_VAR: str = "CONTAINER_MAKER_CLIENT_CRT"
-CONTAINER_MAKER_CLIENT_KEY_ENV_VAR: str = "CONTAINER_MAKER_CLIENT_KEY"
-CONTAINER_MAKER_CA_ENV_VAR: str = "CONTAINER_MAKER_CA_CRT"
+# Kubernetes secret configuration for Container Maker certificates
+CONTAINER_MAKER_CERTS_SECRET_NAME: str = os.getenv(
+    "CONTAINER_MAKER_CERTS_SECRET_NAME",
+    "container-maker-development-service-certs"
+)
+# Kubernetes namespace for the application (used for cross-namespace service access)
+NAMESPACE: str = os.getenv("NAMESPACE")
 
 # Cert Manager Config
 CERT_MANAGER_CRON_JOB_NAME: str = os.getenv("CERT_MANAGER_CRON_JOB_NAME")
@@ -73,3 +69,12 @@ DB_CONFIG: DBConfig = DBConfig(
     port=POSTGRES_PORT,
     database=POSTGRES_DB
 )
+
+
+# Resource Request Ratios (request = limit * ratio)
+# CPU: 10% of limit
+RESOURCE_CPU_REQUEST_RATIO: float = float(os.getenv("RESOURCE_CPU_REQUEST_RATIO", "0.1"))
+# Memory: 50% of limit
+RESOURCE_MEMORY_REQUEST_RATIO: float = float(os.getenv("RESOURCE_MEMORY_REQUEST_RATIO", "0.5"))
+# Ephemeral storage: 50% of limit
+RESOURCE_EPHEMERAL_REQUEST_RATIO: float = float(os.getenv("RESOURCE_EPHEMERAL_REQUEST_RATIO", "0.5"))

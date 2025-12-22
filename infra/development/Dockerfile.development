@@ -9,15 +9,18 @@ WORKDIR /app
 RUN chmod +x ./infra/development/entrypoint-development.sh
 
 # Install dependencies
-RUN apt-get update && apt-get install -y build-essential curl
+RUN apt-get update && apt-get install -y build-essential curl git
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Install dependencies
+# Configure Poetry to create virtualenvs in a location that won't be overwritten by volume mounts
+RUN poetry config virtualenvs.in-project false && \
+    poetry config virtualenvs.path /opt/venv
+
+# Install dependencies (this creates the virtualenv at /opt/venv)
 RUN poetry install --no-root
-RUN cd container-maker-spec && poetry install && cd ..
 
 # Use the entrypoint script
 ENTRYPOINT ["bash", "-c", "./infra/development/entrypoint-development.sh"]

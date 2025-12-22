@@ -1,0 +1,53 @@
+#!/bin/bash
+
+# Check if enough arguments are provided
+if [ $# -lt 21 ]; then
+    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db>"
+    exit 1
+fi
+
+YAML=./infra/deployment/deployment.yaml
+NAMESPACE=$1
+REPO_NAME=$2
+CONTAINER_MAKER_HOST=$3
+CONTAINER_MAKER_PORT=$4
+CONTAINER_MAKER_CERTS_SECRET_NAME=$5
+CERT_MANAGER_CRON_JOB_NAME=$6
+AUTH_REDIRECT_BASE_URI=$7
+GOOGLE_CLIENT_ID=$8
+GOOGLE_CLIENT_SECRET=$9
+GITHUB_CLIENT_ID=${10}
+GITHUB_CLIENT_SECRET=${11}
+REDIS_HOST=${12}
+REDIS_PORT=${13}
+REDIS_PASSWORD=${14}
+REDIS_USERNAME=${15}
+REDIS_DB=${16}
+POSTGRES_HOST=${17}
+POSTGRES_PORT=${18}
+POSTGRES_USER=${19}
+POSTGRES_PASSWORD=${20}
+POSTGRES_DB=${21}
+
+export NAMESPACE=$NAMESPACE
+export REPO_NAME=$REPO_NAME
+export CONTAINER_MAKER_HOST=$CONTAINER_MAKER_HOST
+export CONTAINER_MAKER_PORT=$CONTAINER_MAKER_PORT
+export CONTAINER_MAKER_CERTS_SECRET_NAME=$CONTAINER_MAKER_CERTS_SECRET_NAME
+export CERT_MANAGER_CRON_JOB_NAME=$CERT_MANAGER_CRON_JOB_NAME
+export AUTH_REDIRECT_BASE_URI=$AUTH_REDIRECT_BASE_URI
+export GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+export GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
+export GITHUB_CLIENT_ID=$GITHUB_CLIENT_ID
+export GITHUB_CLIENT_SECRET=$GITHUB_CLIENT_SECRET
+export REDIS_HOST=$REDIS_HOST
+export REDIS_PORT=$REDIS_PORT
+export REDIS_PASSWORD=$REDIS_PASSWORD
+export REDIS_USERNAME=$REDIS_USERNAME
+export REDIS_DB=$REDIS_DB
+export POSTGRES_HOST=$POSTGRES_HOST
+export POSTGRES_PORT=$POSTGRES_PORT
+export POSTGRES_USER=$POSTGRES_USER
+export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
+export POSTGRES_DB=$POSTGRES_DB
+envsubst < $YAML | kubectl apply -f -

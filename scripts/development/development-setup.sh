@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if enough arguments are provided
-if [ $# -lt 20 ]; then
-    echo "Usage: $0 <namespace> <absolute-path-to-current-working-directory> <repo-name> <container-maker-host> <container-maker-port> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db>"
+if [ $# -lt 22 ]; then
+    echo "Usage: $0 <namespace> <absolute-path-to-current-working-directory> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db>"
     exit 1
 fi
 
@@ -12,27 +12,31 @@ HOSTPATH=$2
 REPO_NAME=$3
 CONTAINER_MAKER_DEVELOPMENT_HOST=$4
 CONTAINER_MAKER_DEVELOPMENT_PORT=$5
-AUTH_REDIRECT_BASE_URI=$6
-GOOGLE_CLIENT_ID=$7
-GOOGLE_CLIENT_SECRET=$8
-GITHUB_CLIENT_ID=$9
-GITHUB_CLIENT_SECRET=${10}
-REDIS_HOST=${11}
-REDIS_PORT=${12}
-REDIS_PASSWORD=${13}
-REDIS_USERNAME=${14}
-REDIS_DB=${15}
-POSTGRES_HOST=${16}
-POSTGRES_PORT=${17}
-POSTGRES_USER=${18}
-POSTGRES_PASSWORD=${19}
-POSTGRES_DB=${20}
+CONTAINER_MAKER_CERTS_SECRET_NAME=$6
+CERT_MANAGER_CRON_JOB_NAME=$7
+AUTH_REDIRECT_BASE_URI=$8
+GOOGLE_CLIENT_ID=$9
+GOOGLE_CLIENT_SECRET=${10}
+GITHUB_CLIENT_ID=${11}
+GITHUB_CLIENT_SECRET=${12}
+REDIS_HOST=${13}
+REDIS_PORT=${14}
+REDIS_PASSWORD=${15}
+REDIS_USERNAME=${16}
+REDIS_DB=${17}
+POSTGRES_HOST=${18}
+POSTGRES_PORT=${19}
+POSTGRES_USER=${20}
+POSTGRES_PASSWORD=${21}
+POSTGRES_DB=${22}
 
 export NAMESPACE=$NAMESPACE
 export HOSTPATH=$HOSTPATH
 export REPO_NAME=$REPO_NAME
 export CONTAINER_MAKER_DEVELOPMENT_HOST=$CONTAINER_MAKER_DEVELOPMENT_HOST
 export CONTAINER_MAKER_DEVELOPMENT_PORT=$CONTAINER_MAKER_DEVELOPMENT_PORT
+export CONTAINER_MAKER_CERTS_SECRET_NAME=$CONTAINER_MAKER_CERTS_SECRET_NAME
+export CERT_MANAGER_CRON_JOB_NAME=$CERT_MANAGER_CRON_JOB_NAME
 export AUTH_REDIRECT_BASE_URI=$AUTH_REDIRECT_BASE_URI
 export GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 export GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET

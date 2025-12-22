@@ -32,32 +32,32 @@ roleRef:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: browseterm-server-development
+  name: browseterm-server
   namespace: ${NAMESPACE}
   labels:
-    app: browseterm-server-development
+    app: browseterm-server
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: browseterm-server-development
+      app: browseterm-server
   template:
     metadata:
       labels:
-        app: browseterm-server-development
+        app: browseterm-server
     spec:
       serviceAccountName: job-manager-service-account
       containers:
-      - name: browseterm-server-development
-        image: ${REPO_NAME}/browseterm-server-development:latest
+      - name: browseterm-server
+        image: ${REPO_NAME}/browseterm-server:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 9999
         env:
         - name: CONTAINER_MAKER_HOST
-          value: "${CONTAINER_MAKER_DEVELOPMENT_HOST}"
+          value: "${CONTAINER_MAKER_HOST}"
         - name: CONTAINER_MAKER_PORT
-          value: "${CONTAINER_MAKER_DEVELOPMENT_PORT}"
+          value: "${CONTAINER_MAKER_PORT}"
         - name: CONTAINER_MAKER_CERTS_SECRET_NAME
           value: "${CONTAINER_MAKER_CERTS_SECRET_NAME}"
         - name: NAMESPACE
@@ -96,11 +96,3 @@ spec:
           value: "${POSTGRES_PASSWORD}"
         - name: POSTGRES_DB
           value: "${POSTGRES_DB}"
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
-      volumes:
-      - name: app-code
-        hostPath:
-          path: ${HOSTPATH}
-          type: DirectoryOrCreate

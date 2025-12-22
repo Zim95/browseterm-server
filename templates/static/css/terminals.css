@@ -307,11 +307,19 @@
     margin: 0;
 }
 
-.disabled-icon {
-    font-size: 1.2rem;
-    color: #ffc107;
-    cursor: help;
-    margin-left: 0.5rem;
+.number-input-group input:disabled {
+    background: #f0f0f0;
+    color: #999;
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.subscription-info {
+    display: block;
+    font-size: 0.85rem;
+    color: #666;
+    margin-top: 0.25rem;
+    font-style: italic;
 }
 
 .modal-actions {
@@ -537,6 +545,20 @@ body.dark-mode .number-btn:hover {
     background: #4e4e52;
 }
 
+body.dark-mode .number-btn:disabled {
+    background: #2a2a2a;
+    color: #666;
+}
+
+body.dark-mode .number-input-group input:disabled {
+    background: #2a2a2a;
+    color: #666;
+}
+
+body.dark-mode .subscription-info {
+    color: #aaa;
+}
+
 body.dark-mode .btn-cancel {
     background: #3e3e42;
     color: #d4d4d4;
@@ -544,4 +566,45 @@ body.dark-mode .btn-cancel {
 
 body.dark-mode .btn-cancel:hover {
     background: #4e4e52;
+}
+
+/* Loading spinner styles */
+.loading-spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-right: 8px;
+}
+
+.btn-submit.loading {
+    opacity: 0.8;
+    cursor: not-allowed;
+}
+
+.btn-submit.loading:hover {
+    background: #007bff;
+    transform: none;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Dark mode loading spinner */
+body.dark-mode .loading-spinner {
+    border: 2px solid #3e3e42;
+    border-top: 2px solid #007bff;
+}
+
+body.dark-mode .btn-submit.loading {
+    opacity: 0.8;
+}
+
+body.dark-mode .btn-submit.loading:hover {
+    background: #007bff;
 }

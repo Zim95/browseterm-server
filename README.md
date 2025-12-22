@@ -1,8 +1,23 @@
 # browseterm-server
-Browseterm server
+Browseterm server. This is the main backend server. Talks to the following services:
+1. Container Maker - To manage containers.
+2. Cert Manager - To create certificates.
+3. Payment Service - To make payments.
+4. Database Service - To make database requests.
+5. Kafka Service - To send events for future storage.
 
 # Cloning the repository
-
+```
+git clone --recurse-submodules https://github.com/namahshrestha/browseterm-server.git
+```
+This will clone the repository into a folder called `browseterm-server`. Go into the folder.
+```
+cd browseterm-server
+```
+In case you have already cloned the repository, you can update the submodules with the following command:
+```
+git submodule update --init --recursive
+```
 
 # Dev Setup - Kubernetes
 NOTE: This setup is a little different on windows. Please use WSL in windows.
@@ -13,18 +28,7 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
 2. Once `kubectl` is setup and you have the `docker-desktop` cluster ready. We can proceed further.
 
-3. Clone this repository.
-    ```
-    git clone --recurse-submodules https://github.com/namahshrestha/browseterm-server.git
-    ```
-    This will clone the repository into a folder called `browseterm-server`. Go into the folder.
-    ```
-    cd browseterm-server
-    ```
-    In case you have already cloned the repository, you can update the submodules with the following command:
-    ```
-    git submodule update --init --recursive
-    ```
+3. Clone this repository. Follow the guide.
 
 4. First of all, make sure `./infra/development/entrypoint-development.sh` is an executable.
     ```

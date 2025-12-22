@@ -10,6 +10,10 @@ dev_setup:
 		$(NAMESPACE) \
 		$(HOST_DIR) \
 		$(REPO_NAME) \
+		$(CONTAINER_MAKER_DEVELOPMENT_HOST) \
+		$(CONTAINER_MAKER_DEVELOPMENT_PORT) \
+		$(CONTAINER_MAKER_CERTS_SECRET_NAME) \
+		$(CERT_MANAGER_CRON_JOB_NAME) \
 		$(AUTH_REDIRECT_BASE_URI) \
 		$(GOOGLE_CLIENT_ID) \
 		$(GOOGLE_CLIENT_SECRET) \
@@ -31,12 +35,16 @@ dev_teardown:
 
 # Production
 prod_build:
-	./scripts/deployment/development-build.sh $(USER_NAME) $(REPO_NAME)
+	./scripts/deployment/deployment-build.sh $(USER_NAME) $(REPO_NAME)
 
 prod_setup:
-	./scripts/deployment/development-setup.sh \
+	./scripts/deployment/deployment-setup.sh \
 		$(NAMESPACE) \
 		$(REPO_NAME) \
+		$(CONTAINER_MAKER_HOST) \
+		$(CONTAINER_MAKER_PORT) \
+		$(CONTAINER_MAKER_CERTS_SECRET_NAME) \
+		$(CERT_MANAGER_CRON_JOB_NAME) \
 		$(AUTH_REDIRECT_BASE_URI) \
 		$(GOOGLE_CLIENT_ID) \
 		$(GOOGLE_CLIENT_SECRET) \
@@ -54,6 +62,6 @@ prod_setup:
 		$(POSTGRES_DB)
 
 prod_teardown:
-	./scripts/deployment/development-teardown.sh $(NAMESPACE)
+	./scripts/deployment/deployment-teardown.sh $(NAMESPACE)
 
 .PHONY: dev_build dev_setup dev_teardown prod_build prod_setup prod_teardown

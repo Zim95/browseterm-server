@@ -13,6 +13,7 @@ from src.common.config import (
     GITHUB_CLIENT_ID, GITHUB_AUTH_META_URL, GITHUB_AUTH_SCOPE, GITHUB_AUTH_REDIRECT_URI
 )
 from src.authentication.authentication_helpers import authenticate_session
+from src.db_ops.image_db_ops import list_all_existing_images
 from src.db_ops.subscription_db_ops import list_all_existing_subscription_types
 
 
@@ -32,7 +33,18 @@ async def terminals(request: Request) -> HTMLResponse:
     '''
     Terminals page template.
     '''
-    return templates.TemplateResponse("terminals.html", {"request": request})
+    subscriptions: list = await list_all_existing_subscription_types()
+    images: list = await list_all_existing_images()
+    return templates.TemplateResponse(
+        "terminals.html",
+        {
+            "request": request,
+            "subscriptions": subscriptions,
+            "images": images,
+            "userInfo": request.state.user_info,
+            "currentSubscriptionPlan": request.state.current_subscription_plan
+        }
+    )
 
 
 @authenticate_session
@@ -64,7 +76,7 @@ async def subscriptions(request: Request) -> HTMLResponse:
     '''
     Subscriptions page template.
     '''
-    subscriptions: list = await asyncio.to_thread(list_all_existing_subscription_types)
+    subscriptions: list = await list_all_existing_subscription_types()
     return templates.TemplateResponse(
         "subscriptions.html",
         {
