@@ -726,15 +726,10 @@ class TerminalsHandler {
         const networkName = `${userInfo.id}-namespace`;
 
         try {
-            // Step 1: Delete from K8s (use kubernetes_id from data attribute)
-            if (kubernetesId) {
-                await this.deleteContainerFromK8s(kubernetesId, networkName);
-            }
-
-            // Step 2: Delete from DB
+            // Step 1: Delete from DB first
             await this.deleteContainerFromDB(terminalId, userInfo.id);
 
-            // Step 3: Refresh the list
+            // Step 2: Refresh the list immediately (so user sees it removed)
             await this.loadTerminals();
 
             TerminalsUtilities.showNotification(
@@ -743,6 +738,13 @@ class TerminalsHandler {
                 `Terminal "${terminalName}" has been deleted.`,
                 4000
             );
+
+            // Step 3: Delete from K8s in the background (user doesn't need to wait)
+            if (kubernetesId) {
+                this.deleteContainerFromK8s(kubernetesId, networkName).catch(err => {
+                    console.error('Background K8s deletion failed:', err);
+                });
+            }
 
         } catch (error) {
             console.error('Error deleting terminal:', error);
@@ -1001,10 +1003,11 @@ class TerminalsHandler {
 
             console.log('Container updated with K8s info:', updateResult);
 
-            // Update local terminal data with new IP
+            // Update local terminal data with new IP and kubernetes_id
             const terminalIndex = this.terminals.findIndex(t => t.id === dbResult.id);
             if (terminalIndex !== -1) {
                 this.terminals[terminalIndex].ipAddress = k8sResult.container_ip;
+                this.terminals[terminalIndex].kubernetes_id = k8sResult.container_id;
                 this.renderTerminalsList();
             }
 
