@@ -383,9 +383,7 @@ class TerminalPageHandler {
                 console.log('WebSocket connected to socket-ssh server');
                 this.isConnected = true;
                 this.term.writeln('\x1b[1;32m✓ Connected to WebSocket server\x1b[0m');
-                
-                // Now initiate SSH connection
-                this.initiateSSHConnection();
+                this.term.writeln('\x1b[1;36m✓ Waiting for server to be ready...\x1b[0m');
             };
 
             this.websocket.onmessage = (event) => {
