@@ -113,6 +113,21 @@
         </div>
     </div>
 
+    <!-- Password Modal -->
+    <div id="passwordModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); z-index: 999999; align-items: center; justify-content: center;">
+        <div id="passwordModalContent" style="padding: 30px; border-radius: 12px; max-width: 500px; text-align: center; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+            <h2 style="margin-bottom: 20px; font-size: 22px;">🔐 Save This Password!</h2>
+            <p style="margin-bottom: 15px; font-size: 15px; opacity: 0.8;">Your sudo password is:</p>
+            <div style="padding: 15px; border-radius: 8px; margin: 20px 0; border: 1px solid var(--border-color); background: var(--bg-tertiary);">
+                <input type="text" id="passwordText" readonly style="border: none; background: transparent; text-align: center; font-family: 'Courier New', monospace; font-size: 20px; font-weight: bold; color: #0dbc79; width: 100%; outline: none; cursor: text;">
+            </div>
+            <button id="closePasswordModal" style="background: #2472c8; color: white; border: none; padding: 12px 32px; border-radius: 6px; font-size: 16px; cursor: pointer; font-weight: 500;">
+                OK
+            </button>
+            <p style="color: #f14c4c; margin-top: 20px; font-size: 13px; opacity: 0.9;">⚠️ This password won't be shown again. Save it somewhere safe!</p>
+        </div>
+    </div>
+
     <!-- Xterm.js JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>

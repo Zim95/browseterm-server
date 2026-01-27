@@ -468,6 +468,11 @@ class TerminalPageHandler {
             if (data.message && !this.isSSHConnected) {
                 this.isSSHConnected = true;
                 this.term.writeln('\x1b[1;32m✓ SSH connection established!\x1b[0m\r\n');
+                
+                // Show sudo password modal
+                if (this.terminalInfo.sshPassword) {
+                    this.showPasswordModal();
+                }
             }
 
             // Write SSH output to terminal
@@ -507,6 +512,37 @@ class TerminalPageHandler {
             this.term.writeln('');
         }
         console.error('Terminal error:', message);
+    }
+
+    /**
+     * Show password modal
+     */
+    showPasswordModal() {
+        const modal = document.getElementById('passwordModal');
+        const modalContent = document.getElementById('passwordModalContent');
+        const passwordText = document.getElementById('passwordText');
+        const closeBtn = document.getElementById('closePasswordModal');
+
+        // Apply theme colors
+        const isDark = document.body.classList.contains('dark-mode');
+        modalContent.style.background = isDark ? '#252526' : '#ffffff';
+        modalContent.style.color = isDark ? '#d4d4d4' : '#333333';
+
+        // Set password
+        passwordText.value = this.terminalInfo.sshPassword;
+        
+        // Show modal
+        modal.style.display = 'flex';
+
+        // Allow user to select and copy password manually
+        passwordText.onclick = () => {
+            passwordText.select();
+        };
+
+        // Close button
+        closeBtn.onclick = () => {
+            modal.style.display = 'none';
+        };
     }
 
     /**
