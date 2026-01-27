@@ -28,7 +28,10 @@ dev_setup:
 		$(POSTGRES_PORT) \
 		$(POSTGRES_USER) \
 		$(POSTGRES_PASSWORD) \
-		$(POSTGRES_DB)
+		$(POSTGRES_DB) \
+		$(SOCKET_SSH_HOST) \
+		$(SOCKET_SSH_WSS_URL) \
+		$(INGRESS_HOST)
 
 dev_teardown:
 	./scripts/development/development-teardown.sh $(NAMESPACE)
@@ -59,7 +62,10 @@ prod_setup:
 		$(POSTGRES_PORT) \
 		$(POSTGRES_USER) \
 		$(POSTGRES_PASSWORD) \
-		$(POSTGRES_DB)
+		$(POSTGRES_DB) \
+		$(SOCKET_SSH_HOST) \
+		$(SOCKET_SSH_WSS_URL) \
+		$(INGRESS_HOST)
 
 prod_teardown:
 	./scripts/deployment/deployment-teardown.sh $(NAMESPACE)

@@ -37,10 +37,41 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
 4. Create an `env.mk` file with the following variables:
     ```
-    REPO_NAME=<your-dockerhub-username>
-    USER_NAME=<your-dockerhub-username>
-    NAMESPACE=<your-namespace>
-    HOST_DIR=<your-working-directory>
+    REPO_NAME=zim95
+    USER_NAME=zim95
+    NAMESPACE=browseterm-new
+    HOST_DIR=/Users/reetunamah/projects/browseterm/browseterm-server
+
+    # CONTAINER MAKER CONFIG
+    CONTAINER_MAKER_DEVELOPMENT_HOST=container-maker-development-service
+    CONTAINER_MAKER_DEVELOPMENT_PORT=50052
+    CONTAINER_MAKER_HOST=container-maker-service
+    CONTAINER_MAKER_PORT=50052
+    CONTAINER_MAKER_CERTS_SECRET_NAME=container-maker-development-service-certs
+
+    # GOOGLE CREDENTIALS
+    AUTH_REDIRECT_BASE_URI=http://localhost:9999
+    GOOGLE_CLIENT_ID=<your-google-client-id>
+    GOOGLE_CLIENT_SECRET=<your-google-client-secret>
+    GITHUB_CLIENT_ID=<your-github-client-id>
+    GITHUB_CLIENT_SECRET=<your-github-client-secret>
+
+    # REDIS CREDENTIALS
+    REDIS_HOST=browseterm-redis-service
+    REDIS_PORT=6379	
+    REDIS_PASSWORD=test123
+    REDIS_USERNAME=namah
+    REDIS_DB=0
+
+    # POSTGRES CREDENTIALS
+    POSTGRES_HOST=browseterm-pg-service
+    POSTGRES_PORT=5432
+    POSTGRES_USER=namah
+    POSTGRES_PASSWORD=test123
+    POSTGRES_DB=browseterm
+
+    # OTHER ENVs
+    CERT_MANAGER_CRON_JOB_NAME=cert-manager
     ```
 
 5. Run the development build script, if not already done.

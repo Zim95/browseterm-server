@@ -51,6 +51,7 @@ app.add_api_route(path="/github-token-exchange", endpoint=api_handlers.github_to
 app.add_api_route(path="/logout", endpoint=api_handlers.logout, methods=["POST"])
 
 # container apis
+app.add_api_route(path="/get-container-info/{container_id}", endpoint=api_handlers.get_container_info, methods=["GET"])
 app.add_api_route(path="/create-container-in-db", endpoint=api_handlers.create_container_in_db, methods=["POST"])
 app.add_api_route(path="/create-container-in-k8s", endpoint=api_handlers.create_container_in_k8s, methods=["POST"])
 app.add_api_route(path="/update-container", endpoint=api_handlers.update_container, methods=["POST"])
