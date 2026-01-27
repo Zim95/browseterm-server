@@ -10,11 +10,15 @@ from fastapi.responses import HTMLResponse
 
 from src.common.config import (
     GOOGLE_CLIENT_ID, GOOGLE_AUTH_META_URL, GOOGLE_AUTH_SCOPE, GOOGLE_AUTH_REDIRECT_URI,
-    GITHUB_CLIENT_ID, GITHUB_AUTH_META_URL, GITHUB_AUTH_SCOPE, GITHUB_AUTH_REDIRECT_URI
+    GITHUB_CLIENT_ID, GITHUB_AUTH_META_URL, GITHUB_AUTH_SCOPE, GITHUB_AUTH_REDIRECT_URI,
+    SOCKET_SSH_WSS_URL
 )
 from src.authentication.authentication_helpers import authenticate_session
+from src.authentication.session_manager import session_manager
 from src.db_ops.image_db_ops import list_all_existing_images
 from src.db_ops.subscription_db_ops import list_all_existing_subscription_types
+from src.db_ops.container_db_ops import get_container
+from src.db_ops.dto.container_dto import GetContainerDBModel
 
 
 templates = Jinja2Templates(directory="templates")
@@ -54,19 +58,72 @@ async def terminalpage(request: Request) -> HTMLResponse:
     '''
     # Get terminal ID from query params
     terminal_id = request.query_params.get('id', '')
-    # TODO: In production, fetch actual terminal info from database using terminal_id
-    # For now, using dummy data
-    terminal_info = {
-        "id": terminal_id,
-        "name": f"Terminal {terminal_id}",
-        "ipAddress": "192.168.1.100",
-        "port": "8080"
-    }
+
+    if not terminal_id:
+        # If no terminal ID provided, show error page
+        terminal_info = {
+            "id": "",
+            "name": "Error",
+            "ipAddress": "N/A",
+            "port": "N/A",
+            "error": "No terminal ID provided"
+        }
+    else:
+        try:
+            # Fetch actual terminal info from database
+            get_container_data = GetContainerDBModel(
+                container_id=terminal_id,
+                user_id=request.state.user_info['id']  # user_info is a dict
+            )
+            container_data = await get_container(get_container_data)
+            
+            if not container_data:
+                terminal_info = {
+                    "id": terminal_id,
+                    "name": "Not Found",
+                    "ipAddress": "N/A",
+                    "port": "N/A",
+                    "error": "Terminal not found or you don't have access"
+                }
+            else:
+                # Extract SSH credentials from environment variables
+                env_vars = container_data.get('environment_vars', {})  # DB column is environment_vars
+                ssh_username = env_vars.get('SSH_USERNAME', '')
+                ssh_password = env_vars.get('SSH_PASSWORD', '')
+                
+                # Get port from port_mappings
+                port_mappings = container_data.get('port_mappings', [])
+                ssh_port = port_mappings[0].get('publish_port') if port_mappings else 2222
+                
+                terminal_info = {
+                    "id": container_data.get('id'),
+                    "name": container_data.get('name'),
+                    "ipAddress": container_data.get('ip_address', 'Pending...'),
+                    "port": str(ssh_port),
+                    "sshUsername": ssh_username,
+                    "sshPassword": ssh_password,
+                    "status": container_data.get('status', 'Unknown')
+                }
+        except Exception as e:
+            print(f"Error fetching terminal info: {e}")
+            terminal_info = {
+                "id": terminal_id,
+                "name": "Error",
+                "ipAddress": "N/A",
+                "port": "N/A",
+                "error": f"Error loading terminal: {str(e)}"
+            }
+    
+    # Generate one-time WebSocket token for this session
+    session_id = request.cookies.get('session')
+    ws_token = session_manager.create_websocket_token(session_id) if session_id else ''
     return templates.TemplateResponse(
         "terminalpage.html",
         {
             "request": request,
-            "terminalInfo": terminal_info
+            "terminalInfo": terminal_info,
+            "socketSSHUrl": SOCKET_SSH_WSS_URL,
+            "wsToken": ws_token
         }
     )
 

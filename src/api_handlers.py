@@ -10,7 +10,7 @@ import json
 from typing import AsyncGenerator
 
 from src.containers.containers_service import ContainerService
-from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, ResourceLimits, UpdateContainerRequest, UpdateContainerFilters, UpdateContainerData, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
+from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, ResourceLimits, UpdateContainerRequest, UpdateContainerFilters, UpdateContainerData, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
 from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
@@ -55,6 +55,27 @@ async def echo(request: EchoRequestData) -> EchoResponseData:
     '''
     return EchoResponseData(message=request.message)
 
+
+@authenticate_session
+async def get_container_info(request: Request) -> JSONResponse:
+    '''
+    Authentication: This handler needs to be authenticated.
+    Gets container info by container ID.
+    '''
+    try:
+        # build the get container request
+        get_container_request: GetContainerRequest = GetContainerRequest(
+            container_id=request.path_params,
+            user_id=request.state.user_info.id  # user_id will be extracted from session in ContainerService
+        )
+        # get container info using ContainerService
+        container_service = ContainerService()
+        container_info: dict = await container_service.get_container_info(get_container_request)
+        return JSONResponse(content=container_info)
+    except HTTPException as e:
+        return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
+    except Exception as e:
+        return JSONResponse(content={'error': f"Error getting container info: {str(e)}"}, status_code=500)
 
 @authenticate_session
 async def create_container_in_db(request: Request) -> JSONResponse:

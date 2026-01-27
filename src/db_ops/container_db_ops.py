@@ -13,7 +13,7 @@ from src.common.config import DB_CONFIG
 from src.common.exceptions import ContainerDBException
 
 # DTOs
-from src.db_ops.dto.container_dto import CreateContainerDBModel, UpdateContainerDBModel
+from src.db_ops.dto.container_dto import CreateContainerDBModel, GetContainerDBModel, UpdateContainerDBModel
 
 
 async def create_container_in_db(container_info: CreateContainerDBModel) -> Optional[Dict[str, Any]]:
@@ -126,26 +126,25 @@ async def delete_container(container_id: str, user_id: str) -> bool:
         raise Exception(f"Database operation failed: {str(e)}")
 
 
-async def get_container(container_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+async def get_container(get_container_data: GetContainerDBModel) -> Optional[Dict[str, Any]]:
     '''
     Get a container from the database by ID.
     Ensures that only the owner can access the container.
-    
+
     Args:
         container_id: Container ID (UUID as string)
         user_id: User ID (UUID as string) - to verify ownership
-    
     Returns:
         Dict containing the container data if found, None otherwise
-    
+
     Raises:
         Exception: If database operation fails
     '''
     try:
         container_ops: ContainerOps = ContainerOps(DB_CONFIG)
         filters: Dict[str, Any] = {
-            'id': container_id,
-            'user_id': user_id
+            'id': get_container_data.container_id,
+            'user_id': get_container_data.user_id
         }
         container: OperationResult = await asyncio.to_thread(container_ops.find_one, filters)
         if container.error:

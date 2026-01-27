@@ -55,6 +55,18 @@ REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
 REDIS_SESSION_EXPIRY: int = 86400
 REDIS_SESSION_PREFIX: str = "session:"
 
+# Cookie Security Configuration
+# Set secure=True in production (HTTPS), False in development (HTTP)
+COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
+# samesite options: "strict", "lax", or "none"
+COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")
+
+# Socket SSH WebSocket Configuration
+# Set via SOCKET_SSH_WSS_URL environment variable
+# For Ingress: ws://browseterm.local/ws
+# For production: wss://yourdomain.com/ws
+SOCKET_SSH_WSS_URL: str = os.getenv("SOCKET_SSH_WSS_URL", "ws://localhost:8000")
+
 
 # Postgres Configuration
 POSTGRES_HOST: str = os.getenv("POSTGRES_HOST", "localhost")

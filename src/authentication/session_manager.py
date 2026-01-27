@@ -171,6 +171,26 @@ class RedisSessionManager:
             return SessionValidationModel(is_valid=False, session_data=None, ttl=ttl)        
         return SessionValidationModel(is_valid=True, session_data=session_data, ttl=ttl)
 
+    def create_websocket_token(self, session_id: str) -> str:
+        """
+        Create a one-time WebSocket authentication token.
+        Token is valid for 60 seconds and links to the session.
+        Token is validated and consumed by socket-ssh service.
+        Args:
+            session_id: Session ID to link the token to
+        Returns:
+            str: WebSocket token
+        """
+        ws_token: str = str(uuid.uuid4())
+        ws_token_key: str = f"ws_token:{ws_token}"
+        # Store session_id as the value, expire in 60 seconds
+        self.redis_client.setex(
+            name=ws_token_key,
+            time=60,  # 1 minute TTL
+            value=session_id
+        )
+        return ws_token
+
 
 # Global session manager instance
 session_manager: RedisSessionManager = RedisSessionManager()

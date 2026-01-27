@@ -21,6 +21,22 @@ class TerminalPageUtilities {
     }
 
     /**
+     * Get Socket SSH WebSocket URL from window object (passed from backend)
+     * @returns {string} WebSocket URL
+     */
+    static getSocketSSHUrl() {
+        return window.socketSSHUrl || '';
+    }
+
+    /**
+     * Get WebSocket token from window object (passed from backend)
+     * @returns {string} WebSocket token
+     */
+    static getWsToken() {
+        return window.wsToken || '';
+    }
+
+    /**
      * Get xterm theme configuration (terminal always uses dark theme)
      * @returns {Object} Xterm theme object
      */
@@ -103,6 +119,11 @@ class TerminalPageHandler {
         this.term = null;
         this.fitAddon = null;
         this.websocket = null;
+        this.socketSSHUrl = '';
+        this.wsToken = '';  // WebSocket authentication token
+        this.sshHash = '';  // Unique hash for this SSH session
+        this.isConnected = false;
+        this.isSSHConnected = false;
     }
 
     /**
@@ -114,15 +135,33 @@ class TerminalPageHandler {
         // Get terminal ID and info
         this.terminalId = TerminalPageUtilities.getTerminalIdFromURL();
         this.terminalInfo = TerminalPageUtilities.getTerminalInfoFromTemplate();
+        this.socketSSHUrl = TerminalPageUtilities.getSocketSSHUrl();
+        this.wsToken = TerminalPageUtilities.getWsToken();
         
         console.log('Terminal ID:', this.terminalId);
         console.log('Terminal info:', this.terminalInfo);
+        console.log('Socket SSH URL:', this.socketSSHUrl);
 
         // Cache DOM elements
         this.cacheElements();
 
         // Initialize dark mode
         this.initializeDarkMode();
+
+        // Check for errors in terminal info
+        if (this.terminalInfo.error) {
+            this.showError(this.terminalInfo.error);
+            return;
+        }
+
+        // Check if terminal is in Running status
+        if (this.terminalInfo.status !== 'Running') {
+            this.showError(`Terminal is not running. Current status: ${this.terminalInfo.status}`);
+            return;
+        }
+
+        // Generate SSH hash for this session
+        this.sshHash = `ssh_${this.terminalId}_${Date.now()}`;
 
         // Initialize xterm.js terminal
         this.initializeTerminal();
@@ -132,6 +171,9 @@ class TerminalPageHandler {
 
         // Setup event listeners
         this.setupEventListeners();
+
+        // Connect to terminal via WebSocket
+        this.connectToTerminal();
 
         // Handle window resize
         window.addEventListener('resize', () => this.handleResize());
@@ -188,8 +230,8 @@ class TerminalPageHandler {
             fontSize: 14,
             fontFamily: 'Menlo, Monaco, "Courier New", monospace',
             theme: terminalTheme,
-            rows: 30,
-            cols: 100
+            scrollback: 10000,  // Enable 10000 lines of scrollback buffer
+            convertEol: true    // Automatically convert line endings
         });
 
         // Note: Terminal theme doesn't change with dark mode toggle
@@ -214,6 +256,15 @@ class TerminalPageHandler {
         // Write welcome message
         this.writeWelcomeMessage();
 
+        // Auto-scroll to bottom when content is written - use xterm's built-in scrollToBottom
+        this.term.onWriteParsed(() => {
+            // Refit and scroll after any content change
+            setTimeout(() => {
+                this.fitAddon.fit();
+                this.term.scrollToBottom();
+            }, 0);
+        });
+
         // Handle terminal input
         this.term.onData(data => this.handleTerminalInput(data));
 
@@ -230,9 +281,7 @@ class TerminalPageHandler {
         this.term.writeln('\x1b[1;32m║                                          ║\x1b[0m');
         this.term.writeln('\x1b[1;32m╚══════════════════════════════════════════╝\x1b[0m');
         this.term.writeln('');
-        this.term.writeln('\x1b[1;36mHi! Your terminal is initializing...\x1b[0m');
-        this.term.writeln('');
-        this.term.writeln('\x1b[33mTerminal ID: ' + this.terminalId + '\x1b[0m');
+        this.term.writeln('\x1b[1;36mConnecting to your terminal...\x1b[0m');
         this.term.writeln('');
     }
 
@@ -252,9 +301,6 @@ class TerminalPageHandler {
         if (this.terminalInfo.port) {
             this.elements.terminalPort.textContent = this.terminalInfo.port;
         }
-
-        // TODO: In production, establish WebSocket connection here
-        // this.connectToTerminal();
     }
 
     /**
@@ -272,6 +318,7 @@ class TerminalPageHandler {
     handleResize() {
         if (this.fitAddon) {
             this.fitAddon.fit();
+            this.term.scrollToBottom();
         }
     }
 
@@ -280,14 +327,19 @@ class TerminalPageHandler {
      * @param {string} data - Input data from terminal
      */
     handleTerminalInput(data) {
-        // For now, just log the data
-        // In production, this would send data to the backend via WebSocket
-        console.log('Terminal input:', data);
-
-        // TODO: Send data via WebSocket
-        // if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
-        //     this.websocket.send(data);
-        // }
+        // Send data to SSH server via WebSocket
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN && this.isSSHConnected) {
+            const sshSendMessage = {
+                type: 'sshSendData',
+                data: {
+                    ssh_hash: this.sshHash,
+                    ssh_command: data
+                }
+            };
+            this.websocket.send(JSON.stringify(sshSendMessage));
+        } else {
+            console.warn('WebSocket not connected or SSH not established');
+        }
     }
 
     /**
@@ -305,33 +357,130 @@ class TerminalPageHandler {
     }
 
     /**
-     * Connect to terminal via WebSocket (TODO)
+     * Connect to terminal via WebSocket
      */
     connectToTerminal() {
         console.log('Connecting to terminal:', this.terminalInfo);
 
-        // TODO: Implement WebSocket connection
-        // This will establish WebSocket connection to the backend
-        // which will then connect to the SSH container
+        if (!this.socketSSHUrl) {
+            this.showError('WebSocket URL not configured');
+            return;
+        }
 
-        // Example structure:
-        // this.websocket = new WebSocket('wss://your-backend/terminal');
-        // 
-        // this.websocket.onopen = () => {
-        //     console.log('WebSocket connected');
-        // };
-        //
-        // this.websocket.onmessage = (event) => {
-        //     this.term.write(event.data);
-        // };
-        //
-        // this.websocket.onerror = (error) => {
-        //     console.error('WebSocket error:', error);
-        // };
-        //
-        // this.websocket.onclose = () => {
-        //     console.log('WebSocket disconnected');
-        // };
+        if (!this.wsToken) {
+            this.showError('WebSocket authentication token not available');
+            return;
+        }
+
+        try {
+            // Append WebSocket token to URL as query parameter
+            const wsUrl = `${this.socketSSHUrl}?token=${this.wsToken}`;
+            
+            // Create WebSocket connection to socket-ssh server
+            this.websocket = new WebSocket(wsUrl);
+
+            this.websocket.onopen = () => {
+                console.log('WebSocket connected to socket-ssh server');
+                this.isConnected = true;
+                this.term.writeln('\x1b[1;32m✓ Connected to WebSocket server\x1b[0m');
+                
+                // Now initiate SSH connection
+                this.initiateSSHConnection();
+            };
+
+            this.websocket.onmessage = (event) => {
+                this.handleWebSocketMessage(event);
+            };
+
+            this.websocket.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                this.term.writeln('\x1b[1;31m✗ WebSocket connection error\x1b[0m');
+                this.showError('Failed to connect to terminal server');
+            };
+
+            this.websocket.onclose = () => {
+                console.log('WebSocket disconnected');
+                this.isConnected = false;
+                this.isSSHConnected = false;
+                this.term.writeln('\x1b[1;33m\r\nConnection closed.\x1b[0m');
+            };
+        } catch (error) {
+            console.error('Error creating WebSocket:', error);
+            this.showError(`Failed to connect: ${error.message}`);
+        }
+    }
+
+    /**
+     * Initiate SSH connection through the WebSocket
+     */
+    initiateSSHConnection() {
+        console.log('Initiating SSH connection...');
+
+        if (!this.terminalInfo.sshUsername || !this.terminalInfo.sshPassword) {
+            this.showError('SSH credentials not available');
+            return;
+        }
+
+        // Send SSH connect request
+        const sshConnectMessage = {
+            type: 'sshConnect',
+            data: {
+                ssh_hash: this.sshHash,
+                ssh_host: this.terminalInfo.ipAddress,
+                ssh_port: parseInt(this.terminalInfo.port),
+                ssh_username: this.terminalInfo.sshUsername,
+                ssh_password: this.terminalInfo.sshPassword
+            }
+        };
+
+        console.log('Sending SSH connect message:', {
+            ...sshConnectMessage,
+            data: { ...sshConnectMessage.data, ssh_password: '***' }
+        });
+
+        this.websocket.send(JSON.stringify(sshConnectMessage));
+        this.term.writeln('\x1b[1;36m✓ Initiating SSH connection...\x1b[0m');
+    }
+
+    /**
+     * Handle WebSocket messages
+     * @param {MessageEvent} event - WebSocket message event
+     */
+    handleWebSocketMessage(event) {
+        try {
+            const data = JSON.parse(event.data);
+            console.log('WebSocket message received:', data);
+
+            // Handle 'ready' message from server
+            if (data.type === 'ready') {
+                console.log('Server ready - initiating SSH connection');
+                this.term.writeln('\x1b[1;36m✓ Server ready\x1b[0m');
+                this.initiateSSHConnection();
+                return;
+            }
+
+            // Handle error messages
+            if (data.error) {
+                console.error('Server error:', data.error);
+                this.term.writeln(`\r\n\x1b[1;31mError: ${data.error}\x1b[0m\r\n`);
+                return;
+            }
+
+            // Handle SSH connection success (look for SSH prompt or welcome message)
+            if (data.message && !this.isSSHConnected) {
+                this.isSSHConnected = true;
+                this.term.writeln('\x1b[1;32m✓ SSH connection established!\x1b[0m\r\n');
+            }
+
+            // Write SSH output to terminal
+            if (data.message) {
+                this.term.write(data.message);
+            }
+        } catch (error) {
+            // If not JSON, treat as raw SSH output
+            console.log('Raw message:', event.data);
+            this.term.write(event.data);
+        }
     }
 
     /**
@@ -344,6 +493,43 @@ class TerminalPageHandler {
         const resetCode = TerminalPageUtilities.getColorCode('reset');
         this.term.writeln(colorCode + text + resetCode);
     }
+
+    /**
+     * Show error message in terminal
+     * @param {string} message - Error message
+     */
+    showError(message) {
+        if (this.term) {
+            this.term.writeln('');
+            this.term.writeln('\x1b[1;31m╔══════════════════════════════════════════╗\x1b[0m');
+            this.term.writeln('\x1b[1;31m║              ERROR                       ║\x1b[0m');
+            this.term.writeln('\x1b[1;31m╚══════════════════════════════════════════╝\x1b[0m');
+            this.term.writeln('');
+            this.term.writeln(`\x1b[1;31m${message}\x1b[0m`);
+            this.term.writeln('');
+        }
+        console.error('Terminal error:', message);
+    }
+
+    /**
+     * Cleanup: close WebSocket and SSH connection
+     */
+    cleanup() {
+        if (this.websocket && this.websocket.readyState === WebSocket.OPEN) {
+            // Send SSH close message
+            if (this.isSSHConnected) {
+                const sshCloseMessage = {
+                    type: 'sshClose',
+                    data: {
+                        ssh_hash: this.sshHash
+                    }
+                };
+                this.websocket.send(JSON.stringify(sshCloseMessage));
+            }
+            // Close WebSocket
+            this.websocket.close();
+        }
+    }
 }
 
 // Initialize terminal page handler when DOM is ready
@@ -351,4 +537,9 @@ document.addEventListener('DOMContentLoaded', function() {
     console.log('Terminal page DOM is ready');
     const terminalPageHandler = new TerminalPageHandler();
     terminalPageHandler.init();
+    
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        terminalPageHandler.cleanup();
+    });
 });

@@ -119,6 +119,9 @@ class SidebarManager {
      * Handle responsive sidebar behavior based on viewport
      */
     handleResponsiveSidebar() {
+        // Skip if no sidebar (e.g., on login page)
+        if (!this.sidebar) return;
+        
         const isMobile = BaseUtilities.isMobile();
         if (isMobile) {
             // On mobile, sidebar should be hidden by default

@@ -15,7 +15,7 @@ from container_maker_spec.types_pb2 import DeleteContainerResponse as GRPCDelete
 from src.common.exceptions import ContainerDBException, ContainerMakerException
 from src.common.utils import ResourceUnitConverter
 from src.containers.dto.publish_information_dto import PublishInformationModel
-from src.db_ops.container_db_ops import create_container_in_db, update_container_in_db, list_user_containers as list_user_containers_db, delete_container as delete_container_db
+from src.db_ops.container_db_ops import create_container_in_db, get_container, update_container_in_db, list_user_containers as list_user_containers_db, delete_container as delete_container_db
 from src.common.k8s_secrets import read_cert_from_k8s_secret
 
 # config
@@ -33,8 +33,8 @@ from fastapi import HTTPException
 
 # data models
 from src.containers.enum.exposure_level_enum import ExposureLevel
-from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, UpdateContainerRequest, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
-from src.db_ops.dto.container_dto import CreateContainerDBModel, UpdateContainerDBModel, UpdateContainerDBFilters, UpdateContainerDBData, ListContainersDBModel
+from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, UpdateContainerRequest, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
+from src.db_ops.dto.container_dto import CreateContainerDBModel, GetContainerDBModel, UpdateContainerDBModel, UpdateContainerDBFilters, UpdateContainerDBData, ListContainersDBModel
 
 # data transformers
 from src.containers.data_transformers.list_container_transformer import ListContainerInputDataTransformer
@@ -103,6 +103,21 @@ class ContainerService:
         self.channel: grpc.Channel = self.grpc_utils.channel
         self.stub: ContainerMakerAPIStub = self.grpc_utils.stub
 
+    async def get_container_info(self, get_container_request: GetContainerRequest) -> ContainerResponseModel:
+        '''
+        Get container information by container ID from db.
+        '''
+        try:
+            get_container_model: GetContainerDBModel = GetContainerDBModel(
+                container_id=get_container_request.container_id,
+                user_id=get_container_request.user_id
+            )
+            return await get_container(get_container_model)
+        except ContainerMakerException as e:
+            raise HTTPException(status_code=500, detail=f"Error getting container info from ContainerMaker: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error getting container info: {str(e)}")
+
     async def create_container_in_db(self, create_container_db_request: CreateContainerDBRequest) -> dict:
         '''
         Create a Container in DB.
@@ -125,7 +140,7 @@ class ContainerService:
                 memory_limit=create_container_db_request.memory_limit,
                 storage_limit=create_container_db_request.storage_limit,
                 port_mappings=create_container_db_request.publish_information,
-                environment_vars=create_container_db_request.environment_variables
+                environment_variables=create_container_db_request.environment_variables  # Fixed: was environment_vars
             )
             create_container_db_result: dict = await create_container_in_db(create_container_db_model)
             print("create_container_db_result: ", create_container_db_result)

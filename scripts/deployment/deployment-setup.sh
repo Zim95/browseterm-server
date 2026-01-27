@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if enough arguments are provided
-if [ $# -lt 21 ]; then
-    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db>"
+if [ $# -lt 24 ]; then
+    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host>"
     exit 1
 fi
 
@@ -28,6 +28,9 @@ POSTGRES_PORT=${18}
 POSTGRES_USER=${19}
 POSTGRES_PASSWORD=${20}
 POSTGRES_DB=${21}
+SOCKET_SSH_HOST=${22}
+SOCKET_SSH_WSS_URL=${23}
+INGRESS_HOST=${24}
 
 export NAMESPACE=$NAMESPACE
 export REPO_NAME=$REPO_NAME
@@ -50,4 +53,7 @@ export POSTGRES_PORT=$POSTGRES_PORT
 export POSTGRES_USER=$POSTGRES_USER
 export POSTGRES_PASSWORD=$POSTGRES_PASSWORD
 export POSTGRES_DB=$POSTGRES_DB
+export SOCKET_SSH_HOST=$SOCKET_SSH_HOST
+export SOCKET_SSH_WSS_URL=$SOCKET_SSH_WSS_URL
+export INGRESS_HOST=$INGRESS_HOST
 envsubst < $YAML | kubectl apply -f -

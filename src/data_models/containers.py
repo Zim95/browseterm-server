@@ -60,6 +60,12 @@ class UpdateContainerRequest(BaseModel):
     data: UpdateContainerData
 
 
+class GetContainerRequest(BaseModel):
+    """Request model for getting a container."""
+    container_id: str
+    user_id: str
+
+
 class ListUserContainersRequest(BaseModel):
     """Request model for listing user containers."""
     user_id: str

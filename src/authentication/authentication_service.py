@@ -26,7 +26,7 @@ from src.authentication.dto.login_response_dto import LoginResponseModel
 from src.authentication.dto.logout_dto import LogoutResponseModel
 
 # config
-from src.common.config import REDIS_SESSION_EXPIRY
+from src.common.config import REDIS_SESSION_EXPIRY, COOKIE_SECURE, COOKIE_SAMESITE
 
 
 class AuthenticationService:
@@ -95,8 +95,8 @@ class AuthenticationService:
                 value=session_response.session_id,
                 max_age=REDIS_SESSION_EXPIRY,
                 httponly=True,
-                secure=True,
-                samesite="strict"
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE
             )
             return response
         except Exception as e:
@@ -141,8 +141,8 @@ class AuthenticationService:
                 value="",
                 max_age=0,
                 httponly=True,
-                secure=True,
-                samesite="strict"
+                secure=COOKIE_SECURE,
+                samesite=COOKIE_SAMESITE
             )
             return response
         except Exception as e:
