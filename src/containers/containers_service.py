@@ -191,7 +191,16 @@ class ContainerService:
             # call the stub: Turn it into an async thread.
             grpc_container_response = await asyncio.to_thread(self.stub.createContainer, grpc_create_container_request)
             # format the container name
-            grpc_container_response.container_name = '-'.join(grpc_container_response.container_name.split('-')[:-1])  # remove the suffix like: service, ingress or pod
+            # Remove suffix (pod/service/ingress) and timestamp from container name
+            # Format: mycontainer-pod-1706565890 → mycontainer
+            # Format: mycontainer-service → mycontainer
+            parts = grpc_container_response.container_name.split('-')
+            if len(parts) >= 2 and parts[-1].isdigit():  # Has timestamp (e.g., pod-1706565890)
+                # Remove both suffix and timestamp: mycontainer-pod-1706565890 → mycontainer
+                grpc_container_response.container_name = '-'.join(parts[:-2])
+            elif len(parts) >= 1 and parts[-1] in ['pod', 'service', 'ingress']:  # No timestamp
+                # Remove just suffix: mycontainer-service → mycontainer
+                grpc_container_response.container_name = '-'.join(parts[:-1])
             # transform data
             return CreateContainerOutputDataTransformer.transform(grpc_container_response)
         except ContainerMakerException as e:
