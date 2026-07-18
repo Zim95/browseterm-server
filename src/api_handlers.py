@@ -285,8 +285,10 @@ async def delete_container_in_k8s(request: Request) -> JSONResponse:
     try:
         request_data: dict = await request.json()
 
+        # Note: The frontend sends 'container_id' but it's actually the kubernetes_id (pod UID)
+        # The naming is confusing but we maintain backward compatibility with frontend
         delete_container_k8s_request = DeleteContainerK8SRequest(
-            container_id=request_data['container_id'],
+            container_id=request_data['container_id'],  # This is the pod UID from K8s
             network_name=request_data['network_name']
         )
 
