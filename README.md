@@ -32,15 +32,15 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
 4. First of all, make sure `./infra/development/entrypoint-development.sh` is an executable.
     ```
-    chmod +x ./infra/k8s/development/entrypoint-development.sh
+    chmod +x ./infra/development/entrypoint-development.sh
     ```
 
 4. Create an `env.mk` file with the following variables:
     ```
     REPO_NAME=zim95
     USER_NAME=zim95
-    NAMESPACE=browseterm-new
-    HOST_DIR=/Users/reetunamah/projects/browseterm/browseterm-server
+    NAMESPACE=browseterm
+    HOST_DIR=/Users/namahshrestha/test/browseterm/browseterm-server
 
     # CONTAINER MAKER CONFIG
     CONTAINER_MAKER_DEVELOPMENT_HOST=container-maker-development-service
@@ -72,6 +72,9 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
     # OTHER ENVs
     CERT_MANAGER_CRON_JOB_NAME=cert-manager
+    SOCKET_SSH_WSS_URL=ws://socket-ssh.local.com
+    INGRESS_HOST=browseterm.local.com
+    SOCKET_SSH_HOST=socket-ssh.local.com
     ```
 
 5. Run the development build script, if not already done.
