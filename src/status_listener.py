@@ -12,7 +12,9 @@ import threading
 from browseterm_db.common.pg_listener import (
     PGListener,
     CONTAINER_STATUS_CHANGE_CHANNEL,
-    ContainerStatusChangePayload
+    CONTAINER_SAVE_STATUS_CHANGE_CHANNEL,
+    ContainerStatusChangePayload,
+    ContainerSaveStatusChangePayload
 )
 
 from src.common.config import (
@@ -71,9 +73,10 @@ class StatusListenerService:
         )
         self._listener.connect()
         self._listener.listen(CONTAINER_STATUS_CHANGE_CHANNEL, self._handle_status_change)
+        self._listener.listen(CONTAINER_SAVE_STATUS_CHANGE_CHANNEL, self._handle_save_status_change)
         self._listener.run_in_thread()
         self._running = True
-        print(f"StatusListenerService started, listening on channel: {CONTAINER_STATUS_CHANGE_CHANNEL}")
+        print(f"StatusListenerService started, listening on channels: {CONTAINER_STATUS_CHANGE_CHANNEL}, {CONTAINER_SAVE_STATUS_CHANGE_CHANNEL}")
 
     def stop(self):
         """Stop the PGListener."""
@@ -117,6 +120,40 @@ class StatusListenerService:
 
         except Exception as e:
             print(f"Error handling status change: {e}")
+
+    def _handle_save_status_change(self, payload: str):
+        """
+        Handle incoming SAVE status change notification from PostgreSQL and broadcast
+        it to the user's SSE clients (same queues as pod-status changes, distinguished
+        by the 'save_status_change' type).
+        """
+        try:
+            data = ContainerSaveStatusChangePayload.from_json(payload)
+            print(f"Save status change: Container {data.id} ({data.name}) -> {data.save_status}")
+
+            user_id = data.user_id
+            message = {
+                'type': 'save_status_change',
+                'container_id': data.id,
+                'user_id': data.user_id,
+                'name': data.name,
+                'save_status': data.save_status,
+                'saved_image': data.saved_image,
+                'save_error': data.save_error,
+                'updated_at': data.updated_at
+            }
+
+            with self._queues_lock:
+                queues = self._client_queues.get(user_id, set()).copy()
+
+            if queues and self._loop:
+                for queue in queues:
+                    self._loop.call_soon_threadsafe(
+                        lambda q=queue, m=message: q.put_nowait(m)
+                    )
+
+        except Exception as e:
+            print(f"Error handling save status change: {e}")
 
     def subscribe(self, user_id: str) -> asyncio.Queue:
         """

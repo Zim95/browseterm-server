@@ -58,6 +58,7 @@ app.add_api_route(path="/update-container", endpoint=api_handlers.update_contain
 app.add_api_route(path="/list-user-containers", endpoint=api_handlers.list_user_containers, methods=["GET"])
 app.add_api_route(path="/delete-container-in-db", endpoint=api_handlers.delete_container_in_db, methods=["POST"])
 app.add_api_route(path="/delete-container-in-k8s", endpoint=api_handlers.delete_container_in_k8s, methods=["POST"])
+app.add_api_route(path="/save-container", endpoint=api_handlers.save_container, methods=["POST"])
 
 # SSE endpoints for real-time updates
 app.add_api_route(path="/container-status-stream", endpoint=api_handlers.container_status_sse, methods=["GET"])

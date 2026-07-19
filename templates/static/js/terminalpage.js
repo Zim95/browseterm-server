@@ -310,6 +310,7 @@ class TerminalPageHandler {
         if (this.elements.saveBtn) {
             this.elements.saveBtn.addEventListener('click', () => this.handleSaveSession());
         }
+        this.setupSaveStatusStream();
     }
 
     /**
@@ -345,15 +346,72 @@ class TerminalPageHandler {
     /**
      * Handle save session button click
      */
-    handleSaveSession() {
-        console.log('Save session button clicked');
-        
-        TerminalPageUtilities.showNotification(
-            'info',
-            'Coming Soon',
-            'Session save functionality will be implemented soon! This will save your terminal history and state.',
-            6000
-        );
+    async handleSaveSession() {
+        const containerId = this.terminalInfo.id;
+        const userInfo = window.userInfo || {};
+        const networkName = `${userInfo.id}-namespace`;
+
+        if (!containerId) {
+            TerminalPageUtilities.showNotification('error', 'Save failed', 'No container id available.', 5000);
+            return;
+        }
+
+        this.setSaveSpinner(true);
+        try {
+            const resp = await fetch('/save-container', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ container_id: containerId, network_name: networkName })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+            // Spinner stays on until the SSE reports Succeeded/Failed.
+            TerminalPageUtilities.showNotification('info', 'Saving', 'Snapshotting your container… this can take a little while.', 4000);
+        } catch (e) {
+            this.setSaveSpinner(false);
+            TerminalPageUtilities.showNotification('error', 'Save failed', e.message, 6000);
+        }
+    }
+
+    /**
+     * Toggle the save button's in-progress (spinner) state.
+     */
+    setSaveSpinner(active) {
+        const btn = this.elements.saveBtn;
+        if (!btn) return;
+        btn.disabled = active;
+        btn.classList.toggle('saving', active);
+    }
+
+    /**
+     * Subscribe to server-sent save-status events for this container and stop the
+     * spinner when the snapshot finishes (Succeeded/Failed).
+     */
+    setupSaveStatusStream() {
+        const userInfo = window.userInfo || {};
+        if (!userInfo.id) return;
+        const containerId = String(this.terminalInfo.id);
+
+        const es = new EventSource(`/container-status-stream?user_id=${userInfo.id}`);
+        es.onmessage = (event) => {
+            let data;
+            try { data = JSON.parse(event.data); } catch (e) { return; }
+            if (data.type !== 'save_status_change') return;
+            if (String(data.container_id) !== containerId) return;
+
+            if (data.save_status === 'Succeeded') {
+                this.setSaveSpinner(false);
+                TerminalPageUtilities.showNotification('success', 'Saved', `Snapshot saved${data.saved_image ? ': ' + data.saved_image : ''}.`, 6000);
+            } else if (data.save_status === 'Failed') {
+                this.setSaveSpinner(false);
+                TerminalPageUtilities.showNotification('error', 'Save failed', data.save_error || 'Snapshot failed.', 8000);
+            }
+            // Pending / Running: keep the spinner running.
+        };
+        es.onerror = () => { /* EventSource auto-reconnects */ };
+        this._saveEventSource = es;
     }
 
     /**
@@ -564,6 +622,11 @@ class TerminalPageHandler {
             this.websocket.close();
         }
     }
+}
+
+// Export for unit tests (Node/Jest). No-op in the browser where `module` is undefined.
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { TerminalPageUtilities, TerminalPageHandler };
 }
 
 // Initialize terminal page handler when DOM is ready

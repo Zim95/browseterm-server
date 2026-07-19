@@ -10,7 +10,9 @@ import json
 from typing import AsyncGenerator
 
 from src.containers.containers_service import ContainerService
-from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, ResourceLimits, UpdateContainerRequest, UpdateContainerFilters, UpdateContainerData, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
+from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, ResourceLimits, UpdateContainerRequest, UpdateContainerFilters, UpdateContainerData, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest, SaveContainerK8SRequest
+from browseterm_db.operations.all_operations import ContainerOps
+from browseterm_db.models.containers import SaveStatus
 from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
@@ -299,6 +301,56 @@ async def delete_container_in_k8s(request: Request) -> JSONResponse:
         return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
     except Exception as e:
         return JSONResponse(content={'error': f"Error deleting container from Kubernetes: {str(e)}"}, status_code=500)
+
+
+async def _set_save_status(container_id: str, save_status: str, save_error: str = None) -> None:
+    """Update a container's save_status/save_error in the DB. The save-status trigger fires the SSE."""
+    ops = ContainerOps(DB_CONFIG)
+    await asyncio.to_thread(
+        ops.update,
+        filters={"id": container_id},
+        data={"save_status": save_status, "save_error": save_error},
+    )
+
+
+async def _run_save(container_service, save_request, container_id: str) -> None:
+    """Background task: run the (blocking) gRPC save. The Job records SUCCEEDED/FAILED via the DB;
+    if the gRPC call itself fails before the Job records anything, mark FAILED here."""
+    try:
+        await container_service.save_container_in_k8s(save_request)
+    except Exception as e:
+        try:
+            await _set_save_status(container_id, SaveStatus.FAILED.value, save_error=str(e)[:1000])
+        except Exception as db_e:
+            print(f"Failed to record save failure for {container_id}: {db_e}")
+
+
+@authenticate_session
+async def save_container(request: Request) -> JSONResponse:
+    '''
+    Authentication required. Triggers an asynchronous container save/snapshot.
+    Sets save_status=PENDING immediately and fires the save in the background; progress is
+    delivered to the frontend via the container status SSE ('save_status_change' events).
+    '''
+    try:
+        request_data: dict = await request.json()
+        container_id = request_data['container_id']   # DB container id
+        network_name = request_data['network_name']
+
+        # Mark PENDING now so the frontend can show the spinner immediately.
+        await _set_save_status(container_id, SaveStatus.PENDING.value)
+
+        save_request = SaveContainerK8SRequest(container_id=container_id, network_name=network_name)
+        container_service = ContainerService()
+
+        # container-maker blocks until the snapshot Job completes, so run it in the background.
+        asyncio.create_task(_run_save(container_service, save_request, container_id))
+
+        return JSONResponse(content={'status': 'pending', 'container_id': container_id}, status_code=202)
+    except HTTPException as e:
+        return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
+    except Exception as e:
+        return JSONResponse(content={'error': f"Error starting container save: {str(e)}"}, status_code=500)
 
 
 @authenticate_session

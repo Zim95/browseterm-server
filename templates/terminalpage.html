@@ -138,6 +138,7 @@
         window.terminalInfo = {{ (terminalInfo or {}) | tojson | safe }};
         window.socketSSHUrl = {{ (socketSSHUrl or '') | tojson | safe }};
         window.wsToken = {{ (wsToken or '') | tojson | safe }};
+        window.userInfo = {{ (userInfo or {}) | tojson | safe }};
     </script>
     <script src="{{ url_for('static', path='/js/terminalpage.js') }}"></script>
 </body>

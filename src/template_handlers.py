@@ -123,7 +123,8 @@ async def terminalpage(request: Request) -> HTMLResponse:
             "request": request,
             "terminalInfo": terminal_info,
             "socketSSHUrl": SOCKET_SSH_WSS_URL,
-            "wsToken": ws_token
+            "wsToken": ws_token,
+            "userInfo": request.state.user_info
         }
     )
 

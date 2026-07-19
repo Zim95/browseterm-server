@@ -162,3 +162,5 @@ cython_debug/
 junk/
 
 env.mk
+# Node deps for frontend jest tests
+node_modules/

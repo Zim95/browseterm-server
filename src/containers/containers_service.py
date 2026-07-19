@@ -10,6 +10,7 @@ from container_maker_spec.types_pb2 import DeleteContainerRequest as GRPCDeleteC
 from container_maker_spec.types_pb2 import ContainerResponse as GRPCContainerResponse
 from container_maker_spec.types_pb2 import ListContainerResponse as GRPCListContainerResponse
 from container_maker_spec.types_pb2 import DeleteContainerResponse as GRPCDeleteContainerResponse
+from container_maker_spec.types_pb2 import SaveContainerRequest as GRPCSaveContainerRequest
 
 # utils
 from src.common.exceptions import ContainerDBException, ContainerMakerException
@@ -33,7 +34,7 @@ from fastapi import HTTPException
 
 # data models
 from src.containers.enum.exposure_level_enum import ExposureLevel
-from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, UpdateContainerRequest, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest
+from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, UpdateContainerRequest, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest, SaveContainerK8SRequest
 from src.db_ops.dto.container_dto import CreateContainerDBModel, GetContainerDBModel, UpdateContainerDBModel, UpdateContainerDBFilters, UpdateContainerDBData, ListContainersDBModel
 
 # data transformers
@@ -306,4 +307,23 @@ class ContainerService:
             raise HTTPException(status_code=500, detail=f"Error deleting container in ContainerMaker: {str(e)}")
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error deleting container: {str(e)}")
+
+    async def save_container_in_k8s(self, save_container_k8s_request: SaveContainerK8SRequest):
+        '''
+        Trigger a container snapshot/save via container-maker.
+        NOTE: container-maker blocks until the snapshot Job completes, so callers should run
+        this in the background. Save progress is delivered via the DB save_status trigger -> SSE,
+        not this return value.
+        '''
+        try:
+            grpc_save_container_request = GRPCSaveContainerRequest(
+                container_id=save_container_k8s_request.container_id,
+                network_name=save_container_k8s_request.network_name
+            )
+            grpc_save_response = await asyncio.to_thread(self.stub.saveContainer, grpc_save_container_request)
+            return grpc_save_response
+        except ContainerMakerException as e:
+            raise HTTPException(status_code=500, detail=f"Error saving container in ContainerMaker: {str(e)}")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error saving container: {str(e)}")
 

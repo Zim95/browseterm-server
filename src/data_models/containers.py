@@ -83,3 +83,9 @@ class DeleteContainerK8SRequest(BaseModel):
     """Request model for deleting a container from Kubernetes."""
     container_id: str
     network_name: str
+
+
+class SaveContainerK8SRequest(BaseModel):
+    """Request model for saving (snapshotting) a container in Kubernetes."""
+    container_id: str
+    network_name: str
