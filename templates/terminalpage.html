@@ -47,6 +47,9 @@
         <span class="moon-icon">🌙</span>
     </button>
 
+    <!-- Notification container (populated by NotificationManager in base.js) -->
+    <div id="notificationContainer" class="notification-container"></div>
+
     <div class="terminal-container">
         <!-- Main Terminal Area -->
         <div class="terminal-main">
@@ -140,6 +143,8 @@
         window.wsToken = {{ (wsToken or '') | tojson | safe }};
         window.userInfo = {{ (userInfo or {}) | tojson | safe }};
     </script>
+    <!-- base.js defines the NotificationManager (window.notifications) + dark mode toggle -->
+    <script src="{{ url_for('static', path='/js/base.js') }}"></script>
     <script src="{{ url_for('static', path='/js/terminalpage.js') }}"></script>
 </body>
 </html>
