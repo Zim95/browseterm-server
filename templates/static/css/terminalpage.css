@@ -190,6 +190,21 @@ body.dark-mode .terminal-warning {
     font-size: 1.1rem;
 }
 
+/* In-progress (saving) state: disabled look + spinning icon */
+.save-btn.saving {
+    cursor: progress;
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+.save-btn.saving i {
+    animation: save-spin 0.8s linear infinite;
+}
+
+@keyframes save-spin {
+    to { transform: rotate(360deg); }
+}
+
 /* Ads Sidebar */
 .ads-sidebar {
     width: 320px;

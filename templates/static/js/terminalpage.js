@@ -383,6 +383,16 @@ class TerminalPageHandler {
         if (!btn) return;
         btn.disabled = active;
         btn.classList.toggle('saving', active);
+        // Swap the label to "Saving…" while in progress, restore it afterwards.
+        const label = btn.querySelector('span');
+        if (label) {
+            if (active) {
+                if (!btn.dataset.label) btn.dataset.label = label.textContent;
+                label.textContent = 'Saving…';
+            } else if (btn.dataset.label) {
+                label.textContent = btn.dataset.label;
+            }
+        }
     }
 
     /**
