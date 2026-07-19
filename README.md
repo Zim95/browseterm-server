@@ -72,7 +72,7 @@ NOTE: This setup is a little different on windows. Please use WSL in windows.
 
     # OTHER ENVs
     CERT_MANAGER_CRON_JOB_NAME=cert-manager
-    SOCKET_SSH_WSS_URL=ws://socket-ssh.local.com:8000
+    SOCKET_SSH_WSS_URL=ws://socketssh.local:8000
     INGRESS_HOST=browseterm.local.com
     SOCKET_SSH_HOST=socket-ssh.local.com
     ```
