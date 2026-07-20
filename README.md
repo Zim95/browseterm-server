@@ -144,3 +144,25 @@ NOTE: To run anything inside the shell, activate the virtualenv. But to run anyt
 
 3. Removing a dependency
     - `poetry remove <package>`
+
+
+# Running tests
+This repo has two separate test suites: frontend (JavaScript) and backend (Python).
+
+## Frontend tests (Jest)
+These are self-contained unit tests for the static JS. They run under the jsdom environment with the browser boundaries mocked (`fetch`, `EventSource`), so no live services are needed.
+```
+npm install
+npx jest tests/frontend
+```
+Or use the configured script (equivalent to `jest`):
+```
+npm test
+```
+
+## Backend tests (unittest)
+These are integration tests under `tests/integration/` (e.g. `containers/`, `authentication/`, `status_listener/`). They are NOT standalone unit tests: they require live dependencies (Postgres, Redis, and in some cases the running services / cluster) to be up before running them.
+```
+poetry install
+poetry run python -m unittest discover -s tests/integration -p "test_*.py"
+```
