@@ -384,6 +384,14 @@ class TerminalsHandler {
                 showPlay: false,
                 showDelete: false,
                 showLoading: true
+            },
+            hibernated: {
+                showResume: true,
+                showDelete: true,
+                showLoading: false
+            },
+            resuming: {
+                showLoading: true
             }
         };
 
@@ -401,6 +409,12 @@ class TerminalsHandler {
         if (config.showPlay) {
             html += `
                 <button class="control-btn play-btn" data-terminal-id="${terminalId}">
+                    <i class="fas fa-play"></i>
+                </button>`;
+        }
+        if (config.showResume) {
+            html += `
+                <button class="control-btn resume-btn" data-terminal-id="${terminalId}" title="Resume from snapshot">
                     <i class="fas fa-play"></i>
                 </button>`;
         }
@@ -481,12 +495,20 @@ class TerminalsHandler {
      */
     attachTerminalControls() {
         const playBtns = document.querySelectorAll('.play-btn');
+        const resumeBtns = document.querySelectorAll('.resume-btn');
         const deleteBtns = document.querySelectorAll('.delete-btn');
 
         playBtns.forEach(btn => {
             btn.addEventListener('click', (e) => {
                 const terminalId = e.target.closest('button').getAttribute('data-terminal-id');
                 this.handlePlay(terminalId);
+            });
+        });
+
+        resumeBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const terminalId = e.target.closest('button').getAttribute('data-terminal-id');
+                this.handleResume(terminalId);
             });
         });
 
@@ -702,6 +724,31 @@ class TerminalsHandler {
     handlePlay(terminalId) {
         console.log('Play button clicked for terminal:', terminalId);
         window.open(`/terminalpage?id=${terminalId}`, '_blank');
+    }
+
+    /**
+     * Handle resume button click — a HIBERNATED container: recreate its pod from the saved
+     * snapshot, then open the terminal.
+     * @param {string} terminalId - Terminal DB ID
+     */
+    async handleResume(terminalId) {
+        console.log('Resume button clicked for terminal:', terminalId);
+        try {
+            const resp = await fetch('/resume-container', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ container_id: terminalId })
+            });
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${resp.status}`);
+            }
+            TerminalsUtilities.showNotification('success', 'Resuming', 'Restoring your workspace from its last snapshot…', 4000);
+            await this.loadTerminals();
+            window.open(`/terminalpage?id=${terminalId}`, '_blank');
+        } catch (e) {
+            TerminalsUtilities.showNotification('error', 'Resume failed', e.message, 6000);
+        }
     }
 
     /**

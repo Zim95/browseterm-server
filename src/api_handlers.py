@@ -12,7 +12,7 @@ from typing import AsyncGenerator
 from src.containers.containers_service import ContainerService
 from src.data_models.containers import CreateContainerDBRequest, CreateContainerK8SRequest, GetContainerRequest, ResourceLimits, UpdateContainerRequest, UpdateContainerFilters, UpdateContainerData, ListUserContainersRequest, DeleteContainerDBRequest, DeleteContainerK8SRequest, SaveContainerK8SRequest
 from browseterm_db.operations.all_operations import ContainerOps
-from browseterm_db.models.containers import SaveStatus
+from browseterm_db.models.containers import SaveStatus, ContainerStatus
 from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
@@ -351,6 +351,88 @@ async def save_container(request: Request) -> JSONResponse:
         return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
     except Exception as e:
         return JSONResponse(content={'error': f"Error starting container save: {str(e)}"}, status_code=500)
+
+
+@authenticate_session
+async def resume_container(request: Request) -> JSONResponse:
+    '''
+    Authentication required. Resume a HIBERNATED container: recreate its pod from the saved snapshot
+    image (falls back to the base image if it was never saved), reconstructing the create request
+    from the stored row. The surviving/new Service routes to it via the app=<name> label.
+    '''
+    container_id = None
+    try:
+        request_data: dict = await request.json()
+        container_id = request_data['container_id']
+
+        ops = ContainerOps(DB_CONFIG)
+        row_result = await asyncio.to_thread(ops.find_one, filters={"id": container_id})
+        row: dict = row_result.data
+        if not row:
+            return JSONResponse(content={'error': f'Container {container_id} not found'}, status_code=404)
+
+        # mark RESUMING so the UI can show progress
+        await asyncio.to_thread(ops.update, filters={"id": container_id}, data={"status": ContainerStatus.RESUMING})
+
+        # rebuild the env the status sidecar needs (same as create), keeping any stored env vars.
+        db_host_fqdn = f"{DB_CONFIG.host}.{NAMESPACE}.svc.cluster.local"
+        environment_variables: dict = {
+            **(row.get('environment_vars') or {}),
+            'CONTAINER_ID': container_id,
+            'DB_USERNAME': DB_CONFIG.username,
+            'DB_PASSWORD': DB_CONFIG.password,
+            'DB_NAME': DB_CONFIG.database,
+            'DB_HOST': db_host_fqdn,
+            'DB_PORT': str(DB_CONFIG.port),
+            'DB_DATABASE': DB_CONFIG.database,
+        }
+        resource_limits = ResourceLimits(
+            cpu_limit=row.get('cpu_limit') or '1',
+            memory_limit=row.get('memory_limit') or '1Gi',
+            storage_limit=row.get('storage_limit') or '2Gi',
+            snapshot_size_limit='2Gi',
+        )
+        k8s_request = CreateContainerK8SRequest(
+            image_id=row['image_id'],
+            container_name=row['name'],
+            network_name=f"{row['user_id']}-namespace",
+            exposure_level=2,
+            publish_information=row.get('port_mappings') or [],
+            environment_variables=environment_variables,
+            resource_limits=resource_limits,
+        )
+        container_service = ContainerService()
+        # recreate the pod FROM the snapshot (saved_image); base image if it was never saved.
+        response = await container_service.create_container_in_k8s(
+            k8s_request, image_name_override=row.get('saved_image')
+        )
+        # sync the new pod identity back to the row so the next save resolves it; RUNNING (the
+        # status sidecar keeps it accurate thereafter).
+        await asyncio.to_thread(
+            ops.update,
+            filters={"id": container_id},
+            data={
+                "kubernetes_id": response.container_id,
+                "associated_resources": response.associated_resources,
+                "status": ContainerStatus.RUNNING,
+            },
+        )
+        return JSONResponse(
+            content={'status': 'resumed', 'container_id': container_id, 'kubernetes_id': response.container_id},
+            status_code=200,
+        )
+    except HTTPException as e:
+        return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
+    except Exception as e:
+        if container_id:
+            try:
+                await asyncio.to_thread(
+                    ContainerOps(DB_CONFIG).update,
+                    filters={"id": container_id}, data={"status": ContainerStatus.FAILED},
+                )
+            except Exception:
+                pass
+        return JSONResponse(content={'error': f"Error resuming container: {str(e)}"}, status_code=500)
 
 
 @authenticate_session

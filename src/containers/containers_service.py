@@ -151,16 +151,22 @@ class ContainerService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error creating container: {str(e)}")
 
-    async def create_container_in_k8s(self, create_container_k8s_request: CreateContainerK8SRequest) -> ContainerResponseModel:
+    async def create_container_in_k8s(self, create_container_k8s_request: CreateContainerK8SRequest, image_name_override: Optional[str] = None) -> ContainerResponseModel:
         '''
         Create container in k8s.
         This is the actual container creation logic.
         NOTE: Here, we need to create different containers, eg: SSH Container, Web Socket Container.
               Therefore, we will not check for limits here.
+        image_name_override: if set (e.g. a container's saved_image), the pod is spun from THAT image
+              instead of the base image from image_id — used by the resume-from-snapshot flow.
         '''
-        image: Optional[Dict[str, Any]] = await get_image(GetImageDataModel(id=create_container_k8s_request.image_id))
-        if not image:
-            raise Exception(f"Image with id {create_container_k8s_request.image_id} not found")
+        if image_name_override:
+            image_name: str = image_name_override
+        else:
+            image: Optional[Dict[str, Any]] = await get_image(GetImageDataModel(id=create_container_k8s_request.image_id))
+            if not image:
+                raise Exception(f"Image with id {create_container_k8s_request.image_id} not found")
+            image_name = image['image']
         try:
             resource_req_model: ResourceRequirementsModel = ResourceRequirementsModel(
                 cpu_request=ResourceUnitConverter.derive_cpu_request(create_container_k8s_request.resource_limits.cpu_limit, RESOURCE_CPU_REQUEST_RATIO),
@@ -172,7 +178,7 @@ class ContainerService:
                 snapshot_size_limit=create_container_k8s_request.resource_limits.snapshot_size_limit
             )
             create_container_k8s_model: CreateContainerModel = CreateContainerModel(
-                image_name=image['image'],
+                image_name=image_name,
                 container_name=sanitize_container_name(create_container_k8s_request.container_name),
                 network_name=create_container_k8s_request.network_name,
                 exposure_level=ExposureLevel(create_container_k8s_request.exposure_level),
