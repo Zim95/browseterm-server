@@ -415,7 +415,7 @@ class TerminalsHandler {
         if (config.showResume) {
             html += `
                 <button class="control-btn resume-btn" data-terminal-id="${terminalId}" title="Resume from snapshot">
-                    <i class="fas fa-play"></i>
+                    <i class="fas fa-power-off"></i>
                 </button>`;
         }
         if (config.showDelete) {
@@ -433,10 +433,18 @@ class TerminalsHandler {
      * @returns {string} HTML string for terminal item
      */
     renderTerminalItem(terminal) {
-        // Status values: Pending, Running, Succeeded, Failed, Unknown
+        // Status values: Pending, Running, Succeeded, Failed, Unknown, Hibernated, Resuming
         const statusLower = (terminal.status || 'Pending').toLowerCase();
         const statusText = terminal.status || 'Pending';
         const controlsHTML = this.getControlsHTML(terminal.id, statusLower, terminal.kubernetes_id);
+
+        // Prefix a glyph on lifecycle states so they read at a glance:
+        // moon = asleep (hibernated), spinning arrows = waking up (resuming).
+        const statusIconMap = {
+            hibernated: '<i class="fas fa-moon"></i> ',
+            resuming: '<i class="fas fa-rotate spin-icon"></i> '
+        };
+        const statusIcon = statusIconMap[statusLower] || '';
 
         return `
             <div class="terminal-item" data-terminal-id="${terminal.id}">
@@ -446,7 +454,7 @@ class TerminalsHandler {
                         <div class="ip-address">${terminal.ipAddress || 'Pending...'}</div>
                         <div class="port">${terminal.port || '-'}</div>
                     </div>
-                    <div class="terminal-status ${statusLower}">${statusText}</div>
+                    <div class="terminal-status ${statusLower}">${statusIcon}${statusText}</div>
                 </div>
                 <div class="terminal-controls">
                     ${controlsHTML}

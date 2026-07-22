@@ -113,6 +113,23 @@
     color: #721c24;
 }
 
+/* Dormant: saved to a snapshot and torn down to free resources. */
+.terminal-status.hibernated {
+    background-color: #e6e4f5;
+    color: #4a3f8a;
+}
+
+/* Waking: recreating the pod from the snapshot image. */
+.terminal-status.resuming {
+    background-color: #d9d5f2;
+    color: #4a3f8a;
+}
+
+/* Reuse the spinner motion for the resuming glyph. */
+.terminal-status .spin-icon {
+    animation: spin 1s linear infinite;
+}
+
 .terminal-controls {
     display: flex;
     gap: 8px;
@@ -488,6 +505,16 @@ body.dark-mode .terminal-status.pending {
 
 body.dark-mode .terminal-status.active {
     background: #2472c8;
+    color: #ffffff;
+}
+
+body.dark-mode .terminal-status.hibernated {
+    background: #5b52a3;
+    color: #ffffff;
+}
+
+body.dark-mode .terminal-status.resuming {
+    background: #7a6fd0;
     color: #ffffff;
 }
 
