@@ -338,6 +338,7 @@ class TerminalPageHandler {
                 }
             };
             this.websocket.send(JSON.stringify(sshSendMessage));
+            this.markActivity();  // user keystrokes = the terminal is actively in use
         } else {
             console.warn('WebSocket not connected or SSH not established');
         }
@@ -452,9 +453,12 @@ class TerminalPageHandler {
                 this.isConnected = true;
                 this.term.writeln('\x1b[1;32m✓ Connected to WebSocket server\x1b[0m');
                 this.term.writeln('\x1b[1;36m✓ Waiting for server to be ready...\x1b[0m');
+                this.markActivity();            // opening a terminal counts as activity
+                this.startActivityHeartbeat();  // keeps the session alive + feeds the reaper
             };
 
             this.websocket.onmessage = (event) => {
+                this.markActivity();  // any traffic (incl. command output) = the terminal is in use
                 this.handleWebSocketMessage(event);
             };
 
@@ -468,11 +472,50 @@ class TerminalPageHandler {
                 console.log('WebSocket disconnected');
                 this.isConnected = false;
                 this.isSSHConnected = false;
+                this.stopActivityHeartbeat();
                 this.term.writeln('\x1b[1;33m\r\nConnection closed.\x1b[0m');
             };
         } catch (error) {
             console.error('Error creating WebSocket:', error);
             this.showError(`Failed to connect: ${error.message}`);
+        }
+    }
+
+    /**
+     * Mark that the terminal just saw activity (WS traffic in either direction).
+     */
+    markActivity() {
+        this._lastActivityAt = Date.now();
+    }
+
+    /**
+     * Throttled heartbeat: while there has been recent terminal activity, POST /container-activity.
+     * That one endpoint (a) refreshes the login session TTL so terminal-only work doesn't get you
+     * logged out, and (b) stamps last_active_at — the idle signal the reaper reads. Client-driven
+     * because the browser is the only place that sees terminal traffic.
+     */
+    startActivityHeartbeat() {
+        if (this._activityHeartbeat) return;  // already running
+        this._lastFlushAt = 0;
+        const INTERVAL_MS = 90 * 1000;
+        const flush = () => {
+            // Only call the server if there was activity since the last flush (don't spam it).
+            if (!this._lastActivityAt || this._lastActivityAt <= this._lastFlushAt) return;
+            this._lastFlushAt = this._lastActivityAt;
+            fetch('/container-activity', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ container_id: String(this.terminalInfo.id) })
+            }).catch(() => { /* best-effort; the next tick retries */ });
+        };
+        flush();  // stamp immediately on connect
+        this._activityHeartbeat = setInterval(flush, INTERVAL_MS);
+    }
+
+    stopActivityHeartbeat() {
+        if (this._activityHeartbeat) {
+            clearInterval(this._activityHeartbeat);
+            this._activityHeartbeat = null;
         }
     }
 

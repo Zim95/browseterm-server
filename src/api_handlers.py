@@ -4,6 +4,7 @@ Their job is to parse request data, call some class and return response data.
 '''
 
 import asyncio
+from datetime import datetime, timezone
 from fastapi import Request, HTTPException
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import json
@@ -436,6 +437,34 @@ async def resume_container(request: Request) -> JSONResponse:
             except Exception:
                 pass
         return JSONResponse(content={'error': f"Error resuming container: {str(e)}"}, status_code=500)
+
+
+@authenticate_session
+async def container_activity(request: Request) -> JSONResponse:
+    '''
+    Authenticated activity heartbeat, called by the terminal page while a terminal is in use.
+    Does two things from one call:
+      1. Refreshes the login session TTL — via the @authenticate_session decorator, so a user
+         working only in a terminal (WebSocket traffic, no other HTTP requests) is NOT logged out.
+      2. Stamps last_active_at on the container — the idle signal the reaper reads to decide what
+         to hibernate. Scoped to the caller's own container (id + user_id).
+    '''
+    try:
+        request_data: dict = await request.json()
+        container_id = request_data.get('container_id')
+        if not container_id:
+            return JSONResponse(content={'error': 'container_id is required'}, status_code=400)
+        user_info = request.state.user_info
+        user_id = user_info.id if hasattr(user_info, 'id') else user_info['id']
+        ops = ContainerOps(DB_CONFIG)
+        await asyncio.to_thread(
+            ops.update,
+            filters={"id": container_id, "user_id": user_id},
+            data={"last_active_at": datetime.now(timezone.utc)},
+        )
+        return JSONResponse(content={'status': 'ok'}, status_code=200)
+    except Exception as e:
+        return JSONResponse(content={'error': f"Error recording activity: {str(e)}"}, status_code=500)
 
 
 @authenticate_session

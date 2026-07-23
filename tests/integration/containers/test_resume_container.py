@@ -196,3 +196,34 @@ class TestSaveContainerHandler(TestCase):
                   if c.kwargs.get('data', {}).get('save_status') == SaveStatus.FAILED.value]
         self.assertTrue(failed, '_run_save did not record save_status=FAILED')
         self.assertIn('boom', failed[0]['save_error'])
+
+
+class TestContainerActivity(TestCase):
+    '''
+    Handler-level tests for api_handlers.container_activity: it stamps last_active_at scoped to the
+    caller's own container (id + user_id), and — via @authenticate_session — refreshes the login
+    session (tested there). Uses .__wrapped__ to skip auth and injects request.state.user_info.
+    '''
+
+    def _run(self, body: dict, user_id: str = "user-42"):
+        req: MagicMock = MagicMock(spec=Request)
+        req.json = AsyncMock(return_value=body)
+        req.state.user_info = SimpleNamespace(id=user_id)
+        mock_ops: MagicMock = MagicMock()
+        mock_ops.update.return_value = SimpleNamespace(data=None)
+        with patch('src.api_handlers.ContainerOps', return_value=mock_ops):
+            result = asyncio.run(api_handlers.container_activity.__wrapped__(request=req))
+        return result, mock_ops
+
+    def test_stamps_last_active_at_scoped_to_user(self) -> None:
+        result, mock_ops = self._run({'container_id': 'c-1'})
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_called_once()
+        kwargs = mock_ops.update.call_args.kwargs
+        self.assertEqual(kwargs['filters'], {"id": "c-1", "user_id": "user-42"})
+        self.assertIn('last_active_at', kwargs['data'])
+
+    def test_missing_container_id_is_400(self) -> None:
+        result, mock_ops = self._run({})
+        self.assertEqual(result.status_code, 400)
+        mock_ops.update.assert_not_called()
