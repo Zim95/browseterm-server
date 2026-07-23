@@ -19,15 +19,26 @@ class CertificateUtils:
     '''
     A utility class for create, read and delete certificates using secrets and jobs.
     '''
-    config.load_incluster_config()
-    batch_v1: client.BatchV1Api = client.BatchV1Api()
-    core_v1: client.CoreV1Api = client.CoreV1Api()  # Add CoreV1Api for secrets
+    # Clients are created lazily (see _init_clients), NOT at import time. Calling
+    # load_incluster_config() in the class body made this module unimportable outside a
+    # cluster (e.g. in unit tests / any tooling that imports api_handlers).
+    batch_v1: client.BatchV1Api = None
+    core_v1: client.CoreV1Api = None
+
+    @classmethod
+    def _init_clients(cls) -> None:
+        '''Load in-cluster config and build the API clients once, on first use.'''
+        if cls.batch_v1 is None or cls.core_v1 is None:
+            config.load_incluster_config()
+            cls.batch_v1 = client.BatchV1Api()
+            cls.core_v1 = client.CoreV1Api()  # CoreV1Api for secrets
 
     @classmethod
     def poll_until_completeion(cls, created_job: client.V1Job) -> None:
         '''
         Poll until the job is complete.
         '''
+        cls._init_clients()
         while True:
             job: client.V1Job = cls.batch_v1.read_namespaced_job(name=created_job.metadata.name, namespace=CERT_MANAGER_CRON_JOB_NAMESPACE)
             if job.status.succeeded:
@@ -45,6 +56,7 @@ class CertificateUtils:
             services: Comma separated string containing service names. Eg: socket-ssh-service,some-other-service
         :returns: The created V1Job object.
         """
+        cls._init_clients()
         try:
             # Get the cronjob
             cronjob: client.V1CronJob = cls.batch_v1.read_namespaced_cron_job(
@@ -108,6 +120,7 @@ class CertificateUtils:
         :returns:
             A dictionary containing the secret data.
         '''
+        cls._init_clients()
         try:
             secret: client.V1Secret = cls.core_v1.read_namespaced_secret(
                 name=secret_name, namespace=CERT_MANAGER_CRON_JOB_NAMESPACE
@@ -128,6 +141,7 @@ class CertificateUtils:
         :returns:
             None
         '''
+        cls._init_clients()
         try:
             secret: client.V1Secret = cls.core_v1.read_namespaced_secret(
                 name=secret_name, namespace=CERT_MANAGER_CRON_JOB_NAMESPACE

@@ -407,12 +407,15 @@ async def resume_container(request: Request) -> JSONResponse:
             k8s_request, image_name_override=row.get('saved_image')
         )
         # sync the new pod identity back to the row so the next save resolves it; RUNNING (the
-        # status sidecar keeps it accurate thereafter).
+        # status sidecar keeps the status accurate thereafter). ip_address MUST be updated here:
+        # resume creates a brand-new Service with a new ClusterIP, and the sidecar only touches
+        # status — without this the terminal keeps dialing the old (deleted) IP and SSH times out.
         await asyncio.to_thread(
             ops.update,
             filters={"id": container_id},
             data={
                 "kubernetes_id": response.container_id,
+                "ip_address": response.container_ip,
                 "associated_resources": response.associated_resources,
                 "status": ContainerStatus.RUNNING,
             },
