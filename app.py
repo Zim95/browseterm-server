@@ -6,6 +6,9 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 # local
+from src.common.logging_setup import configure_logging
+configure_logging("browseterm-server")  # structured JSON logs to stdout (before anything logs)
+
 import src.template_handlers as template_handlers
 import src.api_handlers as api_handlers
 from src.status_listener import status_listener_service

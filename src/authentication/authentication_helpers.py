@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import RedirectResponse
 
 # local
+from src.common.logging_setup import set_request_context
 from src.authentication.session_manager import RedisSessionManager
 from src.db_ops.user_db_ops import create_or_update_user
 from src.db_ops.subscription_db_ops import get_or_create_free_subscription, get_current_subscription_plan
@@ -129,6 +130,15 @@ def authenticate_session(func: callable) -> callable:
 
         # Session is valid, extend it
         extend_session(session_id, expiry=1800)  # 30 minutes
+
+        # Set the logging correlation context for this request: accept an inbound X-Request-Id
+        # (else mint one) and record the acting user, so every log line in this handler — and any
+        # gRPC call it makes — is tagged with the same request_id + user for cross-service tracing.
+        ui = validation.session_data.user_info
+        set_request_context(
+            request_id=request.headers.get("X-Request-Id"),
+            user=f"{getattr(ui, 'name', None) or 'user'}:{getattr(ui, 'email', None) or '-'}",
+        )
 
         # Add session data to request.state
         request.state.user_info = validation.session_data.user_info

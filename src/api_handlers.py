@@ -18,6 +18,9 @@ from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
 from src.common.config import DB_CONFIG, NAMESPACE
+from src.common.logging_setup import get_logger
+
+logger = get_logger("api_handlers")
 
 
 # dtos
@@ -365,11 +368,13 @@ async def resume_container(request: Request) -> JSONResponse:
     try:
         request_data: dict = await request.json()
         container_id = request_data['container_id']
+        logger.info("resume requested", extra={"container_id": container_id})
 
         ops = ContainerOps(DB_CONFIG)
         row_result = await asyncio.to_thread(ops.find_one, filters={"id": container_id})
         row: dict = row_result.data
         if not row:
+            logger.warning("resume: container not found", extra={"container_id": container_id})
             return JSONResponse(content={'error': f'Container {container_id} not found'}, status_code=404)
 
         # mark RESUMING so the UI can show progress
@@ -421,6 +426,7 @@ async def resume_container(request: Request) -> JSONResponse:
                 "status": ContainerStatus.RUNNING,
             },
         )
+        logger.info("resume complete", extra={"container_id": container_id, "kubernetes_id": response.container_id})
         return JSONResponse(
             content={'status': 'resumed', 'container_id': container_id, 'kubernetes_id': response.container_id},
             status_code=200,
@@ -428,6 +434,7 @@ async def resume_container(request: Request) -> JSONResponse:
     except HTTPException as e:
         return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
     except Exception as e:
+        logger.error("resume failed", extra={"container_id": container_id}, exc_info=True)
         if container_id:
             try:
                 await asyncio.to_thread(
