@@ -11,9 +11,12 @@ from browseterm_db.operations import OperationResult
 from browseterm_db.operations.all_operations import UserOps
 from browseterm_db.models.users import AuthProvider
 from src.common.config import DB_CONFIG
+from src.common.logging_setup import get_logger
 
 # DTOs
 from src.db_ops.dto.user_dto import CreateOrUpdateUserModel, GetUserModel
+
+logger = get_logger("user_db_ops")
 
 
 async def create_or_update_user(user_info: CreateOrUpdateUserModel) -> Optional[Dict[str, Any]]:
@@ -58,5 +61,5 @@ async def create_or_update_user(user_info: CreateOrUpdateUserModel) -> Optional[
             raise Exception(create_result.error)
         return create_result.data
     except Exception as e:
-        print(f"Error creating or updating user: {e}")
+        logger.error("error creating or updating user", extra={"provider": user_info.provider, "provider_id": user_info.provider_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")

@@ -13,6 +13,9 @@ from src.common.config import CERT_MANAGER_CRON_JOB_NAMESPACE
 from src.db_ops.container_db_ops import list_user_containers
 from src.db_ops.subscription_db_ops import get_user_current_subscription_plan
 from src.db_ops.dto.subscription_dto import GetUserSubscriptionPlanModel
+from src.common.logging_setup import get_logger
+
+logger = get_logger("containers_helpers")
 
 
 class CertificateUtils:
@@ -102,11 +105,11 @@ class CertificateUtils:
                 body=job
             )
 
-            print(f"Created job {created_job.metadata.name} from cronjob {CERT_MANAGER_CRON_JOB_NAME}")
+            logger.info("created job from cronjob", extra={"job_name": created_job.metadata.name, "cronjob_name": CERT_MANAGER_CRON_JOB_NAME})
             cls.poll_until_completeion(created_job)
-            print(f"Job {created_job.metadata.name} completed.")
+            logger.info("job completed", extra={"job_name": created_job.metadata.name})
         except ApiException as e:
-            print(f"Error creating job from cronjob: {e}")
+            logger.error("error creating job from cronjob", exc_info=True)
             raise
 
     @classmethod
@@ -129,7 +132,7 @@ class CertificateUtils:
                 return secret.data
             return {}
         except ApiException as e:
-            print(f"Error reading secret: {e}")
+            logger.error("error reading secret", extra={"secret_name": secret_name}, exc_info=True)
             raise
 
     @classmethod
@@ -149,7 +152,7 @@ class CertificateUtils:
             if secret:
                 cls.core_v1.delete_namespaced_secret(name=secret_name, namespace=CERT_MANAGER_CRON_JOB_NAMESPACE)
         except ApiException as e:
-            print(f"Error deleting secret: {e}")
+            logger.error("error deleting secret", extra={"secret_name": secret_name}, exc_info=True)
             raise
 
 
@@ -176,7 +179,7 @@ async def is_user_within_container_limit(user_id: str) -> Dict:
             'current_subscription_plan_max_containers': current_subscription_plan_max_containers
         }
     except Exception as e:
-        print(f"Error checking user container limit: {e}")
+        logger.error("error checking user container limit", extra={"user_id": user_id}, exc_info=True)
         raise Exception(f"Error checking user container limit: {str(e)}")
 
 
@@ -211,5 +214,5 @@ def sanitize_container_name(container_name: str) -> str:
             sanitized = 'container'  # Fallback if name becomes empty
         return sanitized
     except Exception as e:
-        print(f"Error sanitizing container name: {e}")
+        logger.error("error sanitizing container name", exc_info=True)
         raise Exception(f"Error sanitizing container name: {str(e)}")

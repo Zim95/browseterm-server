@@ -11,9 +11,12 @@ from browseterm_db.operations import OperationResult
 from browseterm_db.operations.all_operations import ContainerOps
 from src.common.config import DB_CONFIG
 from src.common.exceptions import ContainerDBException
+from src.common.logging_setup import get_logger
 
 # DTOs
 from src.db_ops.dto.container_dto import CreateContainerDBModel, GetContainerDBModel, UpdateContainerDBModel
+
+logger = get_logger("container_db_ops")
 
 
 async def create_container_in_db(container_info: CreateContainerDBModel) -> Optional[Dict[str, Any]]:
@@ -119,10 +122,10 @@ async def delete_container(container_id: str, user_id: str) -> bool:
         return delete_result.success
 
     except ValueError as e:
-        print(f"Validation error deleting container: {e}")
+        logger.error("validation error deleting container", extra={"container_id": container_id, "user_id": user_id}, exc_info=True)
         raise e
     except Exception as e:
-        print(f"Error deleting container: {e}")
+        logger.error("error deleting container", extra={"container_id": container_id, "user_id": user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -151,7 +154,7 @@ async def get_container(get_container_data: GetContainerDBModel) -> Optional[Dic
             raise Exception(container.error)
         return container.data
     except Exception as e:
-        print(f"Error getting container: {e}")
+        logger.error("error getting container", extra={"container_id": get_container_data.container_id, "user_id": get_container_data.user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -180,5 +183,5 @@ async def list_user_containers(user_id: str, limit: Optional[int] = None, offset
             raise Exception(containers.error)
         return containers.data
     except Exception as e:
-        print(f"Error listing containers: {e}")
+        logger.error("error listing containers", extra={"user_id": user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")

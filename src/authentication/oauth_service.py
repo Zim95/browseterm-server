@@ -24,6 +24,9 @@ from src.common.config import (
 # modules
 import httpx
 
+# logging
+from src.common.logging_setup import get_logger
+
 # dtos
 from src.authentication.dto.oauth_credentials_dto import OAuthCredentialsModel
 from src.authentication.dto.token_exchange_dto import TokenExchangeResponseModel
@@ -33,6 +36,8 @@ from src.authentication.dto.user_info_dto import UserInfoModel
 from src.authentication.data_transformers.token_exchange_transformer import TokenExchangeTransformer
 from src.authentication.data_transformers.google_user_info_transformer import GoogleUserInfoTransformer
 from src.authentication.data_transformers.github_user_info_transformer import GithubUserInfoTransformer
+
+logger = get_logger("oauth_service")
 
 
 class OAuthTokenExchangeService:
@@ -62,13 +67,12 @@ class OAuthTokenExchangeService:
                 headers=self.credentials.token_exchange_headers
             )
             if response.status_code != 200:
-                error_msg: str = f"Token exchange failed with status {response.status_code}"
-                print(f"{error_msg}: {response.text[:200]}")
+                logger.warning("token exchange failed", extra={"status_code": response.status_code, "body": response.text[:200]})
                 return None
             token_result: dict = response.json()
             access_token: str = token_result.get('access_token')
             if not access_token:
-                print("No access token received")
+                logger.warning("no access token received")
                 return None
             # Transform to DTO
             return TokenExchangeTransformer.transform(token_result)
@@ -100,14 +104,14 @@ class OAuthUserInfoService:
             credentials: Optional[OAuthCredentialsModel] = await self.get_credentials(code)
             if not credentials:
                 error_msg: str = "OAuth credentials not configured for this provider"
-                print(f"Credentials error: {error_msg}")
+                logger.error("credentials error", extra={"error": error_msg})
                 raise Exception(error_msg)
             # Exchange token
             token_service: OAuthTokenExchangeService = OAuthTokenExchangeService(credentials)
             token_info: Optional[TokenExchangeResponseModel] = await token_service.exchange_token(code)
             if not token_info:
                 error_msg: str = "Failed to exchange authorization code for access token"
-                print(f"Token exchange error: {error_msg}")
+                logger.error("token exchange error", extra={"error": error_msg})
                 raise Exception(error_msg)
             # Fetch user info from provider API
             async with httpx.AsyncClient() as client:
@@ -117,14 +121,14 @@ class OAuthUserInfoService:
                 )
                 if user_response.status_code != 200:
                     error_msg: str = f"Provider API returned status {user_response.status_code}: {user_response.text[:200]}"
-                    print(f"User info API error: {error_msg}")
+                    logger.error("user info API error", extra={"status_code": user_response.status_code})
                     raise Exception(error_msg)
                 # Transform to UserInfoModel
                 return self.transform_user_info(user_response.json())
         except NotImplementedError as ni:
             raise NotImplementedError(ni)
         except Exception as e:
-            print(f"Error fetching user info: {e}")
+            logger.error("error fetching user info", exc_info=True)
             # Re-raise with the original message to propagate to frontend
             raise Exception(str(e))
 

@@ -10,9 +10,12 @@ import asyncio
 from browseterm_db.operations import OperationResult
 from browseterm_db.operations.all_operations import ImageOps
 from src.common.config import DB_CONFIG
+from src.common.logging_setup import get_logger
 
 # DTOs
 from src.db_ops.dto.image_dto import GetImageDataModel
+
+logger = get_logger("image_db_ops")
 
 
 async def get_image(filters: GetImageDataModel) -> Optional[Dict[str, Any]]:
@@ -49,7 +52,7 @@ async def get_image(filters: GetImageDataModel) -> Optional[Dict[str, Any]]:
         # re-raise explicit validation errors
         raise
     except Exception as e:
-        print(f"Error getting image: {e}")
+        logger.error("error getting image", exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -69,5 +72,5 @@ async def list_all_existing_images() -> List[Dict[str, Any]]:
             raise Exception(result.error)
         return result.data or []
     except Exception as e:
-        print(f"Error listing images: {e}")
+        logger.error("error listing images", exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")

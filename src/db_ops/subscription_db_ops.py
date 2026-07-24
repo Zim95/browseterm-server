@@ -11,7 +11,10 @@ import asyncio
 from browseterm_db.operations import OperationResult
 from browseterm_db.operations.all_operations import SubscriptionOps, SubscriptionTypeOps
 from src.common.config import DB_CONFIG
+from src.common.logging_setup import get_logger
 from browseterm_db.models.subscriptions import SubscriptionStatus
+
+logger = get_logger("subscription_db_ops")
 
 # DTOs
 from src.db_ops.dto.subscription_dto import (
@@ -38,7 +41,7 @@ async def list_all_existing_subscription_types() -> Optional[List[Dict[str, Any]
             raise Exception(subscription_types.error)
         return subscription_types.data
     except Exception as e:
-        print(f"Error listing all existing subscription types: {e}")
+        logger.error("error listing all existing subscription types", exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -68,7 +71,7 @@ async def get_current_subscription_plan(data: GetSubscriptionPlanModel) -> Optio
         # return the subscription type data
         return subscription_type.data
     except Exception as e:
-        print(f"Error getting current subscription plan: {e}")
+        logger.error("error getting current subscription plan", extra={"subscription_id": data.subscription_id, "subscription_type_id": data.subscription_type_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -99,7 +102,7 @@ async def create_free_subscription(data: CreateFreeSubscriptionModel, subscripti
             raise Exception(result.error)
         return result.data
     except Exception as e:
-        print(f"Error creating free subscription: {e}")
+        logger.error("error creating free subscription", extra={"user_id": data.user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -125,7 +128,7 @@ async def get_or_create_free_subscription(data: GetOrCreateSubscriptionModel, su
             return subscription.data
         return await create_free_subscription(CreateFreeSubscriptionModel(user_id=data.user_id), subscription_types)
     except Exception as e:
-        print(f"Error getting or creating subscription: {e}")
+        logger.error("error getting or creating subscription", extra={"user_id": data.user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -144,7 +147,7 @@ async def get_user_current_subscription_plan(data: GetUserSubscriptionPlanModel)
             subscription_type_id=current_subscription_plan['subscription_type_id']
         ))
     except Exception as e:
-        print(f"Error getting user current subscription plan: {e}")
+        logger.error("error getting user current subscription plan", extra={"user_id": data.user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")
 
 
@@ -162,5 +165,5 @@ async def update_subscription(data: UpdateSubscriptionModel) -> None:
         subscription_ops: SubscriptionOps = SubscriptionOps(DB_CONFIG)
         await asyncio.to_thread(subscription_ops.update_subscription, data.user_id, data.subscription_type)
     except Exception as e:
-        print(f"Error updating subscription: {e}")
+        logger.error("error updating subscription", extra={"user_id": data.user_id}, exc_info=True)
         raise Exception(f"Database operation failed: {str(e)}")

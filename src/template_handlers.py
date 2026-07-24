@@ -19,6 +19,9 @@ from src.db_ops.image_db_ops import list_all_existing_images
 from src.db_ops.subscription_db_ops import list_all_existing_subscription_types
 from src.db_ops.container_db_ops import get_container
 from src.db_ops.dto.container_dto import GetContainerDBModel
+from src.common.logging_setup import get_logger
+
+logger = get_logger("template_handlers")
 
 
 templates = Jinja2Templates(directory="templates")
@@ -105,7 +108,7 @@ async def terminalpage(request: Request) -> HTMLResponse:
                     "status": container_data.get('status', 'Unknown')
                 }
         except Exception as e:
-            print(f"Error fetching terminal info: {e}")
+            logger.error("error fetching terminal info", extra={"container_id": terminal_id}, exc_info=True)
             terminal_info = {
                 "id": terminal_id,
                 "name": "Error",

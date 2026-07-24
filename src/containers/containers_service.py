@@ -28,6 +28,11 @@ from src.common.config import CONTAINER_MAKER_PORT
 # grpc utils
 from src.common.grpc_utils import GRPCUtils
 
+# logging
+from src.common.logging_setup import get_logger, request_id_var
+
+logger = get_logger("containers_service")
+
 # third party
 import grpc
 from fastapi import HTTPException
@@ -144,7 +149,7 @@ class ContainerService:
                 environment_variables=create_container_db_request.environment_variables  # Fixed: was environment_vars
             )
             create_container_db_result: dict = await create_container_in_db(create_container_db_model)
-            print("create_container_db_result: ", create_container_db_result)
+            logger.info("container created in db", extra={"user_id": create_container_db_request.user_id})
             return create_container_db_result
         except ContainerDBException as e:
             raise HTTPException(status_code=500, detail=f"Error creating container in database: {str(e)}")
@@ -196,7 +201,11 @@ class ContainerService:
             )
             grpc_create_container_request: GRPCCreateContainerRequest = CreateContainerInputDataTransformer.transform(create_container_k8s_model)
             # call the stub: Turn it into an async thread.
-            grpc_container_response = await asyncio.to_thread(self.stub.createContainer, grpc_create_container_request)
+            grpc_container_response = await asyncio.to_thread(
+                self.stub.createContainer,
+                grpc_create_container_request,
+                metadata=(("x-request-id", request_id_var.get()),),
+            )
             # format the container name
             # Remove suffix (pod/service/ingress) and timestamp from container name
             # Format: mycontainer-pod-1706565890 → mycontainer
@@ -307,7 +316,11 @@ class ContainerService:
                 network_name=delete_container_k8s_request.network_name
             )
             grpc_delete_container_request: GRPCDeleteContainerRequest = DeleteContainerInputDataTransformer.transform(delete_container_k8s_model)
-            grpc_delete_response = await asyncio.to_thread(self.stub.deleteContainer, grpc_delete_container_request)
+            grpc_delete_response = await asyncio.to_thread(
+                self.stub.deleteContainer,
+                grpc_delete_container_request,
+                metadata=(("x-request-id", request_id_var.get()),),
+            )
             return DeleteContainerOutputDataTransformer.transform(grpc_delete_response)
         except ContainerMakerException as e:
             raise HTTPException(status_code=500, detail=f"Error deleting container in ContainerMaker: {str(e)}")
@@ -326,7 +339,11 @@ class ContainerService:
                 container_id=save_container_k8s_request.container_id,
                 network_name=save_container_k8s_request.network_name
             )
-            grpc_save_response = await asyncio.to_thread(self.stub.saveContainer, grpc_save_container_request)
+            grpc_save_response = await asyncio.to_thread(
+                self.stub.saveContainer,
+                grpc_save_container_request,
+                metadata=(("x-request-id", request_id_var.get()),),
+            )
             return grpc_save_response
         except ContainerMakerException as e:
             raise HTTPException(status_code=500, detail=f"Error saving container in ContainerMaker: {str(e)}")

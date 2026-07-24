@@ -19,6 +19,9 @@ from src.common.config import (
 )
 from src.authentication.dto.session_dto import SessionDataModel, SessionValidationModel
 from src.authentication.enum.session_status_enum import SessionStatus
+from src.common.logging_setup import get_logger
+
+logger = get_logger("session_manager")
 
 
 class RedisSessionManager:
@@ -75,7 +78,7 @@ class RedisSessionManager:
                 return SessionDataModel(**session_dict)
             return None
         except (json.JSONDecodeError, redis.RedisError) as e:
-            print(f"Error retrieving session {session_id}: {e}")
+            logger.error("error retrieving session", extra={"session_id": session_id}, exc_info=True)
             return None
 
     def update_session(self, session_id: str, session_data: SessionDataModel) -> bool:
@@ -97,7 +100,7 @@ class RedisSessionManager:
             )
             return True
         except (json.JSONDecodeError, redis.RedisError) as e:
-            print(f"Error updating session {session_id}: {e}")
+            logger.error("error updating session", extra={"session_id": session_id}, exc_info=True)
             return False
 
     def delete_session(self, session_id: str) -> bool:
@@ -113,7 +116,7 @@ class RedisSessionManager:
             result: bool = self.redis_client.delete(session_key)
             return result > 0
         except redis.RedisError as e:
-            print(f"Error deleting session {session_id}: {e}")
+            logger.error("error deleting session", extra={"session_id": session_id}, exc_info=True)
             return False
 
     def extend_session(self, session_id: str, expiry: int | None = None) -> bool:
@@ -130,7 +133,7 @@ class RedisSessionManager:
             result: bool = self.redis_client.expire(session_key, expiry if expiry else self.session_expiry)
             return result
         except redis.RedisError as e:
-            print(f"Error extending session {session_id}: {e}")
+            logger.error("error extending session", extra={"session_id": session_id}, exc_info=True)
             return False
 
     def get_session_ttl(self, session_id: str) -> int:
@@ -146,7 +149,7 @@ class RedisSessionManager:
             # Check TTL - returns -1 if key exists but has no expiry, -2 if key doesn't exist
             return self.redis_client.ttl(session_key)
         except redis.RedisError as e:
-            print(f"Error checking session {session_id}: {e}")
+            logger.error("error checking session", extra={"session_id": session_id}, exc_info=True)
             return -2
 
     def validate_session(self, session_id: str) -> SessionValidationModel:

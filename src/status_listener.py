@@ -24,6 +24,9 @@ from src.common.config import (
     POSTGRES_PASSWORD,
     POSTGRES_DB
 )
+from src.common.logging_setup import get_logger
+
+logger = get_logger("status_listener")
 
 
 class StatusListenerService:
@@ -76,7 +79,10 @@ class StatusListenerService:
         self._listener.listen(CONTAINER_SAVE_STATUS_CHANGE_CHANNEL, self._handle_save_status_change)
         self._listener.run_in_thread()
         self._running = True
-        print(f"StatusListenerService started, listening on channels: {CONTAINER_STATUS_CHANGE_CHANNEL}, {CONTAINER_SAVE_STATUS_CHANGE_CHANNEL}")
+        logger.info(
+            "StatusListenerService started",
+            extra={"channels": [CONTAINER_STATUS_CHANGE_CHANNEL, CONTAINER_SAVE_STATUS_CHANGE_CHANNEL]},
+        )
 
     def stop(self):
         """Stop the PGListener."""
@@ -84,7 +90,7 @@ class StatusListenerService:
             self._listener.disconnect()
             self._listener = None
         self._running = False
-        print("StatusListenerService stopped")
+        logger.info("StatusListenerService stopped")
 
     def _handle_status_change(self, payload: str):
         """
@@ -94,7 +100,15 @@ class StatusListenerService:
         """
         try:
             data = ContainerStatusChangePayload.from_json(payload)
-            print(f"Status change: Container {data.id} ({data.name}) changed from {data.old_status} to {data.new_status}")
+            logger.info(
+                "status change",
+                extra={
+                    "container_id": data.id,
+                    "name": data.name,
+                    "old_status": data.old_status,
+                    "new_status": data.new_status,
+                },
+            )
 
             # Broadcast to all clients subscribed to this user_id
             user_id = data.user_id
@@ -118,8 +132,8 @@ class StatusListenerService:
                         lambda q=queue, m=message: q.put_nowait(m)
                     )
 
-        except Exception as e:
-            print(f"Error handling status change: {e}")
+        except Exception:
+            logger.error("error handling status change", exc_info=True)
 
     def _handle_save_status_change(self, payload: str):
         """
@@ -129,7 +143,10 @@ class StatusListenerService:
         """
         try:
             data = ContainerSaveStatusChangePayload.from_json(payload)
-            print(f"Save status change: Container {data.id} ({data.name}) -> {data.save_status}")
+            logger.info(
+                "save status change",
+                extra={"container_id": data.id, "name": data.name, "save_status": data.save_status},
+            )
 
             user_id = data.user_id
             message = {
@@ -152,8 +169,8 @@ class StatusListenerService:
                         lambda q=queue, m=message: q.put_nowait(m)
                     )
 
-        except Exception as e:
-            print(f"Error handling save status change: {e}")
+        except Exception:
+            logger.error("error handling save status change", exc_info=True)
 
     def subscribe(self, user_id: str) -> asyncio.Queue:
         """
@@ -163,7 +180,10 @@ class StatusListenerService:
         queue = asyncio.Queue()
         with self._queues_lock:
             self._client_queues[user_id].add(queue)
-        print(f"Client subscribed for user {user_id}, total clients: {len(self._client_queues[user_id])}")
+        logger.info(
+            "client subscribed",
+            extra={"user_id": user_id, "total_clients": len(self._client_queues[user_id])},
+        )
         return queue
 
     def unsubscribe(self, user_id: str, queue: asyncio.Queue):
@@ -173,7 +193,7 @@ class StatusListenerService:
                 self._client_queues[user_id].discard(queue)
                 if not self._client_queues[user_id]:
                     del self._client_queues[user_id]
-        print(f"Client unsubscribed for user {user_id}")
+        logger.info("client unsubscribed", extra={"user_id": user_id})
 
 
 # Global instance

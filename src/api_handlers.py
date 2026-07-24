@@ -18,7 +18,7 @@ from src.data_models.echo import EchoRequestData, EchoResponseData
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
 from src.common.config import DB_CONFIG, NAMESPACE
-from src.common.logging_setup import get_logger
+from src.common.logging_setup import get_logger, request_id_var
 
 logger = get_logger("api_handlers")
 
@@ -313,7 +313,7 @@ async def _set_save_status(container_id: str, save_status: str, save_error: str 
     await asyncio.to_thread(
         ops.update,
         filters={"id": container_id},
-        data={"save_status": save_status, "save_error": save_error},
+        data={"save_status": save_status, "save_error": save_error, "last_request_id": request_id_var.get()},
     )
 
 
@@ -326,7 +326,7 @@ async def _run_save(container_service, save_request, container_id: str) -> None:
         try:
             await _set_save_status(container_id, SaveStatus.FAILED.value, save_error=str(e)[:1000])
         except Exception as db_e:
-            print(f"Failed to record save failure for {container_id}: {db_e}")
+            logger.error("failed to record save failure", extra={"container_id": container_id}, exc_info=True)
 
 
 @authenticate_session
@@ -378,7 +378,7 @@ async def resume_container(request: Request) -> JSONResponse:
             return JSONResponse(content={'error': f'Container {container_id} not found'}, status_code=404)
 
         # mark RESUMING so the UI can show progress
-        await asyncio.to_thread(ops.update, filters={"id": container_id}, data={"status": ContainerStatus.RESUMING})
+        await asyncio.to_thread(ops.update, filters={"id": container_id}, data={"status": ContainerStatus.RESUMING, "last_request_id": request_id_var.get()})
 
         # rebuild the env the status sidecar needs (same as create), keeping any stored env vars.
         db_host_fqdn = f"{DB_CONFIG.host}.{NAMESPACE}.svc.cluster.local"
@@ -424,6 +424,7 @@ async def resume_container(request: Request) -> JSONResponse:
                 "ip_address": response.container_ip,
                 "associated_resources": response.associated_resources,
                 "status": ContainerStatus.RUNNING,
+                "last_request_id": request_id_var.get(),
             },
         )
         logger.info("resume complete", extra={"container_id": container_id, "kubernetes_id": response.container_id})

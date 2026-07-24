@@ -28,6 +28,11 @@ from src.authentication.dto.logout_dto import LogoutResponseModel
 # config
 from src.common.config import REDIS_SESSION_EXPIRY, COOKIE_SECURE, COOKIE_SAMESITE
 
+# logging
+from src.common.logging_setup import get_logger
+
+logger = get_logger("authentication_service")
+
 
 class AuthenticationService:
     '''
@@ -67,7 +72,7 @@ class AuthenticationService:
             user_info: Optional[UserInfoModel] = await self.fetch_user_info(request.code)
             if not user_info:
                 error_message: str = "Failed to fetch user information from authentication provider. Please try again."
-                print(f"Login error: {error_message}")
+                logger.error("login error", extra={"error": error_message})
                 return Response(
                     content=json.dumps({"error": error_message, "detail": error_message}),
                     media_type="application/json",
@@ -77,7 +82,7 @@ class AuthenticationService:
             session_response: SessionResponseModel = await process_user_info(user_info)
             if not session_response.session_id:
                 error_message: str = "Failed to create session. Please try again."
-                print(f"Login error: {error_message}")
+                logger.error("login error", extra={"error": error_message})
                 return Response(
                     content=json.dumps({"error": error_message, "detail": error_message}),
                     media_type="application/json",
@@ -100,7 +105,7 @@ class AuthenticationService:
             )
             return response
         except Exception as e:
-            print(f"Login error: {e}")
+            logger.error("login error", exc_info=True)
             # Return error response with details
             error_detail: str = str(e) if str(e) else "An unexpected error occurred"
             error_message: str = f"Login failed: {error_detail}"
@@ -146,7 +151,7 @@ class AuthenticationService:
             )
             return response
         except Exception as e:
-            print(f"Logout error: {e}")
+            logger.error("logout error", exc_info=True)
             raise HTTPException(status_code=500, detail="Internal server error")
 
     def validate_session(self, session_id: str) -> SessionValidationModel:
