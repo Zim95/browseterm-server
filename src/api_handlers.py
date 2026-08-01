@@ -141,19 +141,13 @@ async def create_container_in_k8s(request: Request) -> JSONResponse:
             storage_limit=resource_requirements.get('ephemeral_limit', '2Gi'),
             snapshot_size_limit=resource_requirements.get('snapshot_size_limit', '2Gi')
         )
-        # Build FQDN for DB_HOST so status sidecar can access PostgreSQL from user namespace
-        db_host_fqdn = f"{DB_CONFIG.host}.{NAMESPACE}.svc.cluster.local"
+        # No DB credentials are injected into the user pod. Status is written by the central
+        # status_monitor (which reads pod phase from the k8s API), not by an in-pod sidecar, so the
+        # untrusted user pod never receives database credentials. CONTAINER_ID is passed only so
+        # container-maker can stamp it as the browseterm/container-id pod label the monitor reads.
         environment_variables: dict = {
             **request_data.get('environment_variables', {}),
-            **{
-                'CONTAINER_ID': container_id,
-                'DB_USERNAME': DB_CONFIG.username,
-                'DB_PASSWORD': DB_CONFIG.password,
-                'DB_NAME': DB_CONFIG.database,
-                'DB_HOST': db_host_fqdn,
-                'DB_PORT': str(DB_CONFIG.port),
-                'DB_DATABASE': DB_CONFIG.database,
-            }
+            'CONTAINER_ID': container_id,
         }
         # Build the K8S request
         create_container_k8s_request = CreateContainerK8SRequest(
@@ -380,17 +374,12 @@ async def resume_container(request: Request) -> JSONResponse:
         # mark RESUMING so the UI can show progress
         await asyncio.to_thread(ops.update, filters={"id": container_id}, data={"status": ContainerStatus.RESUMING, "last_request_id": request_id_var.get()})
 
-        # rebuild the env the status sidecar needs (same as create), keeping any stored env vars.
-        db_host_fqdn = f"{DB_CONFIG.host}.{NAMESPACE}.svc.cluster.local"
+        # No DB credentials in the user pod (same as create): status is written by the central
+        # status_monitor, not an in-pod sidecar. CONTAINER_ID rides only so container-maker can stamp
+        # the browseterm/container-id label. Keep any stored env vars.
         environment_variables: dict = {
             **(row.get('environment_vars') or {}),
             'CONTAINER_ID': container_id,
-            'DB_USERNAME': DB_CONFIG.username,
-            'DB_PASSWORD': DB_CONFIG.password,
-            'DB_NAME': DB_CONFIG.database,
-            'DB_HOST': db_host_fqdn,
-            'DB_PORT': str(DB_CONFIG.port),
-            'DB_DATABASE': DB_CONFIG.database,
         }
         resource_limits = ResourceLimits(
             cpu_limit=row.get('cpu_limit') or '1',
@@ -413,8 +402,8 @@ async def resume_container(request: Request) -> JSONResponse:
             k8s_request, image_name_override=row.get('saved_image')
         )
         # sync the new pod identity back to the row so the next save resolves it; RUNNING (the
-        # status sidecar keeps the status accurate thereafter). ip_address MUST be updated here:
-        # resume creates a brand-new Service with a new ClusterIP, and the sidecar only touches
+        # central status_monitor keeps the status accurate thereafter). ip_address MUST be updated
+        # here: resume creates a brand-new Service with a new ClusterIP, and the monitor only touches
         # status — without this the terminal keeps dialing the old (deleted) IP and SSH times out.
         await asyncio.to_thread(
             ops.update,
