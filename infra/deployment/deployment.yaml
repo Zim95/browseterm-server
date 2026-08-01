@@ -106,16 +106,28 @@ spec:
           value: "${REDIS_USERNAME}"
         - name: REDIS_DB
           value: "${REDIS_DB}"
+        # HOST/PORT are non-secret config (kept as literals). USER/PASSWORD/DB come from the
+        # browseterm-db-credentials Secret (same Postgres creds the workload components use) so the
+        # password is never templated into this manifest.
         - name: POSTGRES_HOST
           value: "${POSTGRES_HOST}"
         - name: POSTGRES_PORT
           value: "${POSTGRES_PORT}"
         - name: POSTGRES_USER
-          value: "${POSTGRES_USER}"
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_USERNAME
         - name: POSTGRES_PASSWORD
-          value: "${POSTGRES_PASSWORD}"
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_PASSWORD
         - name: POSTGRES_DB
-          value: "${POSTGRES_DB}"
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_DATABASE
         - name: SOCKET_SSH_WSS_URL
           value: "${SOCKET_SSH_WSS_URL}"
         - name: COOKIE_SECURE
