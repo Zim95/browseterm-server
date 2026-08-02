@@ -18,7 +18,7 @@ DOCKERFILE=./infra/deployment/Dockerfile.deployment
 docker login -u $USERNAME
 
 # Build image
-docker image build --no-cache -t $IMAGE_NAME:$IMAGE_TAG -f $DOCKERFILE .
+docker image build -t $IMAGE_NAME:$IMAGE_TAG -f $DOCKERFILE .
 
 # Tag image
 docker image tag $IMAGE_NAME:$IMAGE_TAG $REPOSITORY/$IMAGE_NAME:$IMAGE_TAG
