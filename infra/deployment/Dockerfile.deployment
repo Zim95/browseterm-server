@@ -1,23 +1,19 @@
 FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1
 
-# Create the directory
 RUN mkdir app
 COPY . app/
 WORKDIR /app
 
-# Make entrypoint script executable
 RUN chmod +x ./infra/deployment/entrypoint-deployment.sh
 
-# Install dependencies
 RUN apt-get update && apt-get install -y build-essential curl git
 
-# Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
 ENV PATH="/root/.local/bin:${PATH}"
 
-# Install dependencies (virtualenv will be in-project since no volume mount in prod)
-RUN poetry install --no-root
+# In-project venv (/app/.venv), then make it world-readable/executable so the non-root runtime
+# user (runAsUser 1000) can run it. (Poetry itself lives in /root and is only used at build time.)
+RUN poetry config virtualenvs.in-project true && poetry install --no-root && chmod -R a+rX /app/.venv
 
-# Use the entrypoint script
 ENTRYPOINT ["bash", "-c", "./infra/deployment/entrypoint-deployment.sh"]

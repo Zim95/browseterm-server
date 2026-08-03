@@ -136,7 +136,7 @@ spec:
           value: "strict"
         livenessProbe:
           httpGet:
-            path: /health
+            path: /
             port: 9999
           initialDelaySeconds: 15
           periodSeconds: 30
@@ -144,7 +144,7 @@ spec:
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /health
+            path: /
             port: 9999
           initialDelaySeconds: 10
           periodSeconds: 10
