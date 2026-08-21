@@ -65,7 +65,9 @@ prod_setup:
 		$(POSTGRES_DB) \
 		$(SOCKET_SSH_HOST) \
 		$(SOCKET_SSH_WSS_URL) \
-		$(INGRESS_HOST)
+		$(INGRESS_HOST) \
+		$(COOKIE_SECURE) \
+		$(COOKIE_SAMESITE)
 
 prod_teardown:
 	./scripts/deployment/deployment-teardown.sh $(NAMESPACE)

@@ -104,7 +104,7 @@ class StatusListenerService:
                 "status change",
                 extra={
                     "container_id": data.id,
-                    "name": data.name,
+                    "container_name": data.name,
                     "old_status": data.old_status,
                     "new_status": data.new_status,
                 },
@@ -145,7 +145,7 @@ class StatusListenerService:
             data = ContainerSaveStatusChangePayload.from_json(payload)
             logger.info(
                 "save status change",
-                extra={"container_id": data.id, "name": data.name, "save_status": data.save_status},
+                extra={"container_id": data.id, "container_name": data.name, "save_status": data.save_status},
             )
 
             user_id = data.user_id

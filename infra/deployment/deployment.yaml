@@ -131,9 +131,9 @@ spec:
         - name: SOCKET_SSH_WSS_URL
           value: "${SOCKET_SSH_WSS_URL}"
         - name: COOKIE_SECURE
-          value: "true"
+          value: "${COOKIE_SECURE}"
         - name: COOKIE_SAMESITE
-          value: "strict"
+          value: "${COOKIE_SAMESITE}"
         livenessProbe:
           httpGet:
             path: /

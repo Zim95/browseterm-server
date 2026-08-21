@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if enough arguments are provided
-if [ $# -lt 24 ]; then
-    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host>"
+if [ $# -lt 26 ]; then
+    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host> <cookie-secure> <cookie-samesite>"
     exit 1
 fi
 
@@ -31,6 +31,8 @@ POSTGRES_DB=${21}
 SOCKET_SSH_HOST=${22}
 SOCKET_SSH_WSS_URL=${23}
 INGRESS_HOST=${24}
+COOKIE_SECURE=${25}
+COOKIE_SAMESITE=${26}
 
 export NAMESPACE=$NAMESPACE
 export REPO_NAME=$REPO_NAME
@@ -56,4 +58,6 @@ export POSTGRES_DB=$POSTGRES_DB
 export SOCKET_SSH_HOST=$SOCKET_SSH_HOST
 export SOCKET_SSH_WSS_URL=$SOCKET_SSH_WSS_URL
 export INGRESS_HOST=$INGRESS_HOST
+export COOKIE_SECURE=$COOKIE_SECURE
+export COOKIE_SAMESITE=$COOKIE_SAMESITE
 envsubst < $YAML | kubectl apply -f -
