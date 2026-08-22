@@ -301,6 +301,13 @@ class TerminalPageHandler {
         if (this.terminalInfo.port) {
             this.elements.terminalPort.textContent = this.terminalInfo.port;
         }
+        // A save started before this page load (e.g. a prior session, or a reload mid-save)
+        // is still tracked server-side via save_status - reflect it now instead of showing a
+        // fresh "Save" button as if nothing were happening. setupSaveStatusStream() (subscribed
+        // separately) picks up the eventual Succeeded/Failed transition from here.
+        if (this.terminalInfo.saveStatus === 'Pending' || this.terminalInfo.saveStatus === 'Running') {
+            this.setSaveSpinner(true);
+        }
     }
 
     /**

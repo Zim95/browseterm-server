@@ -105,7 +105,10 @@ async def terminalpage(request: Request) -> HTMLResponse:
                     "port": str(ssh_port),
                     "sshUsername": ssh_username,
                     "sshPassword": ssh_password,
-                    "status": container_data.get('status', 'Unknown')
+                    "status": container_data.get('status', 'Unknown'),
+                    "saveStatus": container_data.get('save_status'),
+                    "savedImage": container_data.get('saved_image'),
+                    "saveError": container_data.get('save_error')
                 }
         except Exception as e:
             logger.error("error fetching terminal info", extra={"container_id": terminal_id}, exc_info=True)
