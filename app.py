@@ -27,8 +27,25 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+
+class RevalidateStaticFiles(StaticFiles):
+    """
+    Plain StaticFiles sends no Cache-Control, so browsers fall back to heuristic caching
+    (RFC 7234 4.2.2, e.g. ~10% of the file's Last-Modified age) and can silently keep serving
+    a stale JS/CSS file after a redeploy without even sending a conditional request - a real
+    deploy can look like it "didn't take" from the browser's side even though the server is
+    already serving the new file. no-cache forces revalidation (If-None-Match/If-Modified-Since)
+    on every load; StaticFiles' own ETag handling still returns a cheap 304 when unchanged, so
+    this doesn't lose the caching benefit, just the false-freshness risk.
+    """
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 # Mount static files
-app.mount("/static", StaticFiles(directory="templates/static"), name="static")
+app.mount("/static", RevalidateStaticFiles(directory="templates/static"), name="static")
 
 # health checkup
 app.add_api_route(path="/echo", endpoint=api_handlers.echo, methods=["POST"])
