@@ -185,8 +185,12 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: browseterm-server
+  # Pinned to 1 for now: this all runs on a single 4-core/8GB dev VM, and multiple replicas
+  # fighting the same node for resources (rather than adding real capacity) has repeatedly
+  # made contention episodes worse, not better. Raise this once running on real multi-node
+  # capacity.
   minReplicas: 1
-  maxReplicas: 10
+  maxReplicas: 1
   metrics:
   - type: Resource
     resource:
