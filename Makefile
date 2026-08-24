@@ -31,7 +31,10 @@ dev_setup:
 		$(POSTGRES_DB) \
 		$(SOCKET_SSH_HOST) \
 		$(SOCKET_SSH_WSS_URL) \
-		$(INGRESS_HOST)
+		$(INGRESS_HOST) \
+		$(PAYMENT_GATEWAY_DEVELOPMENT_HOST) \
+		$(PAYMENT_GATEWAY_DEVELOPMENT_PORT) \
+		$(PAYMENT_GATEWAY_CERTS_SECRET_NAME)
 
 dev_teardown:
 	./scripts/development/development-teardown.sh $(NAMESPACE)
@@ -67,7 +70,10 @@ prod_setup:
 		$(SOCKET_SSH_WSS_URL) \
 		$(INGRESS_HOST) \
 		$(COOKIE_SECURE) \
-		$(COOKIE_SAMESITE)
+		$(COOKIE_SAMESITE) \
+		$(PAYMENT_GATEWAY_HOST) \
+		$(PAYMENT_GATEWAY_PORT) \
+		$(PAYMENT_GATEWAY_CERTS_SECRET_NAME)
 
 prod_teardown:
 	./scripts/deployment/deployment-teardown.sh $(NAMESPACE)

@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if enough arguments are provided
-if [ $# -lt 25 ]; then
-    echo "Usage: $0 <namespace> <absolute-path-to-current-working-directory> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host>"
+if [ $# -lt 28 ]; then
+    echo "Usage: $0 <namespace> <absolute-path-to-current-working-directory> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host> <payment-gateway-development-host> <payment-gateway-development-port> <payment-gateway-certs-secret-name>"
     exit 1
 fi
 
@@ -32,6 +32,9 @@ POSTGRES_DB=${22}
 SOCKET_SSH_HOST=${23}
 SOCKET_SSH_WSS_URL=${24}
 INGRESS_HOST=${25}
+PAYMENT_GATEWAY_DEVELOPMENT_HOST=${26}
+PAYMENT_GATEWAY_DEVELOPMENT_PORT=${27}
+PAYMENT_GATEWAY_CERTS_SECRET_NAME=${28}
 
 export NAMESPACE=$NAMESPACE
 export HOSTPATH=$HOSTPATH
@@ -40,6 +43,9 @@ export CONTAINER_MAKER_DEVELOPMENT_HOST=$CONTAINER_MAKER_DEVELOPMENT_HOST
 export CONTAINER_MAKER_DEVELOPMENT_PORT=$CONTAINER_MAKER_DEVELOPMENT_PORT
 export CONTAINER_MAKER_CERTS_SECRET_NAME=$CONTAINER_MAKER_CERTS_SECRET_NAME
 export CERT_MANAGER_CRON_JOB_NAME=$CERT_MANAGER_CRON_JOB_NAME
+export PAYMENT_GATEWAY_DEVELOPMENT_HOST=$PAYMENT_GATEWAY_DEVELOPMENT_HOST
+export PAYMENT_GATEWAY_DEVELOPMENT_PORT=$PAYMENT_GATEWAY_DEVELOPMENT_PORT
+export PAYMENT_GATEWAY_CERTS_SECRET_NAME=$PAYMENT_GATEWAY_CERTS_SECRET_NAME
 export AUTH_REDIRECT_BASE_URI=$AUTH_REDIRECT_BASE_URI
 export GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 export GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET

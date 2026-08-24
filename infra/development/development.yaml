@@ -67,6 +67,12 @@ spec:
           value: "${CONTAINER_MAKER_DEVELOPMENT_PORT}"
         - name: CONTAINER_MAKER_CERTS_SECRET_NAME
           value: "${CONTAINER_MAKER_CERTS_SECRET_NAME}"
+        - name: PAYMENT_GATEWAY_HOST
+          value: "${PAYMENT_GATEWAY_DEVELOPMENT_HOST}"
+        - name: PAYMENT_GATEWAY_PORT
+          value: "${PAYMENT_GATEWAY_DEVELOPMENT_PORT}"
+        - name: PAYMENT_GATEWAY_CERTS_SECRET_NAME
+          value: "${PAYMENT_GATEWAY_CERTS_SECRET_NAME}"
         - name: NAMESPACE
           value: "${NAMESPACE}"
         - name: CERT_MANAGER_CRON_JOB_NAME

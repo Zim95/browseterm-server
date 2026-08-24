@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Check if enough arguments are provided
-if [ $# -lt 26 ]; then
-    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host> <cookie-secure> <cookie-samesite>"
+if [ $# -lt 29 ]; then
+    echo "Usage: $0 <namespace> <repo-name> <container-maker-host> <container-maker-port> <container-maker-certs-secret-name> <cert-manager-cron-job-name> <auth-redirect-base-uri> <google-client-id> <google-client-secret> <github-client-id> <github-client-secret> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <postgres-host> <postgres-port> <postgres-user> <postgres-password> <postgres-db> <socket-ssh-host> <socket-ssh-wss-url> <ingress-host> <cookie-secure> <cookie-samesite> <payment-gateway-host> <payment-gateway-port> <payment-gateway-certs-secret-name>"
     exit 1
 fi
 
@@ -33,6 +33,9 @@ SOCKET_SSH_WSS_URL=${23}
 INGRESS_HOST=${24}
 COOKIE_SECURE=${25}
 COOKIE_SAMESITE=${26}
+PAYMENT_GATEWAY_HOST=${27}
+PAYMENT_GATEWAY_PORT=${28}
+PAYMENT_GATEWAY_CERTS_SECRET_NAME=${29}
 
 export NAMESPACE=$NAMESPACE
 export REPO_NAME=$REPO_NAME
@@ -40,6 +43,9 @@ export CONTAINER_MAKER_HOST=$CONTAINER_MAKER_HOST
 export CONTAINER_MAKER_PORT=$CONTAINER_MAKER_PORT
 export CONTAINER_MAKER_CERTS_SECRET_NAME=$CONTAINER_MAKER_CERTS_SECRET_NAME
 export CERT_MANAGER_CRON_JOB_NAME=$CERT_MANAGER_CRON_JOB_NAME
+export PAYMENT_GATEWAY_HOST=$PAYMENT_GATEWAY_HOST
+export PAYMENT_GATEWAY_PORT=$PAYMENT_GATEWAY_PORT
+export PAYMENT_GATEWAY_CERTS_SECRET_NAME=$PAYMENT_GATEWAY_CERTS_SECRET_NAME
 export AUTH_REDIRECT_BASE_URI=$AUTH_REDIRECT_BASE_URI
 export GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
 export GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET
