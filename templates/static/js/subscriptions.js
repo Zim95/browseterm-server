@@ -355,22 +355,43 @@ class SubscriptionHandler {
 
     /**
      * Process plan purchase
+     * v0: calls payment-gateway (via browseterm-server) and shows its hardcoded response.
+     * No Stripe, no card fields, no redirect yet — see PAYMENTS.md.
      * @param {Object} plan - Subscription plan
      */
-    processPurchase(plan) {
-        // TODO: Implement actual purchase logic
-        // - Redirect to payment gateway
-        // - Call API to process subscription
-        // - Update user's subscription status
-
+    async processPurchase(plan) {
         console.log('Processing purchase for plan:', plan);
 
-        SubscriptionUtilities.showNotification(
-            'info',
-            'Coming Soon',
-            `Thank you for choosing the ${plan.name} plan! Payment processing will be implemented soon.`,
-            6000
-        );
+        try {
+            const response = await fetch('/create-payment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ plan_id: plan.id }),
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Payment failed');
+            }
+
+            SubscriptionUtilities.showNotification(
+                'success',
+                'Payment successful',
+                `Payment ID: ${result.payment_id}`,
+                6000
+            );
+        } catch (error) {
+            console.error('Error processing payment:', error);
+            SubscriptionUtilities.showNotification(
+                'error',
+                'Payment Failed',
+                error.message || 'Could not process payment. Please try again.',
+                6000
+            );
+        }
     }
 
     /**

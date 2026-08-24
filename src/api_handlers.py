@@ -15,6 +15,9 @@ from src.data_models.containers import CreateContainerDBRequest, CreateContainer
 from browseterm_db.operations.all_operations import ContainerOps
 from browseterm_db.models.containers import SaveStatus, ContainerStatus
 from src.data_models.echo import EchoRequestData, EchoResponseData
+from src.data_models.payments import CreatePaymentRequest
+from src.payments.payments_service import PaymentService
+from src.common.exceptions import PaymentGatewayException, PaymentGatewayUnavailableException
 from src.authentication.authentication_helpers import authenticate_session
 from src.authentication.authentication_service import GoogleAuthenticationService, GithubAuthenticationService
 from src.common.config import DB_CONFIG, NAMESPACE
@@ -60,6 +63,39 @@ async def echo(request: EchoRequestData) -> EchoResponseData:
     Simply echo the request message.
     '''
     return EchoResponseData(message=request.message)
+
+
+@authenticate_session
+async def create_payment(request: Request) -> JSONResponse:
+    '''
+    Authentication: This handler needs to be authenticated.
+    Calls payment-gateway's makePayment RPC and returns the (currently hardcoded) result.
+
+    v0: amount_minor/currency are hardcoded server-side here since no real plans/pricing
+    exist yet.
+    # TODO: once a plans table exists, resolve amount_minor/currency server-side from
+    # plan_id instead of hardcoding them — never trust a browser-provided amount.
+    '''
+    try:
+        request_data: dict = await request.json()
+        create_payment_request: CreatePaymentRequest = CreatePaymentRequest(**request_data)
+
+        payment_service = PaymentService()
+        payment_response = await payment_service.make_payment(
+            user_id=request.state.user_info.id,
+            plan_id=create_payment_request.plan_id,
+            amount_minor=49900,
+            currency="INR",
+        )
+        return JSONResponse(content=payment_response.model_dump())
+    except PaymentGatewayUnavailableException as e:
+        return JSONResponse(content={'error': f"Payment service unavailable: {str(e)}"}, status_code=503)
+    except PaymentGatewayException as e:
+        return JSONResponse(content={'error': f"Error processing payment: {str(e)}"}, status_code=500)
+    except HTTPException as e:
+        return JSONResponse(content={'error': e.detail}, status_code=e.status_code)
+    except Exception as e:
+        return JSONResponse(content={'error': f"Error processing payment: {str(e)}"}, status_code=500)
 
 
 @authenticate_session

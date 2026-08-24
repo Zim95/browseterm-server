@@ -14,6 +14,7 @@ uvicorn = "0.33.0"
 httpx = "^0.28.1"
 grpcio-tools = "1.70.0"
 container-maker-spec = {git = "https://github.com/Zim95/container-maker-spec.git", rev = "main"}
+payment-gateway-spec = {git = "https://github.com/Zim95/payment-gateway-spec.git", rev = "main"}
 paramiko = "^3.5.1"
 websocket-client = "^1.8.0"
 kubernetes = "^32.0.1"
