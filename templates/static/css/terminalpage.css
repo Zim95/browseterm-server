@@ -162,7 +162,62 @@ body.dark-mode .terminal-warning {
     padding: 1rem 1.5rem;
     border-top: 1px solid var(--border-color);
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+/* Save status widget: reflects DB state only, no logic of its own */
+.save-status-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem 1.25rem;
+    font-size: 0.85rem;
+}
+
+.save-status-info[hidden] {
+    display: none;
+}
+
+.save-status-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    white-space: nowrap;
+}
+
+.save-status-label {
+    color: var(--text-secondary);
+}
+
+.save-status-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.save-status-badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+    background-color: #9e9e9e;
+}
+
+.save-status-badge.succeeded {
+    background-color: #4CAF50;
+}
+
+.save-status-badge.failed {
+    background-color: #F44336;
+}
+
+.save-status-badge.pending,
+.save-status-badge.running {
+    background-color: #FF9800;
 }
 
 .save-btn {
@@ -390,7 +445,12 @@ body.dark-mode .dark-mode-toggle .moon-icon {
     .terminal-footer {
         padding: 1rem;
     }
-    
+
+    .save-status-info {
+        width: 100%;
+        justify-content: space-between;
+    }
+
     .save-btn {
         width: 100%;
         justify-content: center;
@@ -440,7 +500,14 @@ body.dark-mode .dark-mode-toggle .moon-icon {
     .terminal-footer {
         padding: 0.75rem 1rem;
     }
-    
+
+    .save-status-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.3rem;
+        font-size: 0.8rem;
+    }
+
     /* Make text more readable on mobile */
     .terminal-title i {
         font-size: 1.1rem;

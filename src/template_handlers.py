@@ -108,7 +108,9 @@ async def terminalpage(request: Request) -> HTMLResponse:
                     "status": container_data.get('status', 'Unknown'),
                     "saveStatus": container_data.get('save_status'),
                     "savedImage": container_data.get('saved_image'),
-                    "saveError": container_data.get('save_error')
+                    "saveError": container_data.get('save_error'),
+                    "lastSavedAt": container_data.get('last_saved_at'),
+                    "lastSaveAttemptedAt": container_data.get('last_save_attempted_at'),
                 }
         except Exception as e:
             logger.error("error fetching terminal info", extra={"container_id": terminal_id}, exc_info=True)

@@ -184,6 +184,10 @@ class TestSaveContainerHandler(TestCase):
         pending = [c.kwargs['data'] for c in mock_ops.update.call_args_list
                    if c.kwargs.get('data', {}).get('save_status') == SaveStatus.PENDING.value]
         self.assertTrue(pending, 'save_container did not mark save_status=PENDING')
+        self.assertIn(
+            'last_save_attempted_at', pending[0],
+            'save_container must stamp last_save_attempted_at -- this is the one moment a save is initiated',
+        )
 
     def test_run_save_records_failed_on_grpc_error(self) -> None:
         mock_ops: MagicMock = MagicMock()
@@ -196,6 +200,10 @@ class TestSaveContainerHandler(TestCase):
                   if c.kwargs.get('data', {}).get('save_status') == SaveStatus.FAILED.value]
         self.assertTrue(failed, '_run_save did not record save_status=FAILED')
         self.assertIn('boom', failed[0]['save_error'])
+        self.assertNotIn(
+            'last_save_attempted_at', failed[0],
+            'only the PENDING write (save_container) should stamp last_save_attempted_at, not a later failure',
+        )
 
 
 class TestContainerActivity(TestCase):

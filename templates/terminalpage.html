@@ -81,6 +81,23 @@
 
             <!-- Save Button -->
             <div class="terminal-footer">
+                <!-- Reflects DB state only (last_saved_at / last_save_attempted_at / save_status) --
+                     seeded on page load, kept live via the same SSE stream that drives the spinner.
+                     Hidden entirely until this terminal has any save history. -->
+                <div class="save-status-info" id="saveStatusInfo" hidden>
+                    <div class="save-status-row">
+                        <span class="save-status-label">Last saved</span>
+                        <span class="save-status-value" id="saveStatusLastSaved">—</span>
+                    </div>
+                    <div class="save-status-row">
+                        <span class="save-status-label">Last attempt</span>
+                        <span class="save-status-value" id="saveStatusLastAttempt">—</span>
+                    </div>
+                    <div class="save-status-row">
+                        <span class="save-status-label">Status</span>
+                        <span class="save-status-badge" id="saveStatusBadge">—</span>
+                    </div>
+                </div>
                 <button class="save-btn" id="saveBtn">
                     <i class="fas fa-floppy-disk"></i>
                     <span>Save Session</span>

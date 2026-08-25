@@ -157,6 +157,8 @@ class StatusListenerService:
                 'save_status': data.save_status,
                 'saved_image': data.saved_image,
                 'save_error': data.save_error,
+                'last_saved_at': data.last_saved_at,
+                'last_save_attempted_at': data.last_save_attempted_at,
                 'updated_at': data.updated_at
             }
 

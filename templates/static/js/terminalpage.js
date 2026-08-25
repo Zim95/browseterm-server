@@ -188,7 +188,11 @@ class TerminalPageHandler {
             terminalName: document.getElementById('terminalName'),
             terminalIp: document.getElementById('terminalIp'),
             terminalPort: document.getElementById('terminalPort'),
-            saveBtn: document.getElementById('saveBtn')
+            saveBtn: document.getElementById('saveBtn'),
+            saveStatusInfo: document.getElementById('saveStatusInfo'),
+            saveStatusLastSaved: document.getElementById('saveStatusLastSaved'),
+            saveStatusLastAttempt: document.getElementById('saveStatusLastAttempt'),
+            saveStatusBadge: document.getElementById('saveStatusBadge')
         };
     }
 
@@ -308,6 +312,11 @@ class TerminalPageHandler {
         if (this.terminalInfo.saveStatus === 'Pending' || this.terminalInfo.saveStatus === 'Running') {
             this.setSaveSpinner(true);
         }
+        this.renderSaveStatusInfo({
+            saveStatus: this.terminalInfo.saveStatus,
+            lastSavedAt: this.terminalInfo.lastSavedAt,
+            lastSaveAttemptedAt: this.terminalInfo.lastSaveAttemptedAt,
+        });
     }
 
     /**
@@ -404,6 +413,39 @@ class TerminalPageHandler {
     }
 
     /**
+     * Render the "last saved / last attempt / status" widget next to the Save button.
+     * Pure reflection of DB state -- no logic of its own beyond formatting and a badge color.
+     * Hidden entirely if this terminal has no save history at all.
+     */
+    renderSaveStatusInfo({ saveStatus, lastSavedAt, lastSaveAttemptedAt }) {
+        const box = this.elements.saveStatusInfo;
+        if (!box) return;
+
+        if (!saveStatus || saveStatus === 'None') {
+            box.hidden = true;
+            return;
+        }
+        box.hidden = false;
+
+        const formatDate = (iso) => {
+            if (!iso) return '—';
+            const d = new Date(iso);
+            return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+        };
+
+        if (this.elements.saveStatusLastSaved) {
+            this.elements.saveStatusLastSaved.textContent = formatDate(lastSavedAt);
+        }
+        if (this.elements.saveStatusLastAttempt) {
+            this.elements.saveStatusLastAttempt.textContent = formatDate(lastSaveAttemptedAt);
+        }
+        if (this.elements.saveStatusBadge) {
+            this.elements.saveStatusBadge.textContent = saveStatus;
+            this.elements.saveStatusBadge.className = `save-status-badge ${saveStatus.toLowerCase()}`;
+        }
+    }
+
+    /**
      * Subscribe to server-sent save-status events for this container and stop the
      * spinner when the snapshot finishes (Succeeded/Failed).
      */
@@ -418,6 +460,12 @@ class TerminalPageHandler {
             try { data = JSON.parse(event.data); } catch (e) { return; }
             if (data.type !== 'save_status_change') return;
             if (String(data.container_id) !== containerId) return;
+
+            this.renderSaveStatusInfo({
+                saveStatus: data.save_status,
+                lastSavedAt: data.last_saved_at,
+                lastSaveAttemptedAt: data.last_save_attempted_at,
+            });
 
             if (data.save_status === 'Succeeded') {
                 this.setSaveSpinner(false);

@@ -337,13 +337,18 @@ async def delete_container_in_k8s(request: Request) -> JSONResponse:
         return JSONResponse(content={'error': f"Error deleting container from Kubernetes: {str(e)}"}, status_code=500)
 
 
-async def _set_save_status(container_id: str, save_status: str, save_error: str = None) -> None:
-    """Update a container's save_status/save_error in the DB. The save-status trigger fires the SSE."""
+async def _set_save_status(container_id: str, save_status: str, save_error: str = None, stamp_attempt: bool = False) -> None:
+    """Update a container's save_status/save_error in the DB. The save-status trigger fires the SSE.
+    stamp_attempt=True records last_save_attempted_at (when this attempt started) -- set only from
+    save_container, at the single moment a save is actually initiated (Pending)."""
     ops = ContainerOps(DB_CONFIG)
+    data = {"save_status": save_status, "save_error": save_error, "last_request_id": request_id_var.get()}
+    if stamp_attempt:
+        data["last_save_attempted_at"] = datetime.now(timezone.utc)
     await asyncio.to_thread(
         ops.update,
         filters={"id": container_id},
-        data={"save_status": save_status, "save_error": save_error, "last_request_id": request_id_var.get()},
+        data=data,
     )
 
 
@@ -371,8 +376,9 @@ async def save_container(request: Request) -> JSONResponse:
         container_id = request_data['container_id']   # DB container id
         network_name = request_data['network_name']
 
-        # Mark PENDING now so the frontend can show the spinner immediately.
-        await _set_save_status(container_id, SaveStatus.PENDING.value)
+        # Mark PENDING now so the frontend can show the spinner immediately, and stamp
+        # last_save_attempted_at -- this is the one place a save is actually initiated.
+        await _set_save_status(container_id, SaveStatus.PENDING.value, stamp_attempt=True)
 
         save_request = SaveContainerK8SRequest(container_id=container_id, network_name=network_name)
         container_service = ContainerService()

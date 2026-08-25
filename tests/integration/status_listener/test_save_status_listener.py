@@ -45,6 +45,8 @@ class TestSaveStatusChangeBroadcast(IsolatedAsyncioTestCase):
             save_status=raw['save_status'],
             saved_image=raw.get('saved_image'),
             save_error=raw.get('save_error'),
+            last_saved_at=raw.get('last_saved_at'),
+            last_save_attempted_at=raw.get('last_save_attempted_at'),
             updated_at=raw.get('updated_at'),
         )
 
@@ -64,6 +66,8 @@ class TestSaveStatusChangeBroadcast(IsolatedAsyncioTestCase):
             'save_status': 'SUCCEEDED',
             'saved_image': 'registry/my-container:snap',
             'save_error': None,
+            'last_saved_at': '2026-07-18T00:00:00Z',
+            'last_save_attempted_at': '2026-07-18T00:00:00Z',
             'updated_at': '2026-07-18T00:00:00Z',
         })
 
@@ -83,6 +87,8 @@ class TestSaveStatusChangeBroadcast(IsolatedAsyncioTestCase):
         self.assertEqual(message['save_status'], 'SUCCEEDED')
         self.assertEqual(message['saved_image'], 'registry/my-container:snap')
         self.assertIsNone(message['save_error'])
+        self.assertEqual(message['last_saved_at'], '2026-07-18T00:00:00Z')
+        self.assertEqual(message['last_save_attempted_at'], '2026-07-18T00:00:00Z')
         self.assertEqual(message['updated_at'], '2026-07-18T00:00:00Z')
 
     async def test_save_status_change_not_sent_to_other_users(self) -> None:
