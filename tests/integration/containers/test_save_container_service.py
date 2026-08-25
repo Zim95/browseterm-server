@@ -82,3 +82,26 @@ class TestSaveContainerInK8S(TestCase):
         with self.assertRaises(HTTPException) as ctx:
             asyncio.run(self.container_service.save_container_in_k8s(self.save_request))
         self.assertEqual(ctx.exception.status_code, 500)
+
+    def test_save_container_cleans_raw_k8s_quota_error(self) -> None:
+        '''
+        A raw Kubernetes ApiException-shaped quota error (the ugly nested-exception text a
+        user used to see verbatim) must come out as the short, actionable quota message,
+        not the raw JSON/HTTPHeaderDict text.
+        '''
+        raw = (
+            'Error occurred while creating container: (403)\n'
+            'Reason: Forbidden\n'
+            'HTTP response headers: HTTPHeaderDict({\'Content-Type\': \'application/json\'})\n'
+            'HTTP response body: {"kind":"Status","apiVersion":"v1","message":'
+            '"pods \\"foo\\" is forbidden: exceeded quota: browseterm-quota, requested: '
+            'pods=1, used: pods=2, limited: pods=2","reason":"Forbidden","code":403}\n'
+        )
+        self.mock_stub.saveContainer.side_effect = RuntimeError(raw)
+
+        with self.assertRaises(HTTPException) as ctx:
+            asyncio.run(self.container_service.save_container_in_k8s(self.save_request))
+        self.assertEqual(ctx.exception.status_code, 500)
+        self.assertNotIn('HTTPHeaderDict', ctx.exception.detail)
+        self.assertNotIn('Reason: Forbidden', ctx.exception.detail)
+        self.assertIn('resource limit', ctx.exception.detail)

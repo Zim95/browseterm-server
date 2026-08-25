@@ -14,7 +14,7 @@ from container_maker_spec.types_pb2 import SaveContainerRequest as GRPCSaveConta
 
 # utils
 from src.common.exceptions import ContainerDBException, ContainerMakerException
-from src.common.utils import ResourceUnitConverter
+from src.common.utils import ResourceUnitConverter, clean_k8s_error_message
 from src.containers.dto.publish_information_dto import PublishInformationModel
 from src.db_ops.container_db_ops import create_container_in_db, get_container, update_container_in_db, list_user_containers as list_user_containers_db, delete_container as delete_container_db
 from src.common.k8s_secrets import read_cert_from_k8s_secret
@@ -220,9 +220,15 @@ class ContainerService:
             # transform data
             return CreateContainerOutputDataTransformer.transform(grpc_container_response)
         except ContainerMakerException as e:
-            raise HTTPException(status_code=500, detail=f"Error creating container in ContainerMaker: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error creating container in ContainerMaker."),
+            )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error creating container: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error creating container."),
+            )
 
     async def update_container(self, update_container_request: UpdateContainerRequest) -> dict:
         '''
@@ -323,9 +329,15 @@ class ContainerService:
             )
             return DeleteContainerOutputDataTransformer.transform(grpc_delete_response)
         except ContainerMakerException as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting container in ContainerMaker: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error deleting container in ContainerMaker."),
+            )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error deleting container: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error deleting container."),
+            )
 
     async def save_container_in_k8s(self, save_container_k8s_request: SaveContainerK8SRequest):
         '''
@@ -346,7 +358,13 @@ class ContainerService:
             )
             return grpc_save_response
         except ContainerMakerException as e:
-            raise HTTPException(status_code=500, detail=f"Error saving container in ContainerMaker: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error saving container in ContainerMaker."),
+            )
         except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error saving container: {str(e)}")
+            raise HTTPException(
+                status_code=500,
+                detail=clean_k8s_error_message(str(e), "Error saving container."),
+            )
 

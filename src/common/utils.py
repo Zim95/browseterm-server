@@ -1,4 +1,5 @@
 # standard library
+import json
 import os
 import re
 
@@ -155,3 +156,44 @@ def read_cert_from_file(file_path: str) -> bytes:
         raise FileNotFoundError(f"Certificate file not found at {file_path}")
     with open(file_path, 'rb') as f:
         return f.read()
+
+
+def clean_k8s_error_message(raw: str, fallback: str) -> str:
+    """
+    Turn a raw Kubernetes/gRPC exception string into something a user can actually read.
+
+    A Kubernetes ApiException's str() embeds a JSON response body (e.g.
+    '{"kind":"Status",...,"message":"pods \\"x\\" is forbidden: exceeded quota: ...",...}'),
+    and it typically arrives here having been wrapped/re-raised several times across the
+    gRPC boundary (container-maker's servicer, then this service's own except block), so the
+    same "Reason: None" / HTTPHeaderDict noise repeats. Rather than show that raw text to a
+    user, pull out the one field that's actually meaningful (the K8s message) and otherwise
+    fall back to a clean generic message.
+    :params:
+        raw: str
+            str(exception) from the failed k8s/gRPC call.
+        fallback: str
+            Message to use when no K8s message can be extracted.
+    :return:
+        A short, user-presentable error message.
+    """
+    start, end = raw.find('{'), raw.rfind('}')
+    if start != -1 and end != -1 and end > start:
+        try:
+            body = json.loads(raw[start:end + 1])
+            message = body.get('message')
+            if message:
+                if 'exceeded quota' in message.lower():
+                    return (
+                        "You've reached your plan's resource limit. Hibernate or delete "
+                        "another terminal to free up a slot, or upgrade your plan, then try again."
+                    )
+                return message
+        except (json.JSONDecodeError, AttributeError):
+            pass
+    if 'exceeded quota' in raw.lower():
+        return (
+            "You've reached your plan's resource limit. Hibernate or delete another "
+            "terminal to free up a slot, or upgrade your plan, then try again."
+        )
+    return fallback
