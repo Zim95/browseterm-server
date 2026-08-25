@@ -156,6 +156,173 @@ class TestResumeContainer(TestCase):
         self.assertEqual(self._final_update_data(mock_ops)['status'], ContainerStatus.RUNNING)
 
 
+class TestCountActiveContainers(TestCase):
+    '''
+    Unit tests for api_handlers._count_active_containers -- what actually counts against a
+    plan's max_containers limit.
+    '''
+
+    def _rows(self, statuses_and_ids, deleted_ids=frozenset()):
+        return [
+            {'id': cid, 'status': status, 'deleted_at': ('x' if cid in deleted_ids else None)}
+            for cid, status in statuses_and_ids
+        ]
+
+    def test_counts_running_pending_resuming_only(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = SimpleNamespace(success=True, data=self._rows([
+            ('a', ContainerStatus.RUNNING.value),
+            ('b', ContainerStatus.PENDING.value),
+            ('c', ContainerStatus.RESUMING.value),
+            ('d', ContainerStatus.HIBERNATED.value),
+            ('e', ContainerStatus.FAILED.value),
+        ]))
+        count = asyncio.run(api_handlers._count_active_containers(mock_ops, 'user-42', exclude_container_id='none'))
+        self.assertEqual(count, 3)
+
+    def test_excludes_the_container_being_resumed(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = SimpleNamespace(success=True, data=self._rows([
+            ('target', ContainerStatus.RUNNING.value),
+            ('other', ContainerStatus.RUNNING.value),
+        ]))
+        count = asyncio.run(api_handlers._count_active_containers(mock_ops, 'user-42', exclude_container_id='target'))
+        self.assertEqual(count, 1)
+
+    def test_excludes_soft_deleted_rows(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = SimpleNamespace(success=True, data=self._rows(
+            [('a', ContainerStatus.RUNNING.value), ('b', ContainerStatus.RUNNING.value)],
+            deleted_ids={'b'},
+        ))
+        count = asyncio.run(api_handlers._count_active_containers(mock_ops, 'user-42', exclude_container_id='none'))
+        self.assertEqual(count, 1)
+
+    def test_raises_on_db_error(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = SimpleNamespace(success=False, error='db down', data=None)
+        with self.assertRaises(Exception):
+            asyncio.run(api_handlers._count_active_containers(mock_ops, 'user-42', exclude_container_id='none'))
+
+
+class TestExceedsTierSpec(TestCase):
+    '''Unit tests for api_handlers._exceeds_tier_spec -- pure comparison, no mocking needed.'''
+
+    def _tier(self, cpu='1', memory='1Gi', storage='2Gi'):
+        return {
+            'cpu_limit_per_container': cpu,
+            'memory_limit_per_container': memory,
+            'storage_limit_per_container': storage,
+        }
+
+    def _container(self, cpu='1', memory='1Gi', storage='2Gi'):
+        return {'cpu_limit': cpu, 'memory_limit': memory, 'storage_limit': storage}
+
+    def test_within_limits_is_allowed(self) -> None:
+        self.assertFalse(api_handlers._exceeds_tier_spec(self._container(), self._tier()))
+
+    def test_cpu_over_limit_is_blocked(self) -> None:
+        self.assertTrue(api_handlers._exceeds_tier_spec(self._container(cpu='2'), self._tier(cpu='1')))
+
+    def test_memory_over_limit_is_blocked(self) -> None:
+        self.assertTrue(api_handlers._exceeds_tier_spec(self._container(memory='4Gi'), self._tier(memory='1Gi')))
+
+    def test_storage_over_limit_is_blocked(self) -> None:
+        self.assertTrue(api_handlers._exceeds_tier_spec(self._container(storage='10Gi'), self._tier(storage='2Gi')))
+
+    def test_exactly_at_limit_is_allowed(self) -> None:
+        self.assertFalse(api_handlers._exceeds_tier_spec(self._container(cpu='1'), self._tier(cpu='1')))
+
+    def test_unparseable_tier_value_fails_open(self) -> None:
+        '''The Pro tier's seed data uses the literal string "Configurable" -- must not crash
+        or incorrectly block on it, just skip that comparison.'''
+        self.assertFalse(api_handlers._exceeds_tier_spec(self._container(cpu='1'), self._tier(cpu='Configurable')))
+
+
+class TestResumeEntitlementChecks(TestCase):
+    '''
+    Integration-level tests for the two entitlement gates wired into resume_container itself:
+    the plan's concurrent-container limit, and whether the container's own recorded spec still
+    fits the current plan. Both must block with 409 (not touch k8s) when violated, and must not
+    interfere with a normal resume when the plan permits it.
+    '''
+
+    def setUp(self) -> None:
+        self.container_id: str = 'container-123'
+        self.row: dict = {
+            'id': self.container_id,
+            'user_id': 'user-42',
+            'image_id': 'image-1',
+            'name': 'my-container',
+            'status': ContainerStatus.HIBERNATED.value,
+            'cpu_limit': '1',
+            'memory_limit': '1Gi',
+            'storage_limit': '2Gi',
+            'ip_address': '10.0.0.5',
+            'port_mappings': [],
+            'environment_vars': {},
+            'associated_resources': [],
+            'kubernetes_id': 'old-pod-uid',
+            'saved_image': 'registry/my-container:snap',
+            'save_status': SaveStatus.SUCCEEDED.value,
+        }
+        self.free_plan: dict = {
+            'name': 'Free Plan', 'type': 'free', 'max_containers': 1,
+            'cpu_limit_per_container': '1', 'memory_limit_per_container': '1Gi',
+            'storage_limit_per_container': '2Gi',
+        }
+
+    def _run(self, plan: dict, active_rows: list):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = SimpleNamespace(data=self.row)
+        mock_ops.update.return_value = SimpleNamespace(data=None)
+        mock_ops.find.return_value = SimpleNamespace(success=True, data=active_rows)
+
+        mock_service = MagicMock()
+        mock_service.create_container_in_k8s = AsyncMock(return_value=ContainerResponseModel(
+            container_name='my-container', container_id='new-pod-uid', container_ip='10.0.0.99',
+            container_network='user-42-namespace', container_ports=[], associated_resources=[],
+        ))
+
+        with patch('src.api_handlers.ContainerOps', return_value=mock_ops), \
+             patch('src.api_handlers.ContainerService', return_value=mock_service), \
+             patch('src.api_handlers.get_user_current_subscription_plan', AsyncMock(return_value=plan)):
+            result = asyncio.run(
+                api_handlers.resume_container.__wrapped__(request=_mock_request({'container_id': self.container_id}))
+            )
+        return result, mock_ops, mock_service
+
+    def test_blocks_when_over_container_limit(self) -> None:
+        '''Free plan, max_containers=1, user already has one Running -> 409, k8s never touched.'''
+        active_rows = [{'id': 'other-container', 'status': ContainerStatus.RUNNING.value, 'deleted_at': None}]
+        result, _ops, mock_service = self._run(self.free_plan, active_rows)
+        self.assertEqual(result.status_code, 409)
+        self.assertIn('Free Plan', result.body.decode())
+        mock_service.create_container_in_k8s.assert_not_called()
+
+    def test_blocks_when_spec_exceeds_current_plan(self) -> None:
+        '''Container recorded 2 CPU (e.g. saved under a higher tier), current plan only allows 1.'''
+        self.row['cpu_limit'] = '2'
+        result, _ops, mock_service = self._run(self.free_plan, active_rows=[])
+        self.assertEqual(result.status_code, 409)
+        self.assertIn('ineligible', result.body.decode())
+        mock_service.create_container_in_k8s.assert_not_called()
+
+    def test_allows_resume_within_plan_limits(self) -> None:
+        '''No other active containers, spec fits -- resume proceeds exactly as before.'''
+        result, _ops, mock_service = self._run(self.free_plan, active_rows=[])
+        self.assertEqual(result.status_code, 200)
+        mock_service.create_container_in_k8s.assert_called_once()
+
+    def test_resumed_container_itself_not_counted_against_its_own_limit(self) -> None:
+        '''The row being resumed is HIBERNATED, but even if find() somehow still returned it,
+        it must be excluded from its own limit check by id.'''
+        active_rows = [{'id': self.container_id, 'status': ContainerStatus.HIBERNATED.value, 'deleted_at': None}]
+        result, _ops, mock_service = self._run(self.free_plan, active_rows)
+        self.assertEqual(result.status_code, 200)
+        mock_service.create_container_in_k8s.assert_called_once()
+
+
 class TestSaveContainerHandler(TestCase):
     '''
     Handler-level tests for api_handlers.save_container (the server-testable half of
