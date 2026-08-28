@@ -85,7 +85,7 @@ async def create_payment(request: Request) -> JSONResponse:
 
         payment_service = PaymentService()
         payment_response = await payment_service.make_payment(
-            user_id=request.state.user_info.id,
+            user_id=request.state.user_info['id'],
             plan_id=create_payment_request.plan_id,
             amount_minor=49900,
             currency="INR",
@@ -112,7 +112,7 @@ async def get_container_info(request: Request) -> JSONResponse:
         # build the get container request
         get_container_request: GetContainerRequest = GetContainerRequest(
             container_id=request.path_params,
-            user_id=request.state.user_info.id  # user_id will be extracted from session in ContainerService
+            user_id=request.state.user_info['id']  # user_id will be extracted from session in ContainerService
         )
         # get container info using ContainerService
         container_service = ContainerService()
