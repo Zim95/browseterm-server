@@ -1,0 +1,139 @@
+/* Payment Page Styles */
+.payment-page {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.payment-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+    position: relative;
+}
+
+.back-link {
+    display: inline-block;
+    margin-bottom: 1rem;
+    color: #637AB9;
+    text-decoration: none;
+    font-weight: 500;
+    align-self: flex-start;
+}
+
+.back-link:hover {
+    text-decoration: underline;
+}
+
+.payment-header h1 {
+    color: #333;
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+    font-weight: bold;
+}
+
+.payment-header p {
+    color: #666;
+    font-size: 1.1rem;
+    margin: 0;
+}
+
+.payment-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.payment-card {
+    width: 100%;
+    min-width: 0;
+}
+
+.total-row {
+    border-top: 2px solid #eee;
+    margin-top: 0.5rem;
+    padding-top: 1.25rem;
+}
+
+.total-row .detail-label,
+.total-row .detail-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #333;
+}
+
+.pay-btn {
+    max-width: 300px;
+}
+
+.pay-btn:disabled {
+    background-color: #cccccc;
+    color: #666666;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+}
+
+.idempotency-hint {
+    color: #999;
+    font-size: 0.8rem;
+    text-align: center;
+    word-break: break-all;
+}
+
+.idempotency-hint code {
+    background: rgba(99, 122, 185, 0.1);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .payment-header h1 {
+        font-size: 2rem;
+    }
+
+    .payment-card {
+        padding: 1.5rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .payment-card {
+        padding: 1rem;
+    }
+
+    .total-row .detail-label,
+    .total-row .detail-value {
+        font-size: 1.05rem;
+    }
+}
+
+/* Dark Mode Styles */
+body.dark-mode .payment-header h1 {
+    color: #d4d4d4;
+}
+
+body.dark-mode .payment-header p {
+    color: #cccccc;
+}
+
+body.dark-mode .back-link {
+    color: #A8FBD3;
+}
+
+body.dark-mode .total-row {
+    border-top-color: #3e3e42;
+}
+
+body.dark-mode .total-row .detail-label,
+body.dark-mode .total-row .detail-value {
+    color: #d4d4d4;
+}
+
+body.dark-mode .idempotency-hint {
+    color: #888;
+}
+
+body.dark-mode .idempotency-hint code {
+    background: rgba(168, 251, 211, 0.1);
+}

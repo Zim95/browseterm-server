@@ -25,7 +25,9 @@ class TestPaymentEndpoint(TestCase):
         and payment-gateway must never be contacted.
         '''
         with patch("src.payments.payments_service.PaymentService") as mock_payment_service_cls:
-            response: Response = self.client.post("/create-payment", json={"plan_id": "developer"})
+            response: Response = self.client.post(
+                "/create-payment", json={"plan_id": "developer", "idempotency_key": "idem-1"}
+            )
 
             self.assertEqual(response.status_code, 302)
             self.assertEqual(response.headers["location"], "/login")

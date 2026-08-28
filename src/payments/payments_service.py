@@ -77,7 +77,9 @@ class PaymentService:
         self.channel: grpc.Channel = self.grpc_utils.channel
         self.stub: PaymentGatewayAPIStub = self.grpc_utils.stub
 
-    async def make_payment(self, user_id: str, plan_id: str, amount_minor: int, currency: str) -> PaymentResponseData:
+    async def make_payment(
+        self, user_id: str, plan_id: str, amount_minor: int, currency: str, idempotency_key: str
+    ) -> PaymentResponseData:
         '''
         Call payment-gateway's makePayment RPC and translate the response/errors for the API layer.
 
@@ -85,6 +87,11 @@ class PaymentService:
         accepted from the browser. amount_minor/currency are hardcoded by the caller for v0;
         # TODO: once real plans exist, resolve amount_minor/currency server-side from plan_id
         instead of accepting/hardcoding them here — never trust a browser-provided amount.
+
+        idempotency_key is passed through unchanged to payment-gateway. It's client-generated
+        (one per checkout attempt, reused across retries) and distinct from request_id below
+        (which is minted fresh per HTTP call, for tracing only, and would defeat dedup if reused
+        as the idempotency key).
         '''
         try:
             request_id: str = request_id_var.get()
@@ -94,6 +101,7 @@ class PaymentService:
                 amount_minor=amount_minor,
                 currency=currency,
                 request_id=request_id,
+                idempotency_key=idempotency_key,
             )
             grpc_response: GRPCPaymentResponse = await asyncio.to_thread(
                 self.stub.makePayment,

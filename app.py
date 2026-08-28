@@ -58,6 +58,7 @@ app.add_api_route(path="/", endpoint=template_handlers.home, methods=["GET"])
 app.add_api_route(path="/terminals", endpoint=template_handlers.terminals, methods=["GET"])
 app.add_api_route(path="/terminalpage", endpoint=template_handlers.terminalpage, methods=["GET"])
 app.add_api_route(path="/subscriptions", endpoint=template_handlers.subscriptions, methods=["GET"])
+app.add_api_route(path="/payment", endpoint=template_handlers.payment, methods=["GET"])
 app.add_api_route(path="/profile", endpoint=template_handlers.profile, methods=["GET"])
 app.add_api_route(path="/login", endpoint=template_handlers.login, methods=["GET"])
 

@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Payment - BrowseTerm{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', path='/css/payment.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="content-container fade-in payment-page">
+    <div class="payment-header">
+        <a href="/subscriptions" class="back-link">&larr; Back to plans</a>
+        <h1>Checkout</h1>
+        <p>Review your plan and complete the payment</p>
+    </div>
+
+    <div class="payment-body" id="paymentBody">
+        <div class="loading-message">Loading plan details...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Pass the server-resolved plan from backend to JavaScript. The amount shown here is
+    // display-only (see template_handlers.py::payment) — the actual charge is still resolved
+    // server-side in /create-payment for v0, per PAYMENTS.md.
+    window.selectedPlan = {{ (selectedPlan or {}) | tojson | safe }};
+    window.userInfo = {{ (userInfo or {}) | tojson | safe }};
+</script>
+<script src="{{ url_for('static', path='/js/payment.js') }}"></script>
+{% endblock %}

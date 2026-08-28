@@ -1254,7 +1254,7 @@ protobuf = "^5.29.0"
 type = "git"
 url = "https://github.com/Zim95/payment-gateway-spec.git"
 reference = "main"
-resolved_reference = "5b2837bcd66f81c13c2182b8476edaa8edb9820e"
+resolved_reference = "2c14503bed6f3fdc38348b0b834f20b0bfc29613"
 
 [[package]]
 name = "pexpect"

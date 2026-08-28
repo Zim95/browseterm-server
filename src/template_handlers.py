@@ -156,6 +156,30 @@ async def subscriptions(request: Request) -> HTMLResponse:
 
 
 @authenticate_session
+async def payment(request: Request) -> HTMLResponse:
+    '''
+    Payment page template — reached by selecting a plan on /subscriptions.
+
+    Resolves the plan server-side from plan_id (query param) against the same
+    list_all_existing_subscription_types() source /subscriptions uses, rather than trusting a
+    browser-supplied amount, per PAYMENTS.md. This is display-only: /create-payment still
+    hardcodes the actual charged amount server-side for v0 (see api_handlers.py TODO), so the
+    breakdown shown here is illustrative until real plan-based pricing lands.
+    '''
+    plan_id = request.query_params.get('plan_id', '')
+    subscriptions: list = await list_all_existing_subscription_types()
+    selected_plan = next((s for s in subscriptions if s.get('id') == plan_id), None)
+    return templates.TemplateResponse(
+        "payment.html",
+        {
+            "request": request,
+            "selectedPlan": selected_plan,
+            "userInfo": request.state.user_info,
+        }
+    )
+
+
+@authenticate_session
 async def profile(request: Request) -> HTMLResponse:
     '''
     User profile page template.

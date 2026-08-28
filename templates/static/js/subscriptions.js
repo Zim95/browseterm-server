@@ -320,11 +320,11 @@ class SubscriptionHandler {
     }
 
     /**
-     * Handle plan purchase
+     * Handle plan purchase - redirects to the checkout page for this plan, where the amount/GST/
+     * total breakdown is shown and the actual payment is made.
      * @param {string} planId - Plan ID
      */
     handlePlanPurchase(planId) {
-        // Find plan details
         const plan = this.plans.find(p => p.id === planId);
         if (!plan) {
             SubscriptionUtilities.showNotification(
@@ -336,62 +336,7 @@ class SubscriptionHandler {
             return;
         }
 
-        // Show confirmation
-        const message = `Are you sure you want to purchase the ${plan.name} plan for ${plan.currency}${plan.amount}?`;
-
-        if (confirm(message)) {
-            console.log(`User confirmed purchase of ${plan.name} plan`);
-            this.processPurchase(plan);
-        } else {
-            console.log(`User cancelled purchase of ${plan.name} plan`);
-            SubscriptionUtilities.showNotification(
-                'info',
-                'Purchase Cancelled',
-                'Plan purchase was cancelled',
-                3000
-            );
-        }
-    }
-
-    /**
-     * Process plan purchase
-     * v0: calls payment-gateway (via browseterm-server) and shows its hardcoded response.
-     * No Stripe, no card fields, no redirect yet — see PAYMENTS.md.
-     * @param {Object} plan - Subscription plan
-     */
-    async processPurchase(plan) {
-        console.log('Processing purchase for plan:', plan);
-
-        try {
-            const response = await fetch('/create-payment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ plan_id: plan.id }),
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || 'Payment failed');
-            }
-
-            SubscriptionUtilities.showNotification(
-                'success',
-                'Payment successful',
-                `Payment ID: ${result.payment_id}`,
-                6000
-            );
-        } catch (error) {
-            console.error('Error processing payment:', error);
-            SubscriptionUtilities.showNotification(
-                'error',
-                'Payment Failed',
-                error.message || 'Could not process payment. Please try again.',
-                6000
-            );
-        }
+        window.location.href = `/payment?plan_id=${encodeURIComponent(planId)}`;
     }
 
     /**

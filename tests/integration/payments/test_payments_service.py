@@ -51,7 +51,8 @@ class TestPaymentService(TestCase):
 
         result = asyncio.run(
             self.payment_service.make_payment(
-                user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR"
+                user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR",
+                idempotency_key="idem-1",
             )
         )
 
@@ -64,6 +65,7 @@ class TestPaymentService(TestCase):
         self.assertEqual(called_request.plan_id, "developer")
         self.assertEqual(called_request.amount_minor, 49900)
         self.assertEqual(called_request.currency, "INR")
+        self.assertEqual(called_request.idempotency_key, "idem-1")
 
         # x-request-id metadata is forwarded
         called_kwargs = self.mock_stub.makePayment.call_args.kwargs
@@ -82,7 +84,8 @@ class TestPaymentService(TestCase):
         with self.assertRaises(PaymentGatewayUnavailableException):
             asyncio.run(
                 self.payment_service.make_payment(
-                    user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR"
+                    user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR",
+                    idempotency_key="idem-1",
                 )
             )
 
@@ -94,6 +97,7 @@ class TestPaymentService(TestCase):
         with self.assertRaises(PaymentGatewayException):
             asyncio.run(
                 self.payment_service.make_payment(
-                    user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR"
+                    user_id="user-1", plan_id="developer", amount_minor=49900, currency="INR",
+                    idempotency_key="idem-1",
                 )
             )

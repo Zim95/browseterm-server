@@ -89,6 +89,7 @@ async def create_payment(request: Request) -> JSONResponse:
             plan_id=create_payment_request.plan_id,
             amount_minor=49900,
             currency="INR",
+            idempotency_key=create_payment_request.idempotency_key,
         )
         return JSONResponse(content=payment_response.model_dump())
     except PaymentGatewayUnavailableException as e:
