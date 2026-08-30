@@ -107,5 +107,26 @@ class TestDeleteSession(unittest.TestCase):
         mock_manager.delete_session.assert_called_once_with("s1")
 
 
+class TestCreateWebsocketToken(unittest.TestCase):
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        import asyncio
+        request = _mock_request({"session_id": "s1"}, headers={})
+        result = asyncio.run(auth_handlers.create_websocket_token(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_valid_request_returns_token(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.create_websocket_token.return_value = "ws-token-1"
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"session_id": "s1"})
+        result = asyncio.run(auth_handlers.create_websocket_token(request))
+        self.assertEqual(result.status_code, 200)
+        mock_manager.create_websocket_token.assert_called_once_with("s1")
+
+
 if __name__ == "__main__":
     unittest.main()

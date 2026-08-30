@@ -27,6 +27,7 @@ from src.cloud.device_handlers import (
 )
 from src.cloud.auth_handlers import (
     create_session_from_user_info,
+    create_websocket_token,
     delete_session,
     validate_session,
 )
@@ -56,6 +57,7 @@ app.add_api_route(path="/devices/{device_id}/heartbeat", endpoint=heartbeat_devi
 app.add_api_route(path="/auth/sessions", endpoint=create_session_from_user_info, methods=["POST"])
 app.add_api_route(path="/auth/sessions/validate", endpoint=validate_session, methods=["POST"])
 app.add_api_route(path="/auth/sessions/delete", endpoint=delete_session, methods=["POST"])
+app.add_api_route(path="/auth/websocket-tokens", endpoint=create_websocket_token, methods=["POST"])
 
 # Container/workspace metadata API (replaces Local's direct ContainerOps/ImageOps/
 # SubscriptionTypeOps access)

@@ -88,6 +88,30 @@ async def validate_session(request: Request) -> JSONResponse:
         return JSONResponse(content={"is_valid": False, "error": "Error validating session"}, status_code=500)
 
 
+async def create_websocket_token(request: Request) -> JSONResponse:
+    '''
+    POST /auth/websocket-tokens
+
+    Body: {"session_id": "..."}. Wraps RedisSessionManager.create_websocket_token exactly as-is
+    (one-time, 60s-TTL token linking to the session, validated/consumed by socket-ssh) - Local's
+    terminal-page handler calls this instead of touching Redis itself. socket-ssh's own Redis
+    dependency for validating the token is unchanged (P11's job, not this task's).
+    '''
+    if not _internal_auth_ok(request):
+        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+    try:
+        body = await request.json()
+        session_id = body.get("session_id")
+        if not session_id:
+            return JSONResponse(content={"error": "session_id is required"}, status_code=400)
+        session_manager = RedisSessionManager()
+        token = session_manager.create_websocket_token(session_id)
+        return JSONResponse(content={"token": token})
+    except Exception:
+        logger.error("websocket token creation failed", exc_info=True)
+        return JSONResponse(content={"error": "Error creating websocket token"}, status_code=500)
+
+
 async def delete_session(request: Request) -> JSONResponse:
     '''
     POST /auth/sessions/delete
