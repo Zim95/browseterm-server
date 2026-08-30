@@ -17,21 +17,22 @@ class PaymentUtilities {
 
     /**
      * GST rate applied to the displayed breakdown.
-     * Placeholder rate (India standard SaaS/cloud-service rate) until real tax/pricing rules
-     * exist server-side. Display-only: /create-payment still hardcodes the actual charge for v0.
+     * Placeholder rate (India standard SaaS/cloud-service rate) until real region-based tax
+     * rules exist server-side. Display-only: /create-payment still hardcodes the actual
+     * charge for v0.
      */
     static GST_RATE = 0.18;
 
     /**
-     * Compute the base/GST/total breakdown for a plan.
+     * Compute the price/GST/total breakdown for a plan.
      * @param {Object} plan - Subscription plan (amount is a "499.00"-style string)
-     * @returns {{base: number, gst: number, total: number, currency: string}}
+     * @returns {{price: number, gst: number, total: number, currency: string}}
      */
     static computeBreakdown(plan) {
-        const base = parseFloat(plan.amount) || 0;
-        const gst = base * PaymentUtilities.GST_RATE;
-        const total = base + gst;
-        return { base, gst, total, currency: plan.currency || '' };
+        const price = parseFloat(plan.amount) || 0;
+        const gst = price * PaymentUtilities.GST_RATE;
+        const total = price + gst;
+        return { price, gst, total, currency: plan.currency || '' };
     }
 
     /**
@@ -46,8 +47,8 @@ class PaymentUtilities {
     /**
      * Generate a fresh idempotency key.
      * One per page load/checkout attempt - reused across every Pay click/retry on this page,
-     * never regenerated mid-attempt (see PAYMENTS.md follow-up: this page should "create the
-     * idempotency key and use that all the time").
+     * never regenerated mid-attempt, and never rendered in the UI (verified via Grafana logs
+     * instead - see plan.md).
      * @returns {string}
      */
     static generateIdempotencyKey() {
@@ -80,7 +81,7 @@ class PaymentUtilities {
 
 /**
  * PaymentHandler
- * Handles payment page functionality
+ * Handles the payment page's Pay button
  */
 class PaymentHandler {
     constructor() {
@@ -128,26 +129,31 @@ class PaymentHandler {
         const breakdown = PaymentUtilities.computeBreakdown(this.plan);
 
         this.elements.paymentBody.innerHTML = `
-            <div class="details-card payment-card">
+            <div class="payment-card">
                 <div class="detail-item">
-                    <label class="detail-label">Plan</label>
+                    <label class="detail-label">Plan:</label>
                     <span class="detail-value">${this.plan.name}</span>
                 </div>
                 <div class="detail-item">
-                    <label class="detail-label">Amount</label>
-                    <span class="detail-value">${breakdown.currency}${PaymentUtilities.formatAmount(breakdown.base)}</span>
+                    <label class="detail-label">Price:</label>
+                    <span class="detail-value">${PaymentUtilities.formatAmount(breakdown.price)}</span>
                 </div>
                 <div class="detail-item">
-                    <label class="detail-label">GST (18%)</label>
-                    <span class="detail-value">${breakdown.currency}${PaymentUtilities.formatAmount(breakdown.gst)}</span>
+                    <label class="detail-label">Currency:</label>
+                    <span class="detail-value">${breakdown.currency}</span>
+                </div>
+                <div class="detail-item">
+                    <label class="detail-label">GST (18%):</label>
+                    <span class="detail-value">${PaymentUtilities.formatAmount(breakdown.gst)}</span>
                 </div>
                 <div class="detail-item total-row">
                     <label class="detail-label">Total</label>
-                    <span class="detail-value">${breakdown.currency}${PaymentUtilities.formatAmount(breakdown.total)}</span>
+                    <span class="detail-value">${breakdown.currency} ${PaymentUtilities.formatAmount(breakdown.total)}</span>
                 </div>
             </div>
-            <button class="buy-btn pay-btn" id="payBtn">Pay</button>
-            <p class="idempotency-hint">Idempotency key: <code>${this.idempotencyKey}</code></p>
+            <button class="pay-btn" id="payBtn">
+                <span class="pay-btn-text">Pay ${breakdown.currency} ${PaymentUtilities.formatAmount(breakdown.total)}</span>
+            </button>
         `;
 
         document.getElementById('payBtn').addEventListener('click', () => this.handlePayClick());
@@ -158,9 +164,7 @@ class PaymentHandler {
      * idempotency key.
      */
     async handlePayClick() {
-        const payBtn = document.getElementById('payBtn');
-        payBtn.disabled = true;
-        payBtn.textContent = 'Processing...';
+        this.setLoading(true);
 
         try {
             const response = await fetch('/create-payment', {
@@ -195,8 +199,33 @@ class PaymentHandler {
                 6000
             );
         } finally {
-            payBtn.disabled = false;
-            payBtn.textContent = 'Pay';
+            this.setLoading(false);
+        }
+    }
+
+    /**
+     * Toggle the Pay button's loading state
+     * @param {boolean} isLoading
+     */
+    setLoading(isLoading) {
+        const btn = document.getElementById('payBtn');
+        if (!btn) {
+            return;
+        }
+        const textEl = btn.querySelector('.pay-btn-text');
+        const originalText = textEl ? textEl.textContent : 'Pay';
+
+        if (isLoading) {
+            btn.disabled = true;
+            btn.dataset.originalText = originalText;
+            if (textEl) {
+                textEl.innerHTML = '<span class="pay-btn-spinner"></span>Processing...';
+            }
+        } else {
+            btn.disabled = false;
+            if (textEl && btn.dataset.originalText) {
+                textEl.textContent = btn.dataset.originalText;
+            }
         }
     }
 }
