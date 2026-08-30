@@ -111,8 +111,8 @@ async def get_container_info(request: Request) -> JSONResponse:
     try:
         # build the get container request
         get_container_request: GetContainerRequest = GetContainerRequest(
-            container_id=request.path_params,
-            user_id=request.state.user_info['id']  # user_id will be extracted from session in ContainerService
+            container_id=request.path_params['container_id'],
+            user_id=request.state.user_info['id']  # never trust a client-supplied user_id; derive from session
         )
         # get container info using ContainerService
         container_service = ContainerService()
@@ -134,7 +134,9 @@ async def create_container_in_db(request: Request) -> JSONResponse:
         # get the create container request
         request_data: dict = await request.json()
         create_container_db_request: CreateContainerDBRequest = CreateContainerDBRequest(
-            user_id=request_data['user_id'],
+            # never trust a client-supplied user_id (would let a caller create a container
+            # "owned" by any other user) -- ownership always comes from the authenticated session.
+            user_id=request.state.user_info['id'],
             image_id=request_data['image_id'],
             container_name=request_data['name'],
             cpu_limit=request_data.get('cpu_limit', '1'),
@@ -172,7 +174,18 @@ async def create_container_in_k8s(request: Request) -> JSONResponse:
 
         # Extract required data
         container_id = request_data['container_id']
+        user_id = request.state.user_info['id']
         resource_requirements = request_data.get('resource_requirements', {})
+
+        # Ownership check BEFORE any k8s side effect: container_id is stamped as the
+        # browseterm/container-id pod label that the central status_monitor uses to update this
+        # row's status, so creating a pod for a container_id the caller doesn't own would let
+        # them hijack another user's container row. Scoped lookup avoids leaking whether the id
+        # exists at all if it isn't the caller's.
+        ops = ContainerOps(DB_CONFIG)
+        owned_row = await asyncio.to_thread(ops.find_one, filters={"id": container_id, "user_id": user_id})
+        if not owned_row.data:
+            return JSONResponse(content={'error': f'Container {container_id} not found'}, status_code=404)
 
         # Build resource limits
         resource_limits = ResourceLimits(
@@ -189,11 +202,15 @@ async def create_container_in_k8s(request: Request) -> JSONResponse:
             **request_data.get('environment_variables', {}),
             'CONTAINER_ID': container_id,
         }
-        # Build the K8S request
+        # Build the K8S request. network_name is always derived from the authenticated user
+        # (matching the resume_container convention), never taken from the client body -- a
+        # client-supplied network_name would let a pod be created in another user's namespace.
+        # container-maker's pod/service/ingress lookups are namespace-scoped, so this also fully
+        # confines delete/save's own ownership checks (see those handlers) to the caller's tenant.
         create_container_k8s_request = CreateContainerK8SRequest(
             image_id=request_data['image_id'],
             container_name=request_data['container_name'],
-            network_name=request_data['network_name'],
+            network_name=f"{user_id}-namespace",
             exposure_level=request_data.get('exposure_level', 2),
             publish_information=request_data.get('publish_information', []),
             environment_variables=environment_variables,
@@ -219,11 +236,13 @@ async def update_container(request: Request) -> JSONResponse:
     try:
         request_data: dict = await request.json()
 
-        # Build filters
+        # Build filters. user_id is ALWAYS the authenticated session's id -- never the client
+        # body's (which the frontend doesn't even send today): an id/kubernetes_id/name-only
+        # filter would let any authenticated user update ANY container's fields.
         filters_data = request_data.get('filters', {})
         filters = UpdateContainerFilters(
             container_id=filters_data.get('container_id'),
-            user_id=filters_data.get('user_id'),
+            user_id=request.state.user_info['id'],
             kubernetes_id=filters_data.get('kubernetes_id'),
             name=filters_data.get('name')
         )
@@ -265,9 +284,9 @@ async def list_user_containers(request: Request) -> JSONResponse:
     Lists all containers for a specific user.
     '''
     try:
-        user_id = request.query_params.get('user_id')
-        if not user_id:
-            return JSONResponse(content={'error': 'user_id is required'}, status_code=400)
+        # never trust a client-supplied user_id (query param) -- it would let a caller list
+        # any other user's containers. Always derive from the authenticated session.
+        user_id = request.state.user_info['id']
 
         limit = request.query_params.get('limit')
         offset = request.query_params.get('offset')
@@ -301,9 +320,12 @@ async def delete_container_in_db(request: Request) -> JSONResponse:
     try:
         request_data: dict = await request.json()
 
+        # never trust a client-supplied user_id: the downstream delete is scoped by
+        # (container_id, user_id), so a client-supplied user_id would let an authenticated
+        # attacker delete another user's container by supplying that user's id + container_id.
         delete_container_db_request = DeleteContainerDBRequest(
             container_id=request_data['container_id'],
-            user_id=request_data['user_id']
+            user_id=request.state.user_info['id']
         )
 
         container_service = ContainerService()
@@ -327,9 +349,15 @@ async def delete_container_in_k8s(request: Request) -> JSONResponse:
 
         # Note: The frontend sends 'container_id' but it's actually the kubernetes_id (pod UID)
         # The naming is confusing but we maintain backward compatibility with frontend
+        #
+        # network_name is always derived from the authenticated session, never the client body:
+        # container-maker's delete only ever looks up pods/services/ingress WITHIN the given
+        # namespace (see container-maker/src/containers/containers.py), so confining it to the
+        # caller's own namespace fully prevents deleting another user's k8s resources regardless
+        # of which pod UID is supplied.
         delete_container_k8s_request = DeleteContainerK8SRequest(
             container_id=request_data['container_id'],  # This is the pod UID from K8s
-            network_name=request_data['network_name']
+            network_name=f"{request.state.user_info['id']}-namespace"
         )
 
         container_service = ContainerService()
@@ -378,13 +406,24 @@ async def save_container(request: Request) -> JSONResponse:
     try:
         request_data: dict = await request.json()
         container_id = request_data['container_id']   # DB container id
-        network_name = request_data['network_name']
+        user_id = request.state.user_info['id']
+
+        # Ownership check BEFORE any side effect: _set_save_status below mutates the row by id
+        # alone, and container-maker performs a real snapshot Job, so an unscoped lookup would
+        # let any authenticated user trigger/corrupt another user's save. Scoped lookup avoids
+        # leaking whether the id exists at all if it isn't the caller's.
+        ops = ContainerOps(DB_CONFIG)
+        owned_row = await asyncio.to_thread(ops.find_one, filters={"id": container_id, "user_id": user_id})
+        if not owned_row.data:
+            return JSONResponse(content={'error': f'Container {container_id} not found'}, status_code=404)
 
         # Mark PENDING now so the frontend can show the spinner immediately, and stamp
         # last_save_attempted_at -- this is the one place a save is actually initiated.
         await _set_save_status(container_id, SaveStatus.PENDING.value, stamp_attempt=True)
 
-        save_request = SaveContainerK8SRequest(container_id=container_id, network_name=network_name)
+        # network_name is always derived from the authenticated (and now ownership-verified)
+        # user, never the client body -- see create/delete-container-in-k8s for why.
+        save_request = SaveContainerK8SRequest(container_id=container_id, network_name=f"{user_id}-namespace")
         container_service = ContainerService()
 
         # container-maker blocks until the snapshot Job completes, so run it in the background.
@@ -466,8 +505,16 @@ async def resume_container(request: Request) -> JSONResponse:
         container_id = request_data['container_id']
         logger.info("resume requested", extra={"container_id": container_id})
 
+        # Ownership-scoped lookup: an id-only lookup here would let any authenticated user
+        # resume (and consume the compute/quota of) ANY other user's hibernated container just
+        # by knowing its id, before ever calling get_user_current_subscription_plan below with
+        # THAT container's own row['user_id'] -- i.e. it would use the victim's entitlement to
+        # authorize an action performed by the attacker's session. Scoping the lookup up front
+        # keeps every subsequent row['user_id'] reference (subscription/plan checks, network_name,
+        # environment, DB updates) tied to the caller who actually owns this container.
+        user_id = request.state.user_info['id']
         ops = ContainerOps(DB_CONFIG)
-        row_result = await asyncio.to_thread(ops.find_one, filters={"id": container_id})
+        row_result = await asyncio.to_thread(ops.find_one, filters={"id": container_id, "user_id": user_id})
         row: dict = row_result.data
         if not row:
             logger.warning("resume: container not found", extra={"container_id": container_id})
@@ -608,12 +655,12 @@ async def container_status_sse(request: Request) -> StreamingResponse:
     SSE endpoint for container status updates.
     Clients connect and receive real-time status changes for their containers.
 
-    Query params:
-        user_id: The user ID to subscribe to status updates for
+    Subscribes to the authenticated caller's own status stream. Never trust a client-supplied
+    user_id (query param) here -- it would let a caller subscribe to (and observe container
+    names, ip addresses, kubernetes ids, save/hibernate/resume/status transitions for) any other
+    user's private status stream just by supplying their user_id.
     """
-    user_id = request.query_params.get('user_id')
-    if not user_id:
-        return JSONResponse(content={'error': 'user_id is required'}, status_code=400)
+    user_id = request.state.user_info['id']
 
     async def event_generator() -> AsyncGenerator[str, None]:
         """Generate SSE events from the status listener queue."""
