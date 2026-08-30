@@ -39,6 +39,7 @@ from src.cloud.container_handlers import (
     list_subscription_types,
     update_container,
 )
+from src.cloud.subscription_handlers import get_current_subscription
 
 app = FastAPI()
 
@@ -65,6 +66,7 @@ app.add_api_route(path="/containers/{container_id}", endpoint=update_container, 
 app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_container, methods=["POST"])
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
+app.add_api_route(path="/subscriptions/current", endpoint=get_current_subscription, methods=["GET"])
 
 
 if __name__ == "__main__":
