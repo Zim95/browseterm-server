@@ -126,7 +126,7 @@ sqlalchemy = "^2.0.43"
 type = "git"
 url = "https://github.com/Zim95/browseterm-db.git"
 reference = "main"
-resolved_reference = "16f36f109d74647873637fc428ed9b3b3d7c50aa"
+resolved_reference = "1c30b8558249be989742013288493058220b011c"
 
 [[package]]
 name = "click"
