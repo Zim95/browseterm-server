@@ -56,6 +56,34 @@ def _serialize_device(device: dict) -> dict:
     }
 
 
+async def _demote_other_devices(device_ops: DeviceOps, user_id: str, active_device_id: str) -> None:
+    '''
+    At most one ACTIVE device per user at a time: the "which device is active for the user right
+    now" the Desktop app owns (register/heartbeat both call this after making `active_device_id`
+    ACTIVE). Every other currently-ACTIVE device of the same user is demoted to INACTIVE.
+    REVOKED devices are left untouched -- demotion is only ever ACTIVE -> INACTIVE.
+
+    Best-effort: a failure here does not fail the caller's request (the just-registered/
+    heartbeated device's own state is already correct either way; a stale sibling ACTIVE status
+    self-heals on that device's own next heartbeat).
+    '''
+    result = await asyncio.to_thread(device_ops.find, {"user_id": user_id, "status": DeviceStatus.ACTIVE})
+    if not result.success:
+        logger.error("could not list devices to demote", extra={"error": result.error})
+        return
+    for device in result.data:
+        if device["id"] == active_device_id:
+            continue
+        demote_result = await asyncio.to_thread(
+            device_ops.update, {"id": device["id"], "user_id": user_id}, {"status": DeviceStatus.INACTIVE}
+        )
+        if not demote_result.success:
+            logger.error(
+                "could not demote sibling device",
+                extra={"device_id": device["id"], "error": demote_result.error},
+            )
+
+
 @authenticate_session
 async def register_device(request: Request) -> JSONResponse:
     '''
@@ -94,6 +122,9 @@ async def register_device(request: Request) -> JSONResponse:
                 return JSONResponse(content={"error": result.error}, status_code=409)
             logger.error("device registration failed", extra={"error": result.error})
             return JSONResponse(content={"error": "Error registering device"}, status_code=500)
+        # A newly registered device defaults to ACTIVE (P01 model default) -- it becomes the
+        # user's active device, demoting any other device they were previously using.
+        await _demote_other_devices(device_ops, user_id, result.data["id"])
         return JSONResponse(content={"device": _serialize_device(result.data)}, status_code=201)
     except Exception:
         logger.error("device registration failed", exc_info=True)
@@ -209,9 +240,11 @@ async def heartbeat_device(request: Request) -> JSONResponse:
     '''
     POST /devices/{device_id}/heartbeat
 
-    "This registered device is alive": ownership-scoped lookup, then server sets
-    last_seen_at = now (UTC) and status = ACTIVE. The request body, if any, is never read -- a
-    client can never spoof last_seen_at. No offline-detection scheduler or resource
+    "This registered device is alive, and it's the one the user is using right now": ownership-
+    scoped lookup, then server sets last_seen_at = now (UTC) and status = ACTIVE, and demotes
+    every other of this user's ACTIVE devices to INACTIVE -- at most one device is "active for
+    the user" at a time (see _demote_other_devices). The request body, if any, is never read --
+    a client can never spoof last_seen_at. No offline-detection scheduler or resource
     reconciliation here; that's out of P05's scope.
     '''
     try:
@@ -231,6 +264,8 @@ async def heartbeat_device(request: Request) -> JSONResponse:
         if not result.success:
             logger.error("device heartbeat failed", extra={"error": result.error})
             return JSONResponse(content={"error": "Error updating device heartbeat"}, status_code=500)
+
+        await _demote_other_devices(device_ops, user_id, device_id)
 
         updated = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
         return JSONResponse(content={"device": _serialize_device(updated.data)})

@@ -83,6 +83,7 @@ class TestRegisterDeviceOwnership(TestCase):
     def test_authenticated_user_can_register_device(self) -> None:
         mock_ops = MagicMock()
         mock_ops.insert.return_value = OperationResult(success=True, data=_device_row())
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
         request = _mock_request(
             body={
                 "device_name": "macbook", "os": "macOS", "architecture": "arm64",
@@ -101,6 +102,7 @@ class TestRegisterDeviceOwnership(TestCase):
         '''Body has no user_id field at all -- RegisterDeviceRequest doesn't declare one.'''
         mock_ops = MagicMock()
         mock_ops.insert.return_value = OperationResult(success=True, data=_device_row())
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
         request = _mock_request(
             body={
                 "device_name": "macbook", "os": "macOS", "architecture": "arm64",
@@ -116,6 +118,7 @@ class TestRegisterDeviceOwnership(TestCase):
     def test_spoofed_body_user_id_cannot_register_for_another_user(self) -> None:
         mock_ops = MagicMock()
         mock_ops.insert.return_value = OperationResult(success=True, data=_device_row())
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
         request = _mock_request(
             body={
                 "user_id": USER_B,  # attacker spoofs another user's id
@@ -177,6 +180,34 @@ class TestRegisterDeviceOwnership(TestCase):
         with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
             result = asyncio.run(device_handlers.register_device.__wrapped__(request=request))
         self.assertEqual(result.status_code, 409)
+
+    def test_registering_a_new_device_demotes_the_users_other_active_device(self) -> None:
+        '''At most one ACTIVE device per user -- registering device-b demotes device-a (also
+        USER_A's) from ACTIVE to INACTIVE, but never touches USER_B's device.'''
+        new_device = _device_row(id=DEVICE_B, status=DeviceStatus.ACTIVE)
+        mock_ops = MagicMock()
+        mock_ops.insert.return_value = OperationResult(success=True, data=new_device)
+        mock_ops.find.return_value = OperationResult(
+            success=True,
+            data=[
+                _device_row(id=DEVICE_A, user_id=USER_A, status=DeviceStatus.ACTIVE),
+                new_device,
+            ],
+        )
+        mock_ops.update.return_value = OperationResult(success=True)
+        request = _mock_request(
+            body={
+                "device_name": "second-mac", "os": "macOS", "architecture": "arm64",
+                "total_cpu": 8, "total_memory_bytes": 16, "total_storage_bytes": 16,
+                "allocated_cpu": 4, "allocated_memory_bytes": 8, "allocated_storage_bytes": 8,
+            },
+            user_id=USER_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            asyncio.run(device_handlers.register_device.__wrapped__(request=request))
+        mock_ops.update.assert_called_once_with(
+            {"id": DEVICE_A, "user_id": USER_A}, {"status": DeviceStatus.INACTIVE}
+        )
 
 
 class TestListDevicesOwnership(TestCase):
@@ -334,6 +365,7 @@ class TestHeartbeatDeviceOwnership(TestCase):
             OperationResult(success=True, data=_device_row(last_seen_at="2026-08-30T12:00:00+00:00")),
         ]
         mock_ops.update.return_value = OperationResult(success=True)
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
         before = datetime.now(timezone.utc)
         request = _mock_request(path_params={"device_id": DEVICE_A}, user_id=USER_A)
         with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
@@ -364,6 +396,7 @@ class TestHeartbeatDeviceOwnership(TestCase):
             OperationResult(success=True, data=_device_row()),
         ]
         mock_ops.update.return_value = OperationResult(success=True)
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
         spoofed = "2000-01-01T00:00:00+00:00"
         request = _mock_request(
             body={"last_seen_at": spoofed},
@@ -375,6 +408,30 @@ class TestHeartbeatDeviceOwnership(TestCase):
         update_filters, update_data = mock_ops.update.call_args.args
         self.assertIsInstance(update_data["last_seen_at"], datetime)
         self.assertNotEqual(update_data["last_seen_at"].isoformat(), spoofed)
+
+    def test_heartbeat_demotes_the_users_other_active_device(self) -> None:
+        '''Heartbeating device-a demotes device-c (also USER_A's, currently ACTIVE) to INACTIVE.
+        The demotion query itself is scoped to status=ACTIVE (see _demote_other_devices), so a
+        REVOKED device is structurally never a candidate.'''
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_device_row(id=DEVICE_A)),
+            OperationResult(success=True, data=_device_row(id=DEVICE_A, status=DeviceStatus.ACTIVE)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_ops.find.return_value = OperationResult(
+            success=True,
+            data=[
+                _device_row(id=DEVICE_A, status=DeviceStatus.ACTIVE),
+                _device_row(id="device-c-id", user_id=USER_A, status=DeviceStatus.ACTIVE),
+            ],
+        )
+        request = _mock_request(path_params={"device_id": DEVICE_A}, user_id=USER_A)
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            asyncio.run(device_handlers.heartbeat_device.__wrapped__(request=request))
+        mock_ops.update.assert_called_with(
+            {"id": "device-c-id", "user_id": USER_A}, {"status": DeviceStatus.INACTIVE}
+        )
 
 
 class TestDeviceApiRouting(TestCase):
@@ -404,6 +461,7 @@ class TestDeviceApiRouting(TestCase):
         mock_device_ops = MagicMock()
         mock_device_ops.insert.return_value = OperationResult(success=True, data=_device_row())
         mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.find.return_value = OperationResult(success=True, data=[])
 
         self.client.cookies.set("session", "valid-session-id")
         with patch(
