@@ -1,7 +1,7 @@
 '''
-Cloud configuration boundary (P04).
+Cloud configuration boundary.
 
-Cloud code (`cloud_app.py`, `src/cloud/*`) should import settings from this module, not from
+Cloud code (`app.py`, `src/cloud/*`) should import settings from this module, not from
 `src.common.config` directly. `src.common.config` also declares local-only settings (ContainerMaker
 host/certs, Socket-SSH URL, payment-gateway host/certs) that the Cloud server must never come to
 depend on as P05+ builds real Cloud APIs on top of this skeleton. This module re-exports only the

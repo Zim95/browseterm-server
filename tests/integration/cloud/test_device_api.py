@@ -24,7 +24,7 @@ from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations import OperationResult
 from src.authentication.dto.session_dto import SessionDataModel, SessionValidationModel
 
-import cloud_app
+import app as cloud_app
 import src.cloud.device_handlers as device_handlers
 
 USER_A = "user-a"

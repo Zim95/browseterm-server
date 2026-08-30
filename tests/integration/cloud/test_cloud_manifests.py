@@ -1,5 +1,5 @@
 '''
-P04: sanity checks that the Cloud deployment artifacts actually point at the Cloud entrypoint,
+Sanity checks that the Cloud deployment artifacts actually point at the Cloud entrypoint,
 without needing a real Kubernetes cluster to verify it (plain text/YAML assertions only).
 '''
 from pathlib import Path
@@ -11,10 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 class TestCloudEntrypointScript(TestCase):
-    def test_entrypoint_runs_cloud_app_not_local_app(self) -> None:
+    def test_entrypoint_runs_app(self) -> None:
         content = (REPO_ROOT / "infra/cloud/entrypoint-cloud.sh").read_text()
-        self.assertIn("cloud_app:app", content)
-        self.assertNotIn("app:app", content.replace("cloud_app:app", ""))
+        self.assertIn("app:app", content)
 
 
 class TestCloudManifest(TestCase):
@@ -37,7 +36,7 @@ class TestCloudManifest(TestCase):
         self.assertNotIn("browseterm-server", names)
         self.assertNotIn("browseterm-server-service", names)
 
-    def test_deployment_runs_cloud_app_container_and_healthz_probes(self) -> None:
+    def test_deployment_runs_cloud_container_and_healthz_probes(self) -> None:
         deployment = next(d for d in self.docs if d and d["kind"] == "Deployment")
         container = deployment["spec"]["template"]["spec"]["containers"][0]
         self.assertIn("browseterm-server-cloud", container["image"])

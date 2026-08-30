@@ -1,13 +1,13 @@
-# Cloud browseterm-server (P04 skeleton).
+# Cloud browseterm-server.
 #
-# Minimal, independently deployable Cloud control-plane Deployment/Service. Distinct
-# name/labels from the existing `browseterm-server` (development/deployment) manifests so it
-# can never be confused with -- or accidentally selected by -- the future Local server
-# (`browseterm-server-local`, P08). Runs `cloud_app:app`, not `app:app`.
+# As of P06 this is the entire repository's Deployment/Service - there is no other server left
+# in this repo to confuse it with. The Local browser-facing server now lives in the separate
+# `browseterm-server-local` repository/Deployment entirely. Runs `app:app` (renamed from
+# `cloud_app:app` in P06 - see README.md).
 #
-# Only PostgreSQL/Redis configuration is wired here, per P04 scope: no ContainerMaker,
-# Socket-SSH, MinIO, OAuth, or payment-gateway settings -- this Cloud skeleton does not use
-# them and must not depend on them to start. P05+ will extend this Deployment's env/APIs.
+# Only PostgreSQL/Redis configuration is wired here: no ContainerMaker, Socket-SSH, MinIO,
+# OAuth, or payment-gateway settings -- this Cloud process does not use them and must not depend
+# on them to start.
 apiVersion: apps/v1
 kind: Deployment
 metadata:

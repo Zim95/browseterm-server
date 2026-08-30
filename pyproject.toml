@@ -1,24 +1,19 @@
 [tool.poetry]
 name = "browseterm-server"
 version = "0.1.0"
-description = ""
+description = "Browseterm Cloud control plane. See README.md's P06 architecture-correction note - this repository is Cloud-only; the Local browser-facing server lives in browseterm-server-local."
 authors = ["Zim95 <shresthanamah@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
+# Trimmed in P06 to what the Cloud app (app.py, src/cloud/*, and the shared
+# session-validation/db_ops slice under src/authentication, src/db_ops) actually imports.
+# grpcio(-tools)/container-maker-spec/payment-gateway-spec/paramiko/websocket-client/kubernetes/
+# jinja2/ipython were all Local-only (ContainerMaker gRPC, Socket-SSH, workspace templates,
+# dev REPL) and moved to browseterm-server-local with the code that used them.
 python = ">=3.11,<3.12"
-ipython = "8.12.0"
-grpcio = "^1.70.0"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
-httpx = "^0.28.1"
-grpcio-tools = "1.70.0"
-container-maker-spec = {git = "https://github.com/Zim95/container-maker-spec.git", rev = "main"}
-payment-gateway-spec = {git = "https://github.com/Zim95/payment-gateway-spec.git", rev = "main"}
-paramiko = "^3.5.1"
-websocket-client = "^1.8.0"
-kubernetes = "^32.0.1"
-jinja2 = "^3.1.2"
 redis = "^5.0.0"
 browseterm-db = {git = "https://github.com/Zim95/browseterm-db.git", rev = "main"}
 

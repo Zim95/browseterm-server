@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-import cloud_app
+import app as cloud_app
 
 
 class TestCloudHealthz(TestCase):
