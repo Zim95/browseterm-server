@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Requires two Secrets to already exist in the target namespace (same pattern as
+# browseterm-db-credentials - not created by this script):
+#   browseterm-db-credentials      keys: DB_USERNAME, DB_PASSWORD, DB_DATABASE
+#   browseterm-internal-api-token  key:  CLOUD_INTERNAL_API_TOKEN
+# e.g.: kubectl create secret generic browseterm-internal-api-token \
+#         --from-literal=CLOUD_INTERNAL_API_TOKEN="$(openssl rand -hex 32)" -n <namespace>
+
 # Check if enough arguments are provided
 if [ $# -lt 7 ]; then
     echo "Usage: $0 <namespace> <repo-name> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> [postgres-host] [postgres-port]"

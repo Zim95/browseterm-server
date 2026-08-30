@@ -84,6 +84,15 @@ spec:
             secretKeyRef:
               name: browseterm-db-credentials
               key: DB_DATABASE
+        # Shared secret gating the internal-only auth/container/subscription routes Local calls
+        # server-to-server (src/cloud/auth_handlers.py, container_handlers.py,
+        # subscription_handlers.py) - must match Local's own CLOUD_INTERNAL_API_TOKEN. Interim,
+        # see those modules' docstrings for what replaces it (P07).
+        - name: CLOUD_INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-internal-api-token
+              key: CLOUD_INTERNAL_API_TOKEN
         livenessProbe:
           httpGet:
             path: /healthz
