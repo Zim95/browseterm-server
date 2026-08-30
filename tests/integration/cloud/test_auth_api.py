@@ -1,0 +1,111 @@
+'''
+Cloud session/auth API tests. Same "mock the boundary" convention as test_device_api.py: call
+the handler directly, patch the DB/Redis-touching functions at their import site in
+src.cloud.auth_handlers.
+'''
+import unittest
+from unittest.mock import MagicMock, patch
+
+from fastapi import Request
+
+from src.authentication.dto.session_dto import SessionDataModel, SessionResponseModel, SessionValidationModel
+import src.cloud.auth_handlers as auth_handlers
+
+TOKEN = "test-internal-token"
+
+
+def _mock_request(body: dict, headers: dict = None) -> MagicMock:
+    request = MagicMock(spec=Request)
+    request.json = _async_return(body)
+    request.headers = headers if headers is not None else {"X-Internal-Service-Token": TOKEN}
+    return request
+
+
+def _async_return(value):
+    async def _coro():
+        return value
+    return _coro
+
+
+class TestCreateSessionFromUserInfo(unittest.TestCase):
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_internal_token_rejected(self):
+        request = _mock_request({}, headers={})
+        import asyncio
+        result = asyncio.run(auth_handlers.create_session_from_user_info(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.auth_handlers.process_user_info")
+    def test_valid_user_info_creates_session(self, mock_process):
+        import asyncio
+        # process_user_info is `async def`, so patch() auto-creates an AsyncMock -- .return_value
+        # is the value produced by awaiting it, not a coroutine to await ourselves.
+        mock_process.return_value = SessionResponseModel(
+            session_id="s1", user_info={"id": "u1"}, subscription_info={}, current_subscription_plan={}
+        )
+        request = _mock_request({
+            "provider_id": "p1", "provider": "google", "name": "Demo", "email": "d@example.com",
+        })
+        result = asyncio.run(auth_handlers.create_session_from_user_info(request))
+        self.assertEqual(result.status_code, 201)
+
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_invalid_body_rejected(self):
+        import asyncio
+        request = _mock_request({"provider": "not-a-real-provider"})
+        result = asyncio.run(auth_handlers.create_session_from_user_info(request))
+        self.assertEqual(result.status_code, 400)
+
+
+class TestValidateSession(unittest.TestCase):
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_internal_token_rejected(self):
+        import asyncio
+        request = _mock_request({"session_id": "s1"}, headers={})
+        result = asyncio.run(auth_handlers.validate_session(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.auth_handlers.extend_session")
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_valid_session_returns_user_info_and_extends(self, mock_manager_cls, mock_extend):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.validate_session.return_value = SessionValidationModel(
+            is_valid=True,
+            session_data=SessionDataModel(user_info={"id": "u1"}, subscription_info={}, current_subscription_plan={}),
+        )
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"session_id": "s1"})
+        result = asyncio.run(auth_handlers.validate_session(request))
+        self.assertEqual(result.status_code, 200)
+        mock_extend.assert_called_once_with("s1", expiry=1800)
+
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_invalid_session_returns_is_valid_false(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.validate_session.return_value = SessionValidationModel(is_valid=False, session_data=None)
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"session_id": "bogus"})
+        result = asyncio.run(auth_handlers.validate_session(request))
+        self.assertIn(result.status_code, (200,))
+
+
+class TestDeleteSession(unittest.TestCase):
+    @patch("src.cloud.auth_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_delete_session_calls_manager(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"session_id": "s1"})
+        result = asyncio.run(auth_handlers.delete_session(request))
+        self.assertEqual(result.status_code, 200)
+        mock_manager.delete_session.assert_called_once_with("s1")
+
+
+if __name__ == "__main__":
+    unittest.main()

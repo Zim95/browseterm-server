@@ -25,6 +25,20 @@ from src.cloud.device_handlers import (
     register_device,
     update_device,
 )
+from src.cloud.auth_handlers import (
+    create_session_from_user_info,
+    delete_session,
+    validate_session,
+)
+from src.cloud.container_handlers import (
+    create_container,
+    delete_container,
+    get_container,
+    list_containers,
+    list_images,
+    list_subscription_types,
+    update_container,
+)
 
 app = FastAPI()
 
@@ -36,6 +50,21 @@ app.add_api_route(path="/devices", endpoint=list_devices, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=get_device, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=update_device, methods=["POST"])
 app.add_api_route(path="/devices/{device_id}/heartbeat", endpoint=heartbeat_device, methods=["POST"])
+
+# Session/auth API (replaces Local's direct Redis/Postgres session access)
+app.add_api_route(path="/auth/sessions", endpoint=create_session_from_user_info, methods=["POST"])
+app.add_api_route(path="/auth/sessions/validate", endpoint=validate_session, methods=["POST"])
+app.add_api_route(path="/auth/sessions/delete", endpoint=delete_session, methods=["POST"])
+
+# Container/workspace metadata API (replaces Local's direct ContainerOps/ImageOps/
+# SubscriptionTypeOps access)
+app.add_api_route(path="/containers", endpoint=create_container, methods=["POST"])
+app.add_api_route(path="/containers", endpoint=list_containers, methods=["GET"])
+app.add_api_route(path="/containers/{container_id}", endpoint=get_container, methods=["GET"])
+app.add_api_route(path="/containers/{container_id}", endpoint=update_container, methods=["POST"])
+app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_container, methods=["POST"])
+app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
+app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
 
 
 if __name__ == "__main__":

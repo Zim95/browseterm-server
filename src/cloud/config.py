@@ -10,6 +10,8 @@ subset the Cloud server actually owns: PostgreSQL and Redis.
 Reuses `src.common.config`'s existing env-var-driven values (and `browseterm-db`'s `DBConfig`)
 rather than duplicating them.
 '''
+import os
+
 from src.common.config import (
     DB_CONFIG,
     POSTGRES_HOST,
@@ -23,6 +25,13 @@ from src.common.config import (
     REDIS_DB,
 )
 
+# Interim shared secret gating the internal-only auth/container-write endpoints Local calls
+# (src/cloud/auth_handlers.py, container write routes) - not a substitute for the real
+# "Cloud is the OAuth client" redesign (plan section 7.1 / P07), which removes the need for
+# these endpoints to trust a caller's word for who the user is at all. Must match Local's
+# CLOUD_INTERNAL_API_TOKEN.
+CLOUD_INTERNAL_API_TOKEN: str = os.getenv("CLOUD_INTERNAL_API_TOKEN", "")
+
 __all__ = [
     "DB_CONFIG",
     "POSTGRES_HOST",
@@ -34,4 +43,5 @@ __all__ = [
     "REDIS_USERNAME",
     "REDIS_PASSWORD",
     "REDIS_DB",
+    "CLOUD_INTERNAL_API_TOKEN",
 ]
