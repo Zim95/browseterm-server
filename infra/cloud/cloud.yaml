@@ -1,0 +1,126 @@
+# Cloud browseterm-server (P04 skeleton).
+#
+# Minimal, independently deployable Cloud control-plane Deployment/Service. Distinct
+# name/labels from the existing `browseterm-server` (development/deployment) manifests so it
+# can never be confused with -- or accidentally selected by -- the future Local server
+# (`browseterm-server-local`, P08). Runs `cloud_app:app`, not `app:app`.
+#
+# Only PostgreSQL/Redis configuration is wired here, per P04 scope: no ContainerMaker,
+# Socket-SSH, MinIO, OAuth, or payment-gateway settings -- this Cloud skeleton does not use
+# them and must not depend on them to start. P05+ will extend this Deployment's env/APIs.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browseterm-server-cloud
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browseterm-server-cloud
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: browseterm-server-cloud
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9999"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: browseterm-server-cloud
+        image: ${REPO_NAME}/browseterm-server-cloud:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 9999
+          protocol: TCP
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: REDIS_HOST
+          value: "${REDIS_HOST}"
+        - name: REDIS_PORT
+          value: "${REDIS_PORT}"
+        - name: REDIS_PASSWORD
+          value: "${REDIS_PASSWORD}"
+        - name: REDIS_USERNAME
+          value: "${REDIS_USERNAME}"
+        - name: REDIS_DB
+          value: "${REDIS_DB}"
+        # HOST/PORT are non-secret config (kept as literals). USER/PASSWORD/DB come from the
+        # same browseterm-db-credentials Secret the existing browseterm-server Deployment uses,
+        # so the password is never templated into this manifest.
+        - name: POSTGRES_HOST
+          value: "${POSTGRES_HOST}"
+        - name: POSTGRES_PORT
+          value: "${POSTGRES_PORT}"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_DATABASE
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9999
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9999
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: browseterm-server-cloud-service
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-cloud
+spec:
+  type: ClusterIP
+  selector:
+    app: browseterm-server-cloud
+  ports:
+  - name: http
+    protocol: TCP
+    port: 9999
+    targetPort: http

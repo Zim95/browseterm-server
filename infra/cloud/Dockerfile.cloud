@@ -1,0 +1,19 @@
+FROM python:3.11-slim
+ENV PYTHONUNBUFFERED=1
+
+RUN mkdir app
+COPY . app/
+WORKDIR /app
+
+RUN chmod +x ./infra/cloud/entrypoint-cloud.sh
+
+RUN apt-get update && apt-get install -y build-essential curl git
+
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:${PATH}"
+
+# In-project venv (/app/.venv), then make it world-readable/executable so the non-root runtime
+# user (runAsUser 1000) can run it. (Poetry itself lives in /root and is only used at build time.)
+RUN poetry config virtualenvs.in-project true && poetry install --no-root && chmod -R a+rX /app/.venv
+
+ENTRYPOINT ["bash", "-c", "./infra/cloud/entrypoint-cloud.sh"]

@@ -78,4 +78,23 @@ prod_setup:
 prod_teardown:
 	./scripts/deployment/deployment-teardown.sh $(NAMESPACE)
 
-.PHONY: dev_build dev_setup dev_teardown prod_build prod_setup prod_teardown
+# Cloud (P04 skeleton)
+cloud_build:
+	./scripts/cloud/cloud-build.sh $(USER_NAME) $(REPO_NAME)
+
+cloud_setup:
+	./scripts/cloud/cloud-setup.sh \
+		$(NAMESPACE) \
+		$(REPO_NAME) \
+		$(REDIS_HOST) \
+		$(REDIS_PORT) \
+		$(REDIS_PASSWORD) \
+		$(REDIS_USERNAME) \
+		$(REDIS_DB) \
+		$(POSTGRES_HOST) \
+		$(POSTGRES_PORT)
+
+cloud_teardown:
+	./scripts/cloud/cloud-teardown.sh $(NAMESPACE)
+
+.PHONY: dev_build dev_setup dev_teardown prod_build prod_setup prod_teardown cloud_build cloud_setup cloud_teardown
