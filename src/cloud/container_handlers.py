@@ -184,12 +184,13 @@ async def delete_container(request: Request) -> JSONResponse:
 
 
 async def list_images(request: Request) -> JSONResponse:
-    '''GET /catalog/images - read-only, no ownership scoping (images are global).'''
+    '''GET /catalog/images - read-only, no ownership scoping (images are global). Matches the
+    pre-migration Local behavior of only returning active images.'''
     if not _internal_auth_ok(request):
         return _unauthorized()
     try:
         ops = ImageOps(DB_CONFIG)
-        result = await asyncio.to_thread(ops.find, {})
+        result = await asyncio.to_thread(ops.find, {"is_active": True})
         if not result.success:
             logger.error("list images failed", extra={"error": result.error})
             return JSONResponse(content={"error": "Error listing images"}, status_code=500)
