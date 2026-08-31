@@ -15,6 +15,7 @@ python = ">=3.11,<3.12"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
 redis = "^5.0.0"
+httpx = "^0.27.0"
 browseterm-db = {git = "https://github.com/Zim95/browseterm-db.git", rev = "main"}
 
 

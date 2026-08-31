@@ -44,14 +44,21 @@ class TestCloudManifest(TestCase):
         self.assertEqual(container["readinessProbe"]["httpGet"]["path"], "/healthz")
 
     def test_deployment_env_has_no_local_only_settings(self) -> None:
+        '''
+        GOOGLE_CLIENT_ID/SECRET/GITHUB_CLIENT_ID/SECRET moved OFF this local-only list in P07:
+        Cloud is now the sole OAuth authority and rightfully owns them (p07.md) - the P06-era
+        assumption that they belonged only to Local no longer holds. What Cloud must still never
+        depend on is unchanged: ContainerMaker/Socket-SSH/payment-gateway settings.
+        '''
         deployment = next(d for d in self.docs if d and d["kind"] == "Deployment")
         container = deployment["spec"]["template"]["spec"]["containers"][0]
         env_names = {e["name"] for e in container.get("env", [])}
         local_only = {
             "CONTAINER_MAKER_HOST", "CONTAINER_MAKER_PORT", "CONTAINER_MAKER_CERTS_SECRET_NAME",
             "SOCKET_SSH_WSS_URL", "PAYMENT_GATEWAY_HOST", "PAYMENT_GATEWAY_PORT",
-            "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET",
         }
         self.assertTrue(env_names.isdisjoint(local_only), env_names & local_only)
         self.assertIn("POSTGRES_HOST", env_names)
         self.assertIn("REDIS_HOST", env_names)
+        self.assertIn("GOOGLE_CLIENT_ID", env_names)
+        self.assertIn("GITHUB_CLIENT_ID", env_names)

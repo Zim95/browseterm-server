@@ -5,9 +5,9 @@
 # `browseterm-server-local` repository/Deployment entirely. Runs `app:app` (renamed from
 # `cloud_app:app` in P06 - see README.md).
 #
-# Only PostgreSQL/Redis configuration is wired here: no ContainerMaker, Socket-SSH, MinIO,
-# OAuth, or payment-gateway settings -- this Cloud process does not use them and must not depend
-# on them to start.
+# PostgreSQL/Redis + OAuth configuration is wired here (P07 made Cloud the sole OAuth authority -
+# see p07.md); still no ContainerMaker, Socket-SSH, MinIO, or payment-gateway settings -- this
+# Cloud process does not use them and must not depend on them to start.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -93,6 +93,36 @@ spec:
             secretKeyRef:
               name: browseterm-internal-api-token
               key: CLOUD_INTERNAL_API_TOKEN
+        # P07 - Cloud is the sole OAuth authority (p07.md). AUTH_REDIRECT_BASE_URI/
+        # BROWSETERM_LOCAL_CALLBACK_URL/BROWSETERM_ALLOWED_HOSTS are non-secret config (kept as
+        # literals); GOOGLE/GITHUB client id+secret come from a dedicated Secret, same pattern as
+        # browseterm-db-credentials - never templated as a literal value into this manifest.
+        - name: AUTH_REDIRECT_BASE_URI
+          value: "${AUTH_REDIRECT_BASE_URI}"
+        - name: BROWSETERM_LOCAL_CALLBACK_URL
+          value: "${BROWSETERM_LOCAL_CALLBACK_URL}"
+        - name: BROWSETERM_ALLOWED_HOSTS
+          value: "${BROWSETERM_ALLOWED_HOSTS}"
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_CLIENT_ID
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_CLIENT_SECRET
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GITHUB_CLIENT_ID
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GITHUB_CLIENT_SECRET
         livenessProbe:
           httpGet:
             path: /healthz
@@ -133,3 +163,28 @@ spec:
     protocol: TCP
     port: 9999
     targetPort: http
+---
+# P07 - Cloud must be reachable by the browser directly now (OAuth start/callback are top-level
+# browser redirects, and Local/Desktop call the handoff/device-bootstrap APIs over HTTP) - before
+# P07 this Service was ClusterIP-only with no external access, since nothing outside the cluster
+# needed to reach Cloud yet.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: browseterm-server-cloud-ingress
+  namespace: ${NAMESPACE}
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: ${CLOUD_INGRESS_HOST}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: browseterm-server-cloud-service
+            port:
+              number: 9999

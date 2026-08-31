@@ -1,21 +1,25 @@
 '''
-Cloud Device API handlers (P05).
+Cloud Device API handlers (P05, migrated to device-token auth in P07 - see p07.md).
 
-Authentication reuses the existing Redis-backed session mechanism
-(`src.authentication.authentication_helpers.authenticate_session`) exactly as `app.py` already
-does for every other authenticated handler -- no new auth architecture, no OAuth/session
-migration (that's P07's job). Importing this decorator into Cloud code was verified not to pull
-in Kubernetes/ContainerMaker/payment-gateway/`src.api_handlers`; see
-`tests/integration/cloud/test_cloud_startup_independence.py` and CURRENT_TASK_STATE.md's P05
-"Authentication boundary decision" section.
+P07 change: these routes used to be session-cookie-authenticated (authenticate_session, shared
+with the browser). They are now authenticated with a per-device Bearer token
+(authenticate_device, src.authentication.device_token_manager) instead - p07.md section 16/20
+requires the browser session and the native device credential be different credentials.
+`POST /devices` (register) is no longer an independently reachable route at all: there is no
+device token yet at registration time (chicken-and-egg), so registration now only happens inside
+device-bootstrap redemption (src/cloud/oauth_handlers.py:device_bootstrap_redeem), which derives
+user_id from a one-time handoff instead of any device-supplied credential. `_register_or_activate`
+below is that shared registration/re-activation logic, called from both places it's still needed.
 
-Device ownership invariant: every route that looks up an EXISTING device filters on both `id`
-AND the authenticated session's `user_id` together (never `id` alone), and a lookup miss --
-whether the id doesn't exist, is malformed, or belongs to another user -- always produces the
-same 404 shape, so existence of another user's device is never leaked.
+Device ownership invariant unchanged: every route scopes to `device_id` AND the token's own
+`user_id`/`device_id` together, and a lookup miss - whether the id doesn't exist, is malformed,
+belongs to another user, or (new in P07) belongs to a *different device's own token* - always
+produces the same 404 shape (p07.md section 18/25: "D1 token cannot operate as D2").
 '''
 import asyncio
 from datetime import datetime, timezone
+from functools import wraps
+from typing import Optional
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -24,7 +28,7 @@ from pydantic import ValidationError
 from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations.all_operations import DeviceOps
 
-from src.authentication.authentication_helpers import authenticate_session
+from src.authentication.device_token_manager import DeviceTokenManager
 from src.cloud.config import DB_CONFIG
 from src.cloud.device_data_models import (
     NON_NULLABLE_UPDATE_FIELDS,
@@ -46,6 +50,10 @@ def _device_not_found() -> JSONResponse:
     return JSONResponse(content={"error": "Device not found"}, status_code=404)
 
 
+def _unauthorized() -> JSONResponse:
+    return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+
 def _serialize_device(device: dict) -> dict:
     '''Adds derived available_* fields (allocated - used). Never persisted -- see P01.'''
     return {
@@ -58,14 +66,8 @@ def _serialize_device(device: dict) -> dict:
 
 async def _demote_other_devices(device_ops: DeviceOps, user_id: str, active_device_id: str) -> None:
     '''
-    At most one ACTIVE device per user at a time: the "which device is active for the user right
-    now" the Desktop app owns (register/heartbeat both call this after making `active_device_id`
-    ACTIVE). Every other currently-ACTIVE device of the same user is demoted to INACTIVE.
-    REVOKED devices are left untouched -- demotion is only ever ACTIVE -> INACTIVE.
-
-    Best-effort: a failure here does not fail the caller's request (the just-registered/
-    heartbeated device's own state is already correct either way; a stale sibling ACTIVE status
-    self-heals on that device's own next heartbeat).
+    At most one ACTIVE device per user at a time. Best-effort: a failure here does not fail the
+    caller's request.
     '''
     result = await asyncio.to_thread(device_ops.find, {"user_id": user_id, "status": DeviceStatus.ACTIVE})
     if not result.success:
@@ -84,81 +86,127 @@ async def _demote_other_devices(device_ops: DeviceOps, user_id: str, active_devi
             )
 
 
-@authenticate_session
-async def register_device(request: Request) -> JSONResponse:
-    '''
-    POST /devices
+class DeviceRegistrationError(Exception):
+    '''Raised by _register_or_activate for a caller (device_bootstrap_redeem) to translate into
+    its own JSONResponse shape.'''
 
-    user_id is always the authenticated session's id. RegisterDeviceRequest does not declare a
-    user_id (or any other identity/state) field, so a spoofed value in the body has nothing to
-    bind to.
-    '''
-    try:
-        request_data: dict = await request.json()
-        try:
-            body = RegisterDeviceRequest(**request_data)
-        except ValidationError as e:
-            return JSONResponse(content={"error": str(e)}, status_code=400)
+    def __init__(self, status_code: int, message: str):
+        self.status_code = status_code
+        self.message = message
+        super().__init__(message)
 
-        user_id: str = request.state.user_info["id"]
-        device_ops = DeviceOps(DB_CONFIG)
-        insert_data = {
-            "user_id": user_id,
-            "device_name": body.device_name,
-            "os": body.os,
-            "architecture": body.architecture,
-            "runtime_version": body.runtime_version,
-            "total_cpu": body.total_cpu,
-            "total_memory_bytes": body.total_memory_bytes,
-            "total_storage_bytes": body.total_storage_bytes,
-            "allocated_cpu": body.allocated_cpu,
-            "allocated_memory_bytes": body.allocated_memory_bytes,
-            "allocated_storage_bytes": body.allocated_storage_bytes,
-            "gpu_info": body.gpu_info,
-        }
-        result = await asyncio.to_thread(device_ops.insert, insert_data)
-        if not result.success:
-            if result.error == _DUPLICATE_DEVICE_ERROR:
-                return JSONResponse(content={"error": result.error}, status_code=409)
-            logger.error("device registration failed", extra={"error": result.error})
-            return JSONResponse(content={"error": "Error registering device"}, status_code=500)
-        # A newly registered device defaults to ACTIVE (P01 model default) -- it becomes the
-        # user's active device, demoting any other device they were previously using.
+
+async def _register_or_activate(user_id: str, body: RegisterDeviceRequest) -> dict:
+    '''
+    Shared by device-bootstrap redemption (new device or an existing device re-bootstrapping,
+    e.g. after its token expired) and (not currently reachable via HTTP, kept for the
+    re-activation semantics P05 already established) direct callers: register a new device, or -
+    on the P05 non-idempotent 409-on-duplicate-name case - fall back to re-activating the
+    existing device of that name via the same heartbeat semantics register would have produced
+    (ACTIVE, siblings demoted). Returns the serialized device. Raises DeviceRegistrationError on
+    any real failure.
+    '''
+    device_ops = DeviceOps(DB_CONFIG)
+    insert_data = {
+        "user_id": user_id,
+        "device_name": body.device_name,
+        "os": body.os,
+        "architecture": body.architecture,
+        "runtime_version": body.runtime_version,
+        "total_cpu": body.total_cpu,
+        "total_memory_bytes": body.total_memory_bytes,
+        "total_storage_bytes": body.total_storage_bytes,
+        "allocated_cpu": body.allocated_cpu,
+        "allocated_memory_bytes": body.allocated_memory_bytes,
+        "allocated_storage_bytes": body.allocated_storage_bytes,
+        "gpu_info": body.gpu_info,
+    }
+    result = await asyncio.to_thread(device_ops.insert, insert_data)
+    if result.success:
         await _demote_other_devices(device_ops, user_id, result.data["id"])
-        return JSONResponse(content={"device": _serialize_device(result.data)}, status_code=201)
-    except Exception:
-        logger.error("device registration failed", exc_info=True)
-        return JSONResponse(content={"error": "Error registering device"}, status_code=500)
+        return _serialize_device(result.data)
+
+    if result.error != _DUPLICATE_DEVICE_ERROR:
+        logger.error("device registration failed", extra={"error": result.error})
+        raise DeviceRegistrationError(500, "Error registering device")
+
+    existing = await asyncio.to_thread(device_ops.find_one, {"user_id": user_id, "device_name": body.device_name})
+    if not existing.data:
+        raise DeviceRegistrationError(409, result.error)
+    device_id = existing.data["id"]
+    heartbeat_result = await asyncio.to_thread(
+        device_ops.update,
+        {"id": device_id, "user_id": user_id},
+        {"last_seen_at": datetime.now(timezone.utc), "status": DeviceStatus.ACTIVE},
+    )
+    if not heartbeat_result.success:
+        logger.error("device re-activation failed", extra={"error": heartbeat_result.error})
+        raise DeviceRegistrationError(500, "Error activating device")
+    await _demote_other_devices(device_ops, user_id, device_id)
+    updated = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+    return _serialize_device(updated.data)
 
 
-@authenticate_session
+def authenticate_device(func: callable) -> callable:
+    '''
+    Bearer device-token auth (p07.md section 20/23). Replaces authenticate_session on the Device
+    API. Sets request.state.user_id/device_id/scopes from the token - never trusts a
+    client-supplied user_id/device_id anywhere (matches the existing P03/P05 pattern, just with a
+    different credential source).
+    '''
+    @wraps(func)
+    async def wrapper(*args: tuple, **kwargs: dict) -> any:
+        request: Request = kwargs.get('request')
+        auth_header: Optional[str] = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            return _unauthorized()
+        raw_token = auth_header[len("Bearer "):].strip()
+        if not raw_token:
+            return _unauthorized()
+
+        token_data = await asyncio.to_thread(DeviceTokenManager().validate_token, raw_token)
+        if not token_data:
+            return _unauthorized()
+
+        request.state.user_id = token_data["user_id"]
+        request.state.device_id = token_data["device_id"]
+        request.state.scopes = token_data.get("scopes", [])
+        return await func(*args, **kwargs)
+    return wrapper
+
+
+@authenticate_device
 async def list_devices(request: Request) -> JSONResponse:
     '''
     GET /devices
 
-    Always scoped to the authenticated session's user_id -- never a query-string value.
+    A device token is scoped to exactly one device (p07.md section 16-18) - this intentionally
+    returns only that one device, not "all of this user's devices" (that would need
+    user-session auth, out of scope here; nothing currently calls this needing more).
     '''
     try:
-        user_id: str = request.state.user_info["id"]
         device_ops = DeviceOps(DB_CONFIG)
-        result = await asyncio.to_thread(device_ops.find, {"user_id": user_id})
-        if not result.success:
-            logger.error("device list failed", extra={"error": result.error})
-            return JSONResponse(content={"error": "Error listing devices"}, status_code=500)
-        return JSONResponse(content={"devices": [_serialize_device(d) for d in result.data]})
+        result = await asyncio.to_thread(
+            device_ops.find_one, {"id": request.state.device_id, "user_id": request.state.user_id}
+        )
+        if not result.data:
+            return JSONResponse(content={"devices": []})
+        return JSONResponse(content={"devices": [_serialize_device(result.data)]})
     except Exception:
         logger.error("device list failed", exc_info=True)
         return JSONResponse(content={"error": "Error listing devices"}, status_code=500)
 
 
-@authenticate_session
+@authenticate_device
 async def get_device(request: Request) -> JSONResponse:
-    '''GET /devices/{device_id} -- ownership-scoped; nonexistent/foreign device both 404.'''
+    '''GET /devices/{device_id} -- token-scoped; any id other than the token's own device_id is a
+    404, identical to a nonexistent device (p07.md section 18/25).'''
     try:
-        user_id: str = request.state.user_info["id"]
         device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
         device_ops = DeviceOps(DB_CONFIG)
-        result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": request.state.user_id})
         if not result.data:
             return _device_not_found()
         return JSONResponse(content={"device": _serialize_device(result.data)})
@@ -167,20 +215,14 @@ async def get_device(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error getting device"}, status_code=500)
 
 
-@authenticate_session
+@authenticate_device
 async def update_device(request: Request) -> JSONResponse:
-    '''
-    POST /devices/{device_id}
-
-    Partial update of machine/allocation metadata. Only keys allow-listed in
-    UPDATABLE_DEVICE_FIELDS and actually present in the raw request body are ever written --
-    id/user_id/used_*/status/registered_at/last_seen_at/revoked_at can never be reached from here
-    regardless of what the client sends. Allocation <= total is validated using BOTH the existing
-    stored values and the incoming changed values together.
-    '''
+    '''POST /devices/{device_id} -- token-scoped, same 404-on-mismatch as get_device.'''
     try:
-        user_id: str = request.state.user_info["id"]
         device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
+        user_id = request.state.user_id
         device_ops = DeviceOps(DB_CONFIG)
 
         existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
@@ -193,8 +235,7 @@ async def update_device(request: Request) -> JSONResponse:
         null_violations = sorted(k for k in provided if k in NON_NULLABLE_UPDATE_FIELDS and provided[k] is None)
         if null_violations:
             return JSONResponse(
-                content={"error": f"{', '.join(null_violations)} cannot be null"},
-                status_code=400,
+                content={"error": f"{', '.join(null_violations)} cannot be null"}, status_code=400
             )
 
         try:
@@ -235,21 +276,14 @@ async def update_device(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error updating device"}, status_code=500)
 
 
-@authenticate_session
+@authenticate_device
 async def heartbeat_device(request: Request) -> JSONResponse:
-    '''
-    POST /devices/{device_id}/heartbeat
-
-    "This registered device is alive, and it's the one the user is using right now": ownership-
-    scoped lookup, then server sets last_seen_at = now (UTC) and status = ACTIVE, and demotes
-    every other of this user's ACTIVE devices to INACTIVE -- at most one device is "active for
-    the user" at a time (see _demote_other_devices). The request body, if any, is never read --
-    a client can never spoof last_seen_at. No offline-detection scheduler or resource
-    reconciliation here; that's out of P05's scope.
-    '''
+    '''POST /devices/{device_id}/heartbeat -- token-scoped, same 404-on-mismatch.'''
     try:
-        user_id: str = request.state.user_info["id"]
         device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
+        user_id = request.state.user_id
         device_ops = DeviceOps(DB_CONFIG)
 
         existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
