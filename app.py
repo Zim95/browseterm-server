@@ -52,6 +52,7 @@ from src.cloud.container_handlers import (
     list_containers,
     list_images,
     list_subscription_types,
+    reconcile_device_resources,
     update_container,
     update_container_status,
 )
@@ -115,6 +116,11 @@ app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_cont
 # their own, unlike the user-scoped /containers/* routes above. Same internal-token auth.
 app.add_api_route(
     path="/internal/containers/{container_id}/status", endpoint=update_container_status, methods=["POST"]
+)
+# P14 - status_monitor periodically reports its currently-Running container_ids here to repair
+# any drift in P12's cached device used_* counters.
+app.add_api_route(
+    path="/internal/devices/resources/reconcile", endpoint=reconcile_device_resources, methods=["POST"]
 )
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])

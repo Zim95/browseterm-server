@@ -389,6 +389,70 @@ async def update_container_status(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error updating container status"}, status_code=500)
 
 
+async def reconcile_device_resources(request: Request) -> JSONResponse:
+    '''
+    POST /internal/devices/resources/reconcile
+
+    P14 (see ~/browseterm/p.md's "P14" section): status_monitor (browseterm_workload) periodically
+    reports the container_ids of pods it currently sees actually Running in real Kubernetes - the
+    ground truth P12's cached used_cpu/used_memory_bytes/used_storage_bytes counters can drift
+    away from (a missed release, a retried request, manual DB surgery). Same trusted SYSTEM caller
+    as update_container_status - no user_id, status_monitor watches its whole local cluster.
+
+    Body: {"running_container_ids": ["...", ...]}. For each id, looks up its container row (no
+    user_id filter - same reasoning as update_container_status) and, for every container that has
+    a device_id, sums its parsed cpu/memory/storage into a per-device running total. Each device
+    with at least one running container this call reports gets its used_* fields OVERWRITTEN
+    (not incremented) to that freshly-computed sum - this is a repair, not an adjustment.
+
+    Known limitation, not handled by this call alone: a device whose containers have ALL stopped
+    running since the last reconcile (nothing in running_container_ids references it any more) is
+    not reset to zero here, since nothing in the request identifies it as needing reconciliation -
+    see p.md's P14 section for why this is a deliberate v1 scope decision, not an oversight.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        body = await request.json()
+        running_container_ids = body.get("running_container_ids")
+        if not isinstance(running_container_ids, list):
+            return JSONResponse(content={"error": "running_container_ids must be a list"}, status_code=400)
+
+        ops = ContainerOps(DB_CONFIG)
+        device_totals: dict[str, dict[str, int]] = {}
+        for container_id in running_container_ids:
+            result = await asyncio.to_thread(ops.find_one, {"id": container_id})
+            container = result.data
+            if not container or not container.get("device_id"):
+                continue
+            try:
+                cpu = parse_cpu_cores(container["cpu_limit"])
+                memory = parse_memory_bytes(container["memory_limit"])
+                storage = parse_memory_bytes(container["storage_limit"])
+            except (InvalidQuantityError, KeyError, TypeError):
+                logger.error("could not parse container resource limits for reconcile", extra={"container_id": container_id})
+                continue
+            totals = device_totals.setdefault(
+                container["device_id"], {"used_cpu": 0, "used_memory_bytes": 0, "used_storage_bytes": 0}
+            )
+            totals["used_cpu"] += cpu
+            totals["used_memory_bytes"] += memory
+            totals["used_storage_bytes"] += storage
+
+        device_ops = DeviceOps(DB_CONFIG)
+        reconciled: dict[str, dict[str, int]] = {}
+        for device_id, totals in device_totals.items():
+            result = await asyncio.to_thread(device_ops.update, {"id": device_id}, totals)
+            if not result.success:
+                logger.error("device resource reconcile failed", extra={"error": result.error, "device_id": device_id})
+                continue
+            reconciled[device_id] = totals
+        return JSONResponse(content={"reconciled_devices": reconciled})
+    except Exception:
+        logger.error("device resource reconcile failed", exc_info=True)
+        return JSONResponse(content={"error": "Error reconciling device resources"}, status_code=500)
+
+
 async def list_images(request: Request) -> JSONResponse:
     '''GET /catalog/images - read-only, no ownership scoping (images are global). Matches the
     pre-migration Local behavior of only returning active images.'''

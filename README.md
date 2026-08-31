@@ -118,6 +118,19 @@ omitted, Cloud resolves the caller's currently-`ACTIVE` device automatically (re
 one ACTIVE device per user" invariant `device_handlers.py` already enforces elsewhere), or returns
 `400` if the user has no active device at all. See `~/browseterm/p.md`'s P13 section.
 
+## P14 - resource reconciliation
+
+`POST /internal/devices/resources/reconcile` (`src/cloud/container_handlers.py`) - `status_monitor`
+(`browseterm_workload`) periodically reports the container_ids of pods it currently sees actually
+`Running` in real Kubernetes. For each one, its container row is looked up (no `user_id` filter -
+same trusted-SYSTEM-caller pattern as `update_container_status`), grouped by `device_id`, and each
+implicated device's `used_cpu`/`used_memory_bytes`/`used_storage_bytes` is **overwritten** to the
+freshly-computed sum - a repair, not an adjustment, closing the loop on drift P12's reservation
+counters can accumulate. Known v1 limitation: a device whose containers have *all* stopped running
+since the last reconcile isn't reset to zero by this alone, since nothing in the request
+identifies it as needing reconciliation - see `~/browseterm/p.md`'s P14 section for why this is a
+deliberate scope decision.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API

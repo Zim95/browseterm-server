@@ -484,5 +484,92 @@ class TestUpdateContainerStatus(unittest.TestCase):
         self.assertEqual(result.status_code, 500)
 
 
+class TestReconcileDeviceResources(unittest.TestCase):
+    '''P14: POST /internal/devices/resources/reconcile.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(body={"running_container_ids": []}, headers={})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_non_list_body_rejected(self):
+        request = _mock_request(body={"running_container_ids": "not-a-list"})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_sums_running_containers_per_device_and_overwrites(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_container_row(
+                id="c1", device_id=DEVICE_A, cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+            )),
+            OperationResult(success=True, data=_container_row(
+                id="c2", device_id=DEVICE_A, cpu_limit="500m", memory_limit="512Mi", storage_limit="1Gi",
+            )),
+        ]
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _mock_request(body={"running_container_ids": ["c1", "c2"]})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+
+        # 1 core + ceil(0.5 core) = 2 cores; 1Gi + 512Mi bytes; 2Gi + 1Gi bytes.
+        update_filters, update_data = mock_device_ops.update.call_args.args
+        self.assertEqual(update_filters, {"id": DEVICE_A})
+        self.assertEqual(update_data, {
+            "used_cpu": 2,
+            "used_memory_bytes": 1024 ** 3 + 512 * 1024 ** 2,
+            "used_storage_bytes": 2 * 1024 ** 3 + 1024 ** 3,
+        })
+        import json
+        payload = json.loads(result.body)
+        self.assertIn(DEVICE_A, payload["reconciled_devices"])
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_container_with_no_device_id_skipped(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(device_id=None))
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _mock_request(body={"running_container_ids": [CONTAINER_A]})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+        mock_device_ops.update.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_unknown_container_id_skipped(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(body={"running_container_ids": ["does-not-exist"]})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_empty_running_list_reconciles_nothing(self, mock_container_ops_cls):
+        request = _mock_request(body={"running_container_ids": []})
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
+
+
 if __name__ == "__main__":
     unittest.main()
