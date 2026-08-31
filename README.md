@@ -52,6 +52,25 @@ directly for auth - it only talks to Cloud's HTTP API. Summary of what moved her
 The pre-existing session API (`POST /auth/sessions*`, internal-token-gated) is unchanged -
 Cloud's own OAuth callback calls `process_user_info` directly (in-process), same as before.
 
+## P09/P11 - internal system APIs
+
+Two more trusted-caller (not end-user) routes, both grown from the same "authenticate workloads
+as a trusted service, never by forcing a user-scoped credential onto them" principle P07
+established:
+
+- `POST /internal/containers/{container_id}/status` (P09, `src/cloud/container_handlers.py`) -
+  `browseterm_workload`'s `status_monitor` calls this instead of writing to Postgres directly. No
+  `user_id` - `status_monitor` watches every user's pods cluster-wide, it isn't acting for any one
+  user's request. Internal-token-gated. Supports an optional `expected_status` for an atomic
+  conditional update (compare-and-swap), reproducing the old direct-DB `mark_lost_if_running`'s
+  exact semantics.
+- `POST /auth/websocket-tokens/consume` (P11, `src/cloud/auth_handlers.py`) - `socket-ssh` calls
+  this instead of reading/deleting `ws_token:*` from Redis directly. **Public but
+  possession-gated** (no internal token, unlike everything else in this section) - holding a
+  valid one-time token is itself the authorization, the same pattern P07's handoff/device-
+  bootstrap redemption already established. Atomically consumes the token (`GETDEL`) and verifies
+  the linked session is still valid.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API

@@ -128,5 +128,86 @@ class TestCreateWebsocketToken(unittest.TestCase):
         mock_manager.create_websocket_token.assert_called_once_with("s1")
 
 
+class TestConsumeWebsocketToken(unittest.TestCase):
+    '''POST /auth/websocket-tokens/consume (P11) - public but possession-gated, no internal
+    token required (unlike every other route in this file).'''
+
+    def test_no_internal_token_needed(self):
+        '''Confirms this route does NOT call _internal_auth_ok - socket-ssh has no shared secret
+        and shouldn't need one, matching P07's handoff/device-bootstrap redemption precedent.'''
+        import asyncio
+        request = _mock_request({"token": "bogus"}, headers={})  # no X-Internal-Service-Token
+        with patch("src.cloud.auth_handlers.RedisSessionManager") as mock_manager_cls:
+            mock_manager = MagicMock()
+            mock_manager.consume_websocket_token.return_value = None
+            mock_manager_cls.return_value = mock_manager
+            result = asyncio.run(auth_handlers.consume_websocket_token(request))
+        # 401 for an invalid *token*, not because of a missing internal-service header.
+        self.assertEqual(result.status_code, 401)
+        mock_manager.consume_websocket_token.assert_called_once_with("bogus")
+
+    def test_missing_token_rejected(self):
+        import asyncio
+        request = _mock_request({}, headers={})
+        result = asyncio.run(auth_handlers.consume_websocket_token(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_invalid_or_expired_token_rejected(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.consume_websocket_token.return_value = None
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"token": "expired-token"}, headers={})
+        result = asyncio.run(auth_handlers.consume_websocket_token(request))
+        self.assertEqual(result.status_code, 401)
+        import json
+        self.assertFalse(json.loads(result.body)["valid"])
+
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_second_consumption_of_same_token_fails(self, mock_manager_cls):
+        '''GETDEL is single-use - the second call for the same token returns None from Redis.'''
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.consume_websocket_token.side_effect = ["s1", None]
+        mock_manager.validate_session.return_value = SessionValidationModel(
+            is_valid=True, session_data=SessionDataModel(user_info={"id": "u1"}, subscription_info={}, current_subscription_plan={}),
+        )
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"token": "one-time-token"}, headers={})
+        first = asyncio.run(auth_handlers.consume_websocket_token(request))
+        second = asyncio.run(auth_handlers.consume_websocket_token(request))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 401)
+
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_valid_token_and_session_returns_user_id(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.consume_websocket_token.return_value = "s1"
+        mock_manager.validate_session.return_value = SessionValidationModel(
+            is_valid=True, session_data=SessionDataModel(user_info={"id": "u1"}, subscription_info={}, current_subscription_plan={}),
+        )
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"token": "valid-token"}, headers={})
+        result = asyncio.run(auth_handlers.consume_websocket_token(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        payload = json.loads(result.body)
+        self.assertTrue(payload["valid"])
+        self.assertEqual(payload["user_id"], "u1")
+
+    @patch("src.cloud.auth_handlers.RedisSessionManager")
+    def test_token_valid_but_session_expired_rejected(self, mock_manager_cls):
+        import asyncio
+        mock_manager = MagicMock()
+        mock_manager.consume_websocket_token.return_value = "s1"
+        mock_manager.validate_session.return_value = SessionValidationModel(is_valid=False, session_data=None)
+        mock_manager_cls.return_value = mock_manager
+        request = _mock_request({"token": "valid-token-expired-session"}, headers={})
+        result = asyncio.run(auth_handlers.consume_websocket_token(request))
+        self.assertEqual(result.status_code, 401)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -194,6 +194,20 @@ class RedisSessionManager:
         )
         return ws_token
 
+    def consume_websocket_token(self, ws_token: str) -> Optional[str]:
+        """
+        P11 (see ~/browseterm/p.md's "P11" section): atomically validate-and-consume a one-time
+        WebSocket token, returning its linked session_id. GETDEL - single-use, matching exactly
+        what socket-ssh's own former direct `redis.get()` + `redis.del()` pair did (just as one
+        atomic Redis operation instead of two, closing a tiny race the old two-step version had).
+        Args:
+            ws_token: The one-time token to consume
+        Returns:
+            The linked session_id, or None if the token is missing/expired/already consumed.
+        """
+        ws_token_key: str = f"ws_token:{ws_token}"
+        return self.redis_client.getdel(ws_token_key)
+
 
 # Global session manager instance
 session_manager: RedisSessionManager = RedisSessionManager()

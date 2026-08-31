@@ -94,8 +94,7 @@ async def create_websocket_token(request: Request) -> JSONResponse:
 
     Body: {"session_id": "..."}. Wraps RedisSessionManager.create_websocket_token exactly as-is
     (one-time, 60s-TTL token linking to the session, validated/consumed by socket-ssh) - Local's
-    terminal-page handler calls this instead of touching Redis itself. socket-ssh's own Redis
-    dependency for validating the token is unchanged (P11's job, not this task's).
+    terminal-page handler calls this instead of touching Redis itself.
     '''
     if not _internal_auth_ok(request):
         return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
@@ -110,6 +109,42 @@ async def create_websocket_token(request: Request) -> JSONResponse:
     except Exception:
         logger.error("websocket token creation failed", exc_info=True)
         return JSONResponse(content={"error": "Error creating websocket token"}, status_code=500)
+
+
+async def consume_websocket_token(request: Request) -> JSONResponse:
+    '''
+    POST /auth/websocket-tokens/consume
+
+    P11 (see ~/browseterm/p.md's "P11" section) - migrates socket-ssh off its own direct Redis
+    access. Public but possession-gated, same pattern as P07's handoff/device-bootstrap
+    redemption (p07.md): holding a valid one-time ws_token IS the authorization, no
+    internal-service-token needed - socket-ssh has no such shared secret and shouldn't need one
+    just to consume a token a real user's browser was already handed.
+
+    Body: {"token": "..."}. Atomically consumes the token (GETDEL - single-use) and verifies the
+    linked session is still valid, reproducing socket-ssh's former two-step
+    "token exists -> delete -> session still exists" check as one Cloud call.
+    '''
+    try:
+        body = await request.json()
+        token = body.get("token")
+        if not token:
+            return JSONResponse(content={"valid": False, "error": "token is required"}, status_code=400)
+
+        session_manager = RedisSessionManager()
+        session_id = session_manager.consume_websocket_token(token)
+        if not session_id:
+            return JSONResponse(content={"valid": False, "error": "Invalid or expired token"}, status_code=401)
+
+        validation = session_manager.validate_session(session_id)
+        if not validation.is_valid or not validation.session_data:
+            return JSONResponse(content={"valid": False, "error": "Session expired"}, status_code=401)
+
+        user_info = validation.session_data.user_info or {}
+        return JSONResponse(content={"valid": True, "session_id": session_id, "user_id": user_info.get("id")})
+    except Exception:
+        logger.error("websocket token consumption failed", exc_info=True)
+        return JSONResponse(content={"valid": False, "error": "Error validating websocket token"}, status_code=500)
 
 
 async def delete_session(request: Request) -> JSONResponse:

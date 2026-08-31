@@ -28,6 +28,7 @@ from src.cloud.device_handlers import (
     update_device,
 )
 from src.cloud.auth_handlers import (
+    consume_websocket_token,
     create_session_from_user_info,
     create_websocket_token,
     delete_session,
@@ -73,6 +74,7 @@ app.add_api_route(path="/auth/sessions", endpoint=create_session_from_user_info,
 app.add_api_route(path="/auth/sessions/validate", endpoint=validate_session, methods=["POST"])
 app.add_api_route(path="/auth/sessions/delete", endpoint=delete_session, methods=["POST"])
 app.add_api_route(path="/auth/websocket-tokens", endpoint=create_websocket_token, methods=["POST"])
+app.add_api_route(path="/auth/websocket-tokens/consume", endpoint=consume_websocket_token, methods=["POST"])
 
 # OAuth (P07) - Cloud is the sole OAuth authority. Start/callback/handoff-redeem are public;
 # device-bootstrap start is internal-token-gated, device-bootstrap redeem is public but
