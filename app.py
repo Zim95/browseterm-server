@@ -56,6 +56,7 @@ from src.cloud.container_handlers import (
     update_container,
     update_container_status,
 )
+from src.cloud.snapshot_handlers import allocate_snapshot
 from src.cloud.sse_broadcaster import sse_broadcaster
 from src.cloud.sse_handlers import events_stream
 from src.cloud.subscription_handlers import get_current_subscription
@@ -121,6 +122,11 @@ app.add_api_route(
 # any drift in P12's cached device used_* counters.
 app.add_api_route(
     path="/internal/devices/resources/reconcile", endpoint=reconcile_device_resources, methods=["POST"]
+)
+# P16 - snapshot_job allocates a container_snapshots row here instead of writing to Postgres
+# directly. Same trusted-SYSTEM-caller pattern as the two routes above.
+app.add_api_route(
+    path="/internal/containers/{container_id}/snapshots/allocate", endpoint=allocate_snapshot, methods=["POST"]
 )
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])

@@ -121,3 +121,9 @@ RESOURCE_CPU_REQUEST_RATIO: float = float(os.getenv("RESOURCE_CPU_REQUEST_RATIO"
 RESOURCE_MEMORY_REQUEST_RATIO: float = float(os.getenv("RESOURCE_MEMORY_REQUEST_RATIO", "0.5"))
 # Ephemeral storage: 50% of limit
 RESOURCE_EPHEMERAL_REQUEST_RATIO: float = float(os.getenv("RESOURCE_EPHEMERAL_REQUEST_RATIO", "0.5"))
+
+# P16 (see ~/browseterm/p.md's "P16" section, plan section 6): flat Docker Hub repository prefix
+# for workspace snapshots - "browseterm/<user_id>_<container_id>", never a nested
+# "browseterm/<user>/<container>" path (Docker Hub doesn't support arbitrary nesting) and never a
+# mutable name (UUIDs only). Configurable per the plan's explicit instruction.
+SNAPSHOT_REGISTRY_REPO_PREFIX: str = os.getenv("SNAPSHOT_REGISTRY_REPO_PREFIX", "browseterm")

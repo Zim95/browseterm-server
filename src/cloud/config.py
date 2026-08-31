@@ -24,6 +24,7 @@ from src.common.config import (
     REDIS_USERNAME,
     REDIS_PASSWORD,
     REDIS_DB,
+    SNAPSHOT_REGISTRY_REPO_PREFIX,
 )
 
 # Interim shared secret gating the internal-only auth/container-write endpoints Local calls
@@ -46,4 +47,5 @@ __all__ = [
     "REDIS_PASSWORD",
     "REDIS_DB",
     "CLOUD_INTERNAL_API_TOKEN",
+    "SNAPSHOT_REGISTRY_REPO_PREFIX",
 ]
