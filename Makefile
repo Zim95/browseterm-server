@@ -7,20 +7,20 @@ build:
 
 setup:
 	./scripts/cloud/cloud-setup.sh \
-		$(NAMESPACE) \
-		$(REPO_NAME) \
-		$(REDIS_HOST) \
-		$(REDIS_PORT) \
-		$(REDIS_PASSWORD) \
-		$(REDIS_USERNAME) \
-		$(REDIS_DB) \
-		$(AUTH_REDIRECT_BASE_URI) \
-		$(BROWSETERM_LOCAL_CALLBACK_URL) \
-		$(BROWSETERM_ALLOWED_HOSTS) \
-		$(CLOUD_INGRESS_HOST) \
-		$(POSTGRES_HOST) \
-		$(POSTGRES_PORT) \
-		$(SNAPSHOT_REGISTRY_REPO_PREFIX)
+		"$(NAMESPACE)" \
+		"$(REPO_NAME)" \
+		"$(REDIS_HOST)" \
+		"$(REDIS_PORT)" \
+		"$(REDIS_PASSWORD)" \
+		"$(REDIS_USERNAME)" \
+		"$(REDIS_DB)" \
+		"$(AUTH_REDIRECT_BASE_URI)" \
+		"$(BROWSETERM_LOCAL_CALLBACK_URL)" \
+		"$(BROWSETERM_ALLOWED_HOSTS)" \
+		"$(CLOUD_INGRESS_HOST)" \
+		"$(POSTGRES_HOST)" \
+		"$(POSTGRES_PORT)" \
+		"$(SNAPSHOT_REGISTRY_REPO_PREFIX)"
 
 teardown:
 	./scripts/cloud/cloud-teardown.sh $(NAMESPACE)
