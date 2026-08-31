@@ -131,6 +131,17 @@ since the last reconcile isn't reset to zero by this alone, since nothing in the
 identifies it as needing reconciliation - see `~/browseterm/p.md`'s P14 section for why this is a
 deliberate scope decision.
 
+## P16 - snapshot version allocation
+
+`POST /internal/containers/{container_id}/snapshots/allocate` (`src/cloud/snapshot_handlers.py`)
+- `snapshot_job` (`browseterm_workload`, not yet wired to call this - see P17) will use this to
+  allocate a `container_snapshots` row (P15) for a save attempt. Same trusted-SYSTEM-caller
+  pattern as P09/P14. Reuses an existing `(container_id, request_id)` row verbatim if one exists
+  (idempotent retry), else reads/increments `containers.next_snapshot_sequence` (a plain
+  increment - the plan explicitly tolerates version-number gaps after crashes) and creates a new
+  `Pending` row. `SNAPSHOT_REGISTRY_REPO_PREFIX` builds the flat, UUID-based `image_repository`.
+  See `~/browseterm/p.md`'s P16 section.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API
