@@ -19,7 +19,8 @@ setup:
 		$(BROWSETERM_ALLOWED_HOSTS) \
 		$(CLOUD_INGRESS_HOST) \
 		$(POSTGRES_HOST) \
-		$(POSTGRES_PORT)
+		$(POSTGRES_PORT) \
+		$(SNAPSHOT_REGISTRY_REPO_PREFIX)
 
 teardown:
 	./scripts/cloud/cloud-teardown.sh $(NAMESPACE)

@@ -11,7 +11,7 @@
 
 # Check if enough arguments are provided
 if [ $# -lt 11 ]; then
-    echo "Usage: $0 <namespace> <repo-name> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <auth-redirect-base-uri> <local-callback-url> <allowed-hosts> <cloud-ingress-host> [postgres-host] [postgres-port]"
+    echo "Usage: $0 <namespace> <repo-name> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <auth-redirect-base-uri> <local-callback-url> <allowed-hosts> <cloud-ingress-host> [postgres-host] [postgres-port] [snapshot-registry-repo-prefix]"
     exit 1
 fi
 
@@ -29,6 +29,10 @@ BROWSETERM_ALLOWED_HOSTS=${10}
 CLOUD_INGRESS_HOST=${11}
 POSTGRES_HOST=${12:-browseterm-db-service}
 POSTGRES_PORT=${13:-5432}
+# P20: the real Docker Hub Organization snapshot repos get pushed under - see cloud.yaml's own
+# comment at this env var. Defaults to "browseterm" (matching src/common/config.py's own
+# default and the actual Docker Hub org created for this), but overridable per-deployment.
+SNAPSHOT_REGISTRY_REPO_PREFIX=${14:-browseterm}
 
 export NAMESPACE=$NAMESPACE
 export REPO_NAME=$REPO_NAME
@@ -43,4 +47,5 @@ export BROWSETERM_ALLOWED_HOSTS=$BROWSETERM_ALLOWED_HOSTS
 export CLOUD_INGRESS_HOST=$CLOUD_INGRESS_HOST
 export POSTGRES_HOST=$POSTGRES_HOST
 export POSTGRES_PORT=$POSTGRES_PORT
+export SNAPSHOT_REGISTRY_REPO_PREFIX=$SNAPSHOT_REGISTRY_REPO_PREFIX
 envsubst < $YAML | kubectl apply -f -

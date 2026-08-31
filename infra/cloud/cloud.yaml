@@ -123,6 +123,16 @@ spec:
             secretKeyRef:
               name: browseterm-oauth-credentials
               key: GITHUB_CLIENT_SECRET
+        # P20 (~/browseterm/p.md's "P20" section): the Docker Hub account/org snapshot repos get
+        # pushed under (allocate_snapshot builds "{SNAPSHOT_REGISTRY_REPO_PREFIX}/{user_id}_
+        # {container_id}"). Explicitly wired here to the real "browseterm" Docker Hub
+        # Organization (created for this purpose) rather than left to silently fall back on
+        # src/common/config.py's own same-valued default - previously unset in this manifest
+        # entirely, so it was relying on that default without anyone having verified a
+        # "browseterm" namespace actually existed to push to. Non-secret config (kept as a
+        # literal), same as AUTH_REDIRECT_BASE_URI above.
+        - name: SNAPSHOT_REGISTRY_REPO_PREFIX
+          value: "${SNAPSHOT_REGISTRY_REPO_PREFIX}"
         livenessProbe:
           httpGet:
             path: /healthz
