@@ -12,6 +12,9 @@ section for the full split rationale and boundary.
 This module was `cloud_app.py` through P04/P05; renamed to `app.py` in P06 now that there is
 only one entrypoint left in this repo to name.
 '''
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -30,6 +33,7 @@ from src.cloud.device_handlers import (
 from src.cloud.auth_handlers import (
     consume_websocket_token,
     create_session_from_user_info,
+    create_sse_token,
     create_websocket_token,
     delete_session,
     validate_session,
@@ -51,9 +55,22 @@ from src.cloud.container_handlers import (
     update_container,
     update_container_status,
 )
+from src.cloud.sse_broadcaster import sse_broadcaster
+from src.cloud.sse_handlers import events_stream
 from src.cloud.subscription_handlers import get_current_subscription
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # P10 - starts the Postgres LISTEN background thread (src/cloud/sse_broadcaster.py) on the
+    # running event loop, so its thread-safe callbacks can hand messages back to asyncio.Queue
+    # subscribers. Stopped on shutdown so the LISTEN connection doesn't leak.
+    sse_broadcaster.start(loop=asyncio.get_event_loop())
+    yield
+    sse_broadcaster.stop()
+
+
+app = FastAPI(lifespan=lifespan)
 
 # p07.md section 28 - validates the HTTP Host header only (not an authentication mechanism).
 # "*" is the explicit dev-permissive default; set BROWSETERM_ALLOWED_HOSTS in production.
@@ -75,6 +92,7 @@ app.add_api_route(path="/auth/sessions/validate", endpoint=validate_session, met
 app.add_api_route(path="/auth/sessions/delete", endpoint=delete_session, methods=["POST"])
 app.add_api_route(path="/auth/websocket-tokens", endpoint=create_websocket_token, methods=["POST"])
 app.add_api_route(path="/auth/websocket-tokens/consume", endpoint=consume_websocket_token, methods=["POST"])
+app.add_api_route(path="/auth/sse-tokens", endpoint=create_sse_token, methods=["POST"])
 
 # OAuth (P07) - Cloud is the sole OAuth authority. Start/callback/handoff-redeem are public;
 # device-bootstrap start is internal-token-gated, device-bootstrap redeem is public but
@@ -101,6 +119,11 @@ app.add_api_route(
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
 app.add_api_route(path="/subscriptions/current", endpoint=get_current_subscription, methods=["GET"])
+
+# P10 - the browser connects here directly for real-time status updates (see sse_handlers.py).
+# Public but possession-gated by the sse_token query param, same trust pattern as P11's
+# websocket-tokens/consume.
+app.add_api_route(path="/events/stream", endpoint=events_stream, methods=["GET"])
 
 
 if __name__ == "__main__":

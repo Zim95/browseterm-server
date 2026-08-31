@@ -71,6 +71,31 @@ established:
   bootstrap redemption already established. Atomically consumes the token (`GETDEL`) and verifies
   the linked session is still valid.
 
+## P10 - Cloud owns LISTEN/NOTIFY and SSE
+
+Cloud now pushes real-time container status/save-status updates directly to the browser -
+`browseterm-server-local` no longer polls Cloud's `GET /containers` on an interval and relays it
+through its own SSE endpoint (that whole mechanism is removed as of this task; see that repo's
+README for the Local-side half of this change).
+
+- `src/cloud/sse_broadcaster.py` - a singleton that starts `browseterm_db.common.pg_listener.
+  PGListener` (a pre-existing thread-based `psycopg2` LISTEN client) in a background thread on app
+  startup (new FastAPI `lifespan` in `app.py`), and bridges its NOTIFY callbacks into the asyncio
+  event loop via `call_soon_threadsafe` to fan them out to per-user `asyncio.Queue` subscribers.
+  The actual `container_status_change`/`container_save_status_change` Postgres triggers this
+  listens for already existed in `browseterm-db`'s migration history - they'd just never been
+  applied to this project's dev cluster (see `~/browseterm/p.md`'s P10 section for the full story
+  of how that gap was found and fixed).
+- `GET /events/stream?token=<sse_token>` (`src/cloud/sse_handlers.py`) - the browser connects here
+  directly. **Public but possession-gated**, same pattern as P11's ws-token-consume: the token is
+  in the query string (`EventSource` can't set custom headers) and resolves only to a session_id;
+  the subscribing user_id is read from that session's own server-side data, never trusted from
+  the request itself.
+- `POST /auth/sse-tokens` (`src/cloud/auth_handlers.py`) - internal-token-gated, mints the token
+  above. Unlike `POST /auth/websocket-tokens`, **not single-use** - `EventSource` reconnects
+  automatically using the same URL after any drop, so a `GETDEL` token would break the very first
+  automatic reconnect.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API

@@ -208,6 +208,43 @@ class RedisSessionManager:
         ws_token_key: str = f"ws_token:{ws_token}"
         return self.redis_client.getdel(ws_token_key)
 
+    def create_sse_token(self, session_id: str) -> str:
+        """
+        P10 (see ~/browseterm/p.md's "P10" section): create a token authenticating a browser's
+        SSE connection to Cloud's own /events/stream. Deliberately NOT single-use like
+        create_websocket_token - EventSource reconnects automatically using the exact same URL
+        after any drop (network blip, pod restart, idle proxy timeout), so a GETDEL token would
+        strand the browser on a hard-401 after its very first reconnect. Its practical lifetime
+        is gated by the session it points to, not by its own TTL: validate_sse_token re-checks
+        the linked session is still valid on every connect, so a 24h Redis TTL here is just key
+        hygiene, not a security boundary.
+        Args:
+            session_id: Session ID to link the token to
+        Returns:
+            str: SSE token
+        """
+        sse_token: str = str(uuid.uuid4())
+        sse_token_key: str = f"sse_token:{sse_token}"
+        self.redis_client.setex(
+            name=sse_token_key,
+            time=60 * 60 * 24,  # 24h - see docstring, not a security boundary
+            value=session_id
+        )
+        return sse_token
+
+    def validate_sse_token(self, sse_token: str) -> Optional[str]:
+        """
+        P10: look up (not consume) the session_id an SSE token points to. Read-only GET, unlike
+        consume_websocket_token's GETDEL - the same token is presented again on every
+        EventSource reconnect for as long as the browser tab stays open.
+        Args:
+            sse_token: The token to look up
+        Returns:
+            The linked session_id, or None if the token is missing/expired.
+        """
+        sse_token_key: str = f"sse_token:{sse_token}"
+        return self.redis_client.get(sse_token_key)
+
 
 # Global session manager instance
 session_manager: RedisSessionManager = RedisSessionManager()

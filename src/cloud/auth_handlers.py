@@ -147,6 +147,31 @@ async def consume_websocket_token(request: Request) -> JSONResponse:
         return JSONResponse(content={"valid": False, "error": "Error validating websocket token"}, status_code=500)
 
 
+async def create_sse_token(request: Request) -> JSONResponse:
+    '''
+    POST /auth/sse-tokens
+
+    P10 (see ~/browseterm/p.md's "P10" section). Body: {"session_id": "..."}. Wraps
+    RedisSessionManager.create_sse_token exactly as-is - Local's terminals/terminalpage handlers
+    call this instead of touching Redis themselves, same shape as create_websocket_token, but the
+    resulting token is read-only-validated (not consumed) by src/cloud/sse_handlers.py, since the
+    browser's EventSource presents it again on every automatic reconnect.
+    '''
+    if not _internal_auth_ok(request):
+        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+    try:
+        body = await request.json()
+        session_id = body.get("session_id")
+        if not session_id:
+            return JSONResponse(content={"error": "session_id is required"}, status_code=400)
+        session_manager = RedisSessionManager()
+        token = session_manager.create_sse_token(session_id)
+        return JSONResponse(content={"token": token})
+    except Exception:
+        logger.error("sse token creation failed", exc_info=True)
+        return JSONResponse(content={"error": "Error creating sse token"}, status_code=500)
+
+
 async def delete_session(request: Request) -> JSONResponse:
     '''
     POST /auth/sessions/delete
