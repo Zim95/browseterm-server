@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import Request
 
+from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations import OperationResult
 import src.cloud.container_handlers as container_handlers
 
@@ -177,6 +178,50 @@ class TestCreateContainer(unittest.TestCase):
         result = asyncio.run(container_handlers.create_container(request))
         self.assertEqual(result.status_code, 400)
         mock_device_ops.update.assert_not_called()
+        mock_ops.insert.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_omitted_device_id_resolves_active_device(self, mock_container_ops_cls, mock_device_ops_cls):
+        '''P13: browseterm-server-local has no device_id of its own to send - Cloud must resolve
+        the caller's currently-ACTIVE device automatically when device_id is omitted.'''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_ops.insert.return_value = OperationResult(success=True, data=_container_row())
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        body = _create_body()
+        del body["device_id"]
+        request = _mock_request(body)
+        result = asyncio.run(container_handlers.create_container(request))
+        self.assertEqual(result.status_code, 201)
+
+        mock_device_ops.find_one.assert_called_once_with({"user_id": USER_A, "status": DeviceStatus.ACTIVE})
+        insert_data = mock_ops.insert.call_args.args[0]
+        self.assertEqual(insert_data["device_id"], DEVICE_A)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_omitted_device_id_with_no_active_device_rejected(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        body = _create_body()
+        del body["device_id"]
+        request = _mock_request(body)
+        result = asyncio.run(container_handlers.create_container(request))
+        self.assertEqual(result.status_code, 400)
         mock_ops.insert.assert_not_called()
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)

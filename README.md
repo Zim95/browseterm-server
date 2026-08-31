@@ -98,16 +98,25 @@ README for the Local-side half of this change).
 
 ## P12 - workspace creation validates the device and reserves resources
 
-`POST /containers` now requires `device_id`/`cpu_limit`/`memory_limit`/`storage_limit` and, before
-creating the row: looks up the device (rejects if not found or not `ACTIVE`), validates the
-request against `allocated - used` for cpu/memory/storage, and reserves usage (increments the
-device's `used_*` fields) - released back if the row insert then fails.
+`POST /containers` requires `cpu_limit`/`memory_limit`/`storage_limit` and, before creating the
+row: looks up the device (rejects if not found or not `ACTIVE`), validates the request against
+`allocated - used` for cpu/memory/storage, and reserves usage (increments the device's `used_*`
+fields) - released back if the row insert then fails. `device_id` is optional as of P13 below.
 `POST /containers/{id}/delete` releases a container's reserved resources back to its device on
 success. `src/cloud/resource_quantity.py` is a small dependency-free parser for the Kubernetes
 resource-quantity strings (`"500m"`, `"2Gi"`) these fields are stored as - Cloud doesn't depend on
 the `kubernetes` client library (P06 moved that to `browseterm-server-local`), so
 `kubernetes.utils.quantity.parse_quantity` isn't reachable from here. See `~/browseterm/p.md`'s
 P12 section for the full write-up, including why Hibernate/Resume accounting isn't wired up yet.
+
+## P13 - device_id auto-resolves to the caller's active device
+
+`browseterm-server-local` (a per-user-Mac process) has no established way to learn "its own"
+device_id - device registration/bootstrap (P07) is a `browseterm-desktop`-only concept, a separate
+process Local has no IPC channel to. So `POST /containers`'s `device_id` is optional: when
+omitted, Cloud resolves the caller's currently-`ACTIVE` device automatically (reusing the "at most
+one ACTIVE device per user" invariant `device_handlers.py` already enforces elsewhere), or returns
+`400` if the user has no active device at all. See `~/browseterm/p.md`'s P13 section.
 
 ## What's here
 

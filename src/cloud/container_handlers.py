@@ -97,7 +97,8 @@ async def _release_device_resources(container: dict) -> None:
 
 async def create_container(request: Request) -> JSONResponse:
     '''
-    POST /containers - body must include user_id, device_id (Local-trusted, not client-trusted).
+    POST /containers - body must include user_id (Local-trusted, not client-trusted). device_id is
+    optional - see P13 below.
 
     P12: validates the device belongs to the caller and is ACTIVE, validates requested
     cpu/memory/storage against that device's available (allocated - used) capacity, and reserves
@@ -105,6 +106,15 @@ async def create_container(request: Request) -> JSONResponse:
     section-22 bullet order for this task: "validate device, validate resources, reserve usage,
     create global container row, fail/release reservation paths". If the container row fails to
     create after usage was reserved, the reservation is released back.
+
+    P13 (see ~/browseterm/p.md's "P13" section): device_id may be omitted, in which case the
+    caller's currently-ACTIVE device is resolved automatically. browseterm-server-local (a
+    per-user-Mac process) has no established way to learn "its own" device_id today - device
+    registration/bootstrap is a Desktop-app concept (P07's device-bootstrap flow), a separate
+    process Local has no IPC channel to. Cloud already enforces "at most one ACTIVE device per
+    user at a time" everywhere else (device_handlers.py's _demote_other_devices), so resolving it
+    the same way here - rather than inventing a new device-selection mechanism for Local - is
+    consistent with that existing invariant, not a new one.
     '''
     if not _internal_auth_ok(request):
         return _unauthorized()
@@ -118,7 +128,7 @@ async def create_container(request: Request) -> JSONResponse:
         storage_limit = body.get("storage_limit")
         missing = [
             field for field, value in (
-                ("user_id", user_id), ("name", name), ("device_id", device_id),
+                ("user_id", user_id), ("name", name),
                 ("cpu_limit", cpu_limit), ("memory_limit", memory_limit), ("storage_limit", storage_limit),
             ) if not value
         ]
@@ -141,12 +151,24 @@ async def create_container(request: Request) -> JSONResponse:
             )
 
         device_ops = DeviceOps(DB_CONFIG)
-        device_result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
-        if not device_result.data:
-            return JSONResponse(content={"error": "Device not found"}, status_code=404)
-        device = device_result.data
-        if device["status"] != DeviceStatus.ACTIVE.value:
-            return JSONResponse(content={"error": "Device is not active"}, status_code=400)
+        if device_id:
+            device_result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+            if not device_result.data:
+                return JSONResponse(content={"error": "Device not found"}, status_code=404)
+            device = device_result.data
+            if device["status"] != DeviceStatus.ACTIVE.value:
+                return JSONResponse(content={"error": "Device is not active"}, status_code=400)
+        else:
+            # P13: no device_id supplied - resolve the caller's currently-ACTIVE device.
+            active_result = await asyncio.to_thread(
+                device_ops.find_one, {"user_id": user_id, "status": DeviceStatus.ACTIVE}
+            )
+            if not active_result.data:
+                return JSONResponse(
+                    content={"error": "No active device registered for this user"}, status_code=400
+                )
+            device = active_result.data
+            device_id = device["id"]
 
         available_cpu, available_memory, available_storage = _device_available(device)
         resource_errors = []
@@ -173,7 +195,10 @@ async def create_container(request: Request) -> JSONResponse:
             logger.error("resource reservation failed", extra={"error": reserve_result.error})
             return JSONResponse(content={"error": "Error reserving device resources"}, status_code=500)
 
+        # device_id explicitly re-set here, not just relying on whatever body.items() carries -
+        # it may have been auto-resolved above rather than supplied by the caller at all.
         insert_data = {k: v for k, v in body.items() if k != "id"}
+        insert_data["device_id"] = device_id
         result = await asyncio.to_thread(ops.insert, insert_data)
         if not result.success:
             logger.error("container create failed", extra={"error": result.error})
