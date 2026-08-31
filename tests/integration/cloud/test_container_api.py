@@ -184,5 +184,92 @@ class TestCatalog(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
 
 
+class TestUpdateContainerStatus(unittest.TestCase):
+    '''POST /internal/containers/{container_id}/status (P09) - no user_id, trusted system caller.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(
+            body={"status": "Running"}, path_params={"container_id": CONTAINER_A}, headers={}
+        )
+        result = asyncio.run(container_handlers.update_container_status(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_status_rejected(self):
+        request = _mock_request(body={}, path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.update_container_status(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_invalid_status_value_rejected(self):
+        request = _mock_request(body={"status": "not-a-real-status"}, path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.update_container_status(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_unconditional_update_no_expected_status(self, mock_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True, data=None)
+        mock_ops_cls.return_value = mock_ops
+
+        request = _mock_request(body={"status": "Running"}, path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.update_container_status(request))
+
+        self.assertEqual(result.status_code, 200)
+        filters, data = mock_ops.update.call_args.args
+        self.assertEqual(filters, {"id": CONTAINER_A})  # no user_id, no status filter
+        self.assertEqual(data["status"].value, "Running")
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_conditional_update_with_expected_status_is_atomic_cas(self, mock_ops_cls):
+        '''Mirrors the old mark_lost_if_running's exact semantics - a single WHERE id=X AND
+        status=expected_status UPDATE, not a read-then-write.'''
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True, data=None)
+        mock_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            body={"status": "Hibernated", "expected_status": "Running"},
+            path_params={"container_id": CONTAINER_A},
+        )
+        result = asyncio.run(container_handlers.update_container_status(request))
+
+        self.assertEqual(result.status_code, 200)
+        filters, data = mock_ops.update.call_args.args
+        self.assertEqual(filters["id"], CONTAINER_A)
+        self.assertEqual(filters["status"].value, "Running")
+        self.assertEqual(data["status"].value, "Hibernated")
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_zero_rows_matched_is_still_a_success(self, mock_ops_cls):
+        '''The conditional filter not matching (row already moved on, or doesn't exist) is a
+        harmless no-op, not an error - matches the pre-migration direct-DB behavior exactly.'''
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True, data=None)
+        mock_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            body={"status": "Hibernated", "expected_status": "Running"},
+            path_params={"container_id": "nonexistent-or-already-moved-on"},
+        )
+        result = asyncio.run(container_handlers.update_container_status(request))
+        self.assertEqual(result.status_code, 200)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_db_failure_returns_500(self, mock_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=False, error="db down")
+        mock_ops_cls.return_value = mock_ops
+
+        request = _mock_request(body={"status": "Running"}, path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.update_container_status(request))
+        self.assertEqual(result.status_code, 500)
+
+
 if __name__ == "__main__":
     unittest.main()

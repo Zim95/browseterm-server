@@ -48,6 +48,7 @@ from src.cloud.container_handlers import (
     list_images,
     list_subscription_types,
     update_container,
+    update_container_status,
 )
 from src.cloud.subscription_handlers import get_current_subscription
 
@@ -89,6 +90,12 @@ app.add_api_route(path="/containers", endpoint=list_containers, methods=["GET"])
 app.add_api_route(path="/containers/{container_id}", endpoint=get_container, methods=["GET"])
 app.add_api_route(path="/containers/{container_id}", endpoint=update_container, methods=["POST"])
 app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_container, methods=["POST"])
+
+# Internal system API (P09) - trusted cluster-wide callers (status_monitor) with no user_id of
+# their own, unlike the user-scoped /containers/* routes above. Same internal-token auth.
+app.add_api_route(
+    path="/internal/containers/{container_id}/status", endpoint=update_container_status, methods=["POST"]
+)
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
 app.add_api_route(path="/subscriptions/current", endpoint=get_current_subscription, methods=["GET"])
