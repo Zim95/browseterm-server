@@ -1,5 +1,5 @@
 '''
-Cloud snapshot allocation API tests (P16). Same "mock the boundary" convention as
+Cloud snapshot allocation/report API tests (P16/P17). Same "mock the boundary" convention as
 test_container_api.py: call the handler directly, patch ContainerOps/SnapshotOps at their import
 site in src.cloud.snapshot_handlers.
 '''
@@ -136,6 +136,108 @@ class TestAllocateSnapshot(unittest.TestCase):
         result = asyncio.run(snapshot_handlers.allocate_snapshot(request))
         self.assertEqual(result.status_code, 500)
         mock_snapshot_ops.insert.assert_not_called()
+
+
+class TestReportSnapshotResult(unittest.TestCase):
+    def _request(self, body: dict, headers: dict = None) -> MagicMock:
+        return _mock_request(body, path_params={"container_id": CONTAINER_A, "snapshot_id": "snapshot-1"}, headers=headers)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = self._request({"status": "Running"}, headers={})
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_invalid_status_rejected(self):
+        request = self._request({"status": "Pending"})  # not a valid report-time status
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.snapshot_handlers.ContainerOps")
+    @patch("src.cloud.snapshot_handlers.SnapshotOps")
+    def test_running_updates_both_rows_without_touching_saved_image(self, mock_snapshot_ops_cls, mock_container_ops_cls):
+        mock_snapshot_ops = MagicMock()
+        mock_snapshot_ops.update.return_value = OperationResult(success=True)
+        mock_snapshot_ops_cls.return_value = mock_snapshot_ops
+        mock_container_ops = MagicMock()
+        mock_container_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_container_ops
+
+        request = self._request({"status": "Running"})
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 200)
+
+        snapshot_filters, snapshot_data = mock_snapshot_ops.update.call_args.args
+        self.assertEqual(snapshot_filters, {"id": "snapshot-1", "container_id": CONTAINER_A})
+        self.assertEqual(snapshot_data["status"], "Running")
+        self.assertNotIn("completed_at", snapshot_data)
+
+        container_filters, container_data = mock_container_ops.update.call_args.args
+        self.assertEqual(container_filters, {"id": CONTAINER_A})
+        self.assertEqual(container_data, {"save_status": "Running", "save_error": None})
+        self.assertNotIn("saved_image", container_data)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.snapshot_handlers.ContainerOps")
+    @patch("src.cloud.snapshot_handlers.SnapshotOps")
+    def test_succeeded_sets_saved_image_and_last_saved_at(self, mock_snapshot_ops_cls, mock_container_ops_cls):
+        mock_snapshot_ops = MagicMock()
+        mock_snapshot_ops.update.return_value = OperationResult(success=True)
+        mock_snapshot_ops_cls.return_value = mock_snapshot_ops
+        mock_container_ops = MagicMock()
+        mock_container_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_container_ops
+
+        request = self._request({
+            "status": "Succeeded",
+            "image_reference": "browseterm/user-a-id_container-a-id:0.0.0.0.1",
+            "registry_digest": "sha256:abc123",
+        })
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 200)
+
+        snapshot_data = mock_snapshot_ops.update.call_args.args[1]
+        self.assertEqual(snapshot_data["image_reference"], "browseterm/user-a-id_container-a-id:0.0.0.0.1")
+        self.assertEqual(snapshot_data["registry_digest"], "sha256:abc123")
+        self.assertIn("completed_at", snapshot_data)
+
+        container_data = mock_container_ops.update.call_args.args[1]
+        self.assertEqual(container_data["saved_image"], "browseterm/user-a-id_container-a-id:0.0.0.0.1")
+        self.assertIn("last_saved_at", container_data)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.snapshot_handlers.ContainerOps")
+    @patch("src.cloud.snapshot_handlers.SnapshotOps")
+    def test_failed_never_touches_saved_image(self, mock_snapshot_ops_cls, mock_container_ops_cls):
+        '''Plan section 13: "On failure, saved_image must remain unchanged."'''
+        mock_snapshot_ops = MagicMock()
+        mock_snapshot_ops.update.return_value = OperationResult(success=True)
+        mock_snapshot_ops_cls.return_value = mock_snapshot_ops
+        mock_container_ops = MagicMock()
+        mock_container_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_container_ops
+
+        request = self._request({"status": "Failed", "error_detail": "docker push failed"})
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 200)
+
+        container_data = mock_container_ops.update.call_args.args[1]
+        self.assertEqual(container_data, {"save_status": "Failed", "save_error": "docker push failed"})
+        self.assertNotIn("saved_image", container_data)
+        self.assertNotIn("last_saved_at", container_data)
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.snapshot_handlers.SnapshotOps")
+    def test_snapshot_update_failure_returns_500_before_touching_container(self, mock_snapshot_ops_cls):
+        mock_snapshot_ops = MagicMock()
+        mock_snapshot_ops.update.return_value = OperationResult(success=False, error="db down")
+        mock_snapshot_ops_cls.return_value = mock_snapshot_ops
+
+        request = self._request({"status": "Running"})
+        result = asyncio.run(snapshot_handlers.report_snapshot_result(request))
+        self.assertEqual(result.status_code, 500)
 
 
 if __name__ == "__main__":

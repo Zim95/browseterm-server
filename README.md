@@ -134,13 +134,24 @@ deliberate scope decision.
 ## P16 - snapshot version allocation
 
 `POST /internal/containers/{container_id}/snapshots/allocate` (`src/cloud/snapshot_handlers.py`)
-- `snapshot_job` (`browseterm_workload`, not yet wired to call this - see P17) will use this to
-  allocate a `container_snapshots` row (P15) for a save attempt. Same trusted-SYSTEM-caller
-  pattern as P09/P14. Reuses an existing `(container_id, request_id)` row verbatim if one exists
-  (idempotent retry), else reads/increments `containers.next_snapshot_sequence` (a plain
-  increment - the plan explicitly tolerates version-number gaps after crashes) and creates a new
-  `Pending` row. `SNAPSHOT_REGISTRY_REPO_PREFIX` builds the flat, UUID-based `image_repository`.
-  See `~/browseterm/p.md`'s P16 section.
+- `snapshot_job` (`browseterm_workload`) uses this to allocate a `container_snapshots` row (P15)
+  for a save attempt. Same trusted-SYSTEM-caller pattern as P09/P14. Reuses an existing
+  `(container_id, request_id)` row verbatim if one exists (idempotent retry), else reads/
+  increments `containers.next_snapshot_sequence` (a plain increment - the plan explicitly
+  tolerates version-number gaps after crashes) and creates a new `Pending` row.
+  `SNAPSHOT_REGISTRY_REPO_PREFIX` builds the flat, UUID-based `image_repository`. See
+  `~/browseterm/p.md`'s P16 section.
+
+## P17 - snapshot job reports results through Cloud
+
+`POST /internal/containers/{container_id}/snapshots/{snapshot_id}/report`
+(`src/cloud/snapshot_handlers.py`) - `snapshot_job` calls this as it progresses through a save
+attempt (`Running` -> `Succeeded`/`Failed`, with the registry digest on success) instead of
+writing to Postgres directly. Updates BOTH the `container_snapshots` row itself and the owning
+`containers` row's `save_status`/`save_error` (the frontend's SSE feed is driven by `containers`'
+own NOTIFY trigger, not `container_snapshots`). `saved_image`/`last_saved_at` on `containers` are
+only ever set when `status == "Succeeded"` - plan section 13: "On failure, saved_image must
+remain unchanged." See `~/browseterm/p.md`'s P17 section.
 
 ## What's here
 
