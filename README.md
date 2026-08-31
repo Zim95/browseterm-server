@@ -153,6 +153,19 @@ own NOTIFY trigger, not `container_snapshots`). `saved_image`/`last_saved_at` on
 only ever set when `status == "Succeeded"` - plan section 13: "On failure, saved_image must
 remain unchanged." See `~/browseterm/p.md`'s P17 section.
 
+## P18 - reaper's idle-scan and hibernate through Cloud
+
+`GET /internal/devices/{device_id}/containers/idle?idle_threshold_seconds=N` and
+`POST /internal/containers/{container_id}/hibernate` (`src/cloud/container_handlers.py`) -
+`reaper` (`browseterm_workload`) uses these instead of a direct Postgres connection. The idle
+list is scoped to a single `device_id` - "the reaper must operate only on containers whose
+device_id is the current device" (plan section 16). Hibernate is the compound transition plan
+section 14 describes: `status=HIBERNATED`, `device_id=NULL`, and the container's device resource
+reservation released (reusing the same `_release_device_resources` helper `delete_container`
+uses) - reaper only calls this after it has itself confirmed the save this hibernate is based on
+actually succeeded; this endpoint has no save-confirmation logic of its own. See
+`~/browseterm/p.md`'s P18 section.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API

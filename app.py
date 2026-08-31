@@ -49,7 +49,9 @@ from src.cloud.container_handlers import (
     create_container,
     delete_container,
     get_container,
+    hibernate_container,
     list_containers,
+    list_idle_containers,
     list_images,
     list_subscription_types,
     reconcile_device_resources,
@@ -133,6 +135,14 @@ app.add_api_route(
 app.add_api_route(
     path="/internal/containers/{container_id}/snapshots/{snapshot_id}/report",
     endpoint=report_snapshot_result, methods=["POST"],
+)
+# P18 - reaper finds its own device's idle containers and performs the hibernate transition
+# through these instead of a direct Postgres connection.
+app.add_api_route(
+    path="/internal/devices/{device_id}/containers/idle", endpoint=list_idle_containers, methods=["GET"]
+)
+app.add_api_route(
+    path="/internal/containers/{container_id}/hibernate", endpoint=hibernate_container, methods=["POST"]
 )
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])

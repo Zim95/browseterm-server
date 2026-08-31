@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi import Request
 
+from browseterm_db.models.containers import ContainerStatus
 from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations import OperationResult
 import src.cloud.container_handlers as container_handlers
@@ -569,6 +570,112 @@ class TestReconcileDeviceResources(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         import json
         self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
+
+
+class TestListIdleContainers(unittest.TestCase):
+    '''P18: GET /internal/devices/{device_id}/containers/idle.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(
+            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "1800"}, headers={},
+        )
+        result = asyncio.run(container_handlers.list_idle_containers(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_threshold_rejected(self):
+        request = _mock_request(path_params={"device_id": "device-a"}, query_params={})
+        result = asyncio.run(container_handlers.list_idle_containers(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_non_integer_threshold_rejected(self):
+        request = _mock_request(
+            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "not-a-number"},
+        )
+        result = asyncio.run(container_handlers.list_idle_containers(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_scopes_query_to_the_given_device(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_idle_containers.return_value = OperationResult(success=True, data=[_container_row()])
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "1800"},
+        )
+        result = asyncio.run(container_handlers.list_idle_containers(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.find_idle_containers.assert_called_once_with(1800, "device-a")
+
+
+class TestHibernateContainer(unittest.TestCase):
+    '''P18: POST /internal/containers/{container_id}/hibernate.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, headers={})
+        result = asyncio.run(container_handlers.hibernate_container(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_unknown_container_404s(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.hibernate_container(request))
+        self.assertEqual(result.status_code, 404)
+        mock_ops.update.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_sets_hibernated_clears_device_id_and_releases_resources(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            device_id=DEVICE_A, cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+        ))
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(
+            success=True,
+            data=_device_row(used_cpu=1, used_memory_bytes=1024 ** 3, used_storage_bytes=2 * 1024 ** 3),
+        )
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.hibernate_container(request))
+        self.assertEqual(result.status_code, 200)
+
+        update_filters, update_data = mock_ops.update.call_args.args
+        self.assertEqual(update_filters, {"id": CONTAINER_A})
+        self.assertEqual(update_data["status"], ContainerStatus.HIBERNATED)
+        self.assertIsNone(update_data["device_id"])
+
+        release_filters, release_data = mock_device_ops.update.call_args.args
+        self.assertEqual(release_filters, {"id": DEVICE_A, "user_id": USER_A})
+        self.assertEqual(release_data, {"used_cpu": 0, "used_memory_bytes": 0, "used_storage_bytes": 0})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_update_failure_returns_500(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
+        mock_ops.update.return_value = OperationResult(success=False, error="db down")
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.hibernate_container(request))
+        self.assertEqual(result.status_code, 500)
 
 
 if __name__ == "__main__":

@@ -389,6 +389,78 @@ async def update_container_status(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error updating container status"}, status_code=500)
 
 
+async def list_idle_containers(request: Request) -> JSONResponse:
+    '''
+    GET /internal/devices/{device_id}/containers/idle?idle_threshold_seconds=N
+
+    P18 (see ~/browseterm/p.md's "P18" section, plan section 16) - `reaper` (browseterm_workload)
+    uses this to find its own device's RUNNING-but-idle containers instead of querying Postgres
+    directly. Same trusted-SYSTEM-caller pattern as P09/P14 (no user_id) - device_id is the
+    scoping key here, not user_id, matching the plan's explicit instruction that the reaper "must
+    operate only on containers whose device_id is the current device."
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        device_id = request.path_params["device_id"]
+        idle_threshold_seconds = request.query_params.get("idle_threshold_seconds")
+        if not idle_threshold_seconds:
+            return JSONResponse(content={"error": "idle_threshold_seconds is required"}, status_code=400)
+        try:
+            idle_threshold_seconds = int(idle_threshold_seconds)
+        except ValueError:
+            return JSONResponse(content={"error": "idle_threshold_seconds must be an integer"}, status_code=400)
+
+        ops = ContainerOps(DB_CONFIG)
+        result = await asyncio.to_thread(ops.find_idle_containers, idle_threshold_seconds, device_id)
+        if not result.success:
+            logger.error("list idle containers failed", extra={"error": result.error})
+            return JSONResponse(content={"error": "Error listing idle containers"}, status_code=500)
+        return JSONResponse(content={"containers": result.data})
+    except Exception:
+        logger.error("list idle containers failed", exc_info=True)
+        return JSONResponse(content={"error": "Error listing idle containers"}, status_code=500)
+
+
+async def hibernate_container(request: Request) -> JSONResponse:
+    '''
+    POST /internal/containers/{container_id}/hibernate
+
+    P18: the compound hibernate transition (plan section 14) - "After successful hibernate:
+    device_id = NULL, release device usage." Same trusted-SYSTEM-caller pattern as the routes
+    above; `reaper` calls this only AFTER it has itself confirmed (via the save-status polling
+    it already does against the user-scoped container API, whose user_id it already knows from
+    the row `list_idle_containers` returned) that the save this hibernate is based on actually
+    succeeded - this endpoint has no save-confirmation logic of its own, it only performs the
+    state transition once the caller has already decided it's safe to.
+
+    Sets status=HIBERNATED and device_id=NULL, then releases the container's device resource
+    reservation (reusing `_release_device_resources`, same helper `delete_container` uses) based
+    on the container's device_id/limits as they were BEFORE this update.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        container_id = request.path_params["container_id"]
+        ops = ContainerOps(DB_CONFIG)
+        existing = await asyncio.to_thread(ops.find_one, {"id": container_id})
+        if not existing.data:
+            return _not_found()
+
+        result = await asyncio.to_thread(
+            ops.update, {"id": container_id}, {"status": ContainerStatus.HIBERNATED, "device_id": None}
+        )
+        if not result.success:
+            logger.error("hibernate failed", extra={"container_id": container_id, "error": result.error})
+            return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
+
+        await _release_device_resources(existing.data)
+        return JSONResponse(content={"ok": True})
+    except Exception:
+        logger.error("hibernate failed", exc_info=True)
+        return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
+
+
 async def reconcile_device_resources(request: Request) -> JSONResponse:
     '''
     POST /internal/devices/resources/reconcile
