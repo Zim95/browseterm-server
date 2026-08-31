@@ -166,6 +166,21 @@ uses) - reaper only calls this after it has itself confirmed the save this hiber
 actually succeeded; this endpoint has no save-confirmation logic of its own. See
 `~/browseterm/p.md`'s P18 section.
 
+## P19 - cross-device resume
+
+`POST /containers/{container_id}/resume` (`src/cloud/container_handlers.py`) - only a
+`HIBERNATED` container can resume, enforced via a conditional (CAS) update on
+`expected_status=HIBERNATED` (same pattern as P09's `update_container_status`) so two concurrent
+resume attempts can never both win - "Cloud checks container not active elsewhere" / "only one
+active mutable runtime per workspace in V1" (plan section 15). `device_id` is optional, same
+auto-resolve-to-active-device pattern as `create_container` (P13). Validates/reserves the
+resuming device's capacity using the container's own already-stored resource limits (resume never
+changes a container's size), same reserve-then-write ordering and release-on-failure safety net
+as `create_container` - including releasing the reservation if this handler's own CAS loses the
+race. Local performs the actual pod start after this returns; on a pod-start failure it calls the
+existing P18 `POST /internal/containers/{id}/hibernate` to roll back, so no separate rollback
+endpoint was needed. See `~/browseterm/p.md`'s P19 section.
+
 ## What's here
 
 - `app.py` - FastAPI entrypoint: `GET /healthz`, OAuth (above), the Device Cloud API

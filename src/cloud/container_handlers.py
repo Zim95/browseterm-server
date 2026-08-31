@@ -219,6 +219,138 @@ async def create_container(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error creating container"}, status_code=500)
 
 
+async def resume_container(request: Request) -> JSONResponse:
+    '''
+    POST /containers/{container_id}/resume - body must include user_id (Local-trusted).
+    device_id is optional, same auto-resolve-to-active-device pattern as create_container (P13).
+
+    P19 (see ~/browseterm/p.md's "P19" section, plan section 15): the cross-device resume
+    transition. Only a `HIBERNATED` container can resume - enforced via a conditional (CAS)
+    update (`expected_status=HIBERNATED`, same pattern P09's `update_container_status`
+    established): the UPDATE's own WHERE clause only matches a row that's still `HIBERNATED` at
+    the instant it runs, and Postgres serializes concurrent UPDATEs to the same row, so two
+    concurrent resume attempts for the same container can never both win - this is the plan's
+    "Cloud checks container not active elsewhere" / "only one active mutable runtime per
+    workspace in V1". `ContainerOps.update()` reports success even when zero rows matched (the
+    same "filter didn't match = success, not error" semantic P09 preserves elsewhere), so the
+    actual outcome is confirmed by re-reading the row afterward, not by trusting `.success` alone.
+
+    Validates/reserves the resuming device's capacity using the container's own already-stored
+    resource limits (resume never changes a container's size, so nothing new is requested) -
+    same reserve-then-write ordering and release-on-failure safety net as create_container.
+
+    Local performs the actual ContainerMaker pod start after this returns 200; on a pod-start
+    failure, Local is expected to call the existing `POST /containers/{id}/hibernate` (P18) to
+    roll back - that already does exactly the right thing (clears device_id, releases the
+    reservation, sets HIBERNATED), so no separate rollback endpoint is needed here.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        container_id = request.path_params["container_id"]
+        body = await request.json()
+        user_id = body.get("user_id")
+        if not user_id:
+            return JSONResponse(content={"error": "user_id is required"}, status_code=400)
+        device_id = body.get("device_id")
+
+        ops = ContainerOps(DB_CONFIG)
+        existing = await asyncio.to_thread(ops.find_one, {"id": container_id, "user_id": user_id})
+        if not existing.data:
+            return _not_found()
+        container = existing.data
+        if container["status"] != ContainerStatus.HIBERNATED.value:
+            return JSONResponse(content={"error": "Container is not hibernated"}, status_code=409)
+
+        try:
+            requested_cpu = parse_cpu_cores(container["cpu_limit"])
+            requested_memory = parse_memory_bytes(container["memory_limit"])
+            requested_storage = parse_memory_bytes(container["storage_limit"])
+        except InvalidQuantityError as e:
+            return JSONResponse(content={"error": str(e)}, status_code=400)
+
+        device_ops = DeviceOps(DB_CONFIG)
+        if device_id:
+            device_result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+            if not device_result.data:
+                return JSONResponse(content={"error": "Device not found"}, status_code=404)
+            device = device_result.data
+            if device["status"] != DeviceStatus.ACTIVE.value:
+                return JSONResponse(content={"error": "Device is not active"}, status_code=400)
+        else:
+            active_result = await asyncio.to_thread(
+                device_ops.find_one, {"user_id": user_id, "status": DeviceStatus.ACTIVE}
+            )
+            if not active_result.data:
+                return JSONResponse(
+                    content={"error": "No active device registered for this user"}, status_code=400
+                )
+            device = active_result.data
+            device_id = device["id"]
+
+        available_cpu, available_memory, available_storage = _device_available(device)
+        resource_errors = []
+        if requested_cpu > available_cpu:
+            resource_errors.append("cpu_limit exceeds this device's available capacity")
+        if requested_memory > available_memory:
+            resource_errors.append("memory_limit exceeds this device's available capacity")
+        if requested_storage > available_storage:
+            resource_errors.append("storage_limit exceeds this device's available capacity")
+        if resource_errors:
+            return JSONResponse(content={"error": resource_errors}, status_code=400)
+
+        # Reserve usage before the CAS transition (see docstring for why this ordering).
+        reserve_result = await asyncio.to_thread(
+            device_ops.update,
+            {"id": device_id, "user_id": user_id},
+            {
+                "used_cpu": device["used_cpu"] + requested_cpu,
+                "used_memory_bytes": device["used_memory_bytes"] + requested_memory,
+                "used_storage_bytes": device["used_storage_bytes"] + requested_storage,
+            },
+        )
+        if not reserve_result.success:
+            logger.error("resource reservation failed", extra={"error": reserve_result.error})
+            return JSONResponse(content={"error": "Error reserving device resources"}, status_code=500)
+
+        async def _release_reservation() -> None:
+            await asyncio.to_thread(
+                device_ops.update,
+                {"id": device_id, "user_id": user_id},
+                {
+                    "used_cpu": device["used_cpu"],
+                    "used_memory_bytes": device["used_memory_bytes"],
+                    "used_storage_bytes": device["used_storage_bytes"],
+                },
+            )
+
+        cas_result = await asyncio.to_thread(
+            ops.update,
+            {"id": container_id, "user_id": user_id, "status": ContainerStatus.HIBERNATED},
+            {"device_id": device_id, "status": ContainerStatus.RESUMING},
+        )
+        if not cas_result.success:
+            logger.error("resume update failed", extra={"error": cas_result.error})
+            await _release_reservation()
+            return JSONResponse(content={"error": "Error resuming container"}, status_code=500)
+
+        updated = await asyncio.to_thread(ops.find_one, {"id": container_id, "user_id": user_id})
+        if (
+            not updated.data
+            or updated.data["status"] != ContainerStatus.RESUMING.value
+            or updated.data["device_id"] != device_id
+        ):
+            # Lost the CAS race - some other request already resumed/changed this container
+            # first. Give the reservation back; the caller never got a runtime out of this.
+            await _release_reservation()
+            return JSONResponse(content={"error": "Container is not hibernated"}, status_code=409)
+
+        return JSONResponse(content={"container": updated.data})
+    except Exception:
+        logger.error("resume failed", exc_info=True)
+        return JSONResponse(content={"error": "Error resuming container"}, status_code=500)
+
+
 async def get_container(request: Request) -> JSONResponse:
     '''GET /containers/{container_id}?user_id=...'''
     if not _internal_auth_ok(request):

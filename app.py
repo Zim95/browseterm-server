@@ -55,6 +55,7 @@ from src.cloud.container_handlers import (
     list_images,
     list_subscription_types,
     reconcile_device_resources,
+    resume_container,
     update_container,
     update_container_status,
 )
@@ -114,6 +115,10 @@ app.add_api_route(path="/containers", endpoint=list_containers, methods=["GET"])
 app.add_api_route(path="/containers/{container_id}", endpoint=get_container, methods=["GET"])
 app.add_api_route(path="/containers/{container_id}", endpoint=update_container, methods=["POST"])
 app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_container, methods=["POST"])
+# P19 - cross-device resume: validates/reserves the resuming device's capacity and atomically
+# (CAS on expected_status=HIBERNATED) transitions device_id/status. See resume_container's
+# docstring for the full design.
+app.add_api_route(path="/containers/{container_id}/resume", endpoint=resume_container, methods=["POST"])
 
 # Internal system API (P09) - trusted cluster-wide callers (status_monitor) with no user_id of
 # their own, unlike the user-scoped /containers/* routes above. Same internal-token auth.

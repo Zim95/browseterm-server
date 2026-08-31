@@ -252,6 +252,153 @@ class TestCreateContainer(unittest.TestCase):
         self.assertEqual(release_data, {"used_cpu": 0, "used_memory_bytes": 0, "used_storage_bytes": 0})
 
 
+class TestResumeContainer(unittest.TestCase):
+    '''P19: cross-device resume.'''
+
+    def _request(self, body: dict) -> MagicMock:
+        return _mock_request(body, path_params={"container_id": CONTAINER_A})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request({"user_id": USER_A}, path_params={"container_id": CONTAINER_A}, headers={})
+        result = asyncio.run(container_handlers.resume_container(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_unknown_container_404s(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+
+        result = asyncio.run(container_handlers.resume_container(self._request({"user_id": USER_A})))
+        self.assertEqual(result.status_code, 404)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_non_hibernated_container_rejected(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(status="Running"))
+        mock_container_ops_cls.return_value = mock_ops
+
+        result = asyncio.run(container_handlers.resume_container(self._request({"user_id": USER_A})))
+        self.assertEqual(result.status_code, 409)
+        mock_ops.update.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_successful_resume_reserves_and_transitions(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_container_row(
+                status="Hibernated", cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi", device_id=None,
+            )),
+            OperationResult(success=True, data=_container_row(status="Resuming", device_id=DEVICE_A)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        result = asyncio.run(container_handlers.resume_container(
+            self._request({"user_id": USER_A, "device_id": DEVICE_A})
+        ))
+        self.assertEqual(result.status_code, 200)
+
+        reserve_filters, reserve_data = mock_device_ops.update.call_args_list[0].args
+        self.assertEqual(reserve_filters, {"id": DEVICE_A, "user_id": USER_A})
+        self.assertEqual(reserve_data, {"used_cpu": 1, "used_memory_bytes": 1024 ** 3, "used_storage_bytes": 2 * 1024 ** 3})
+
+        cas_filters, cas_data = mock_ops.update.call_args.args
+        self.assertEqual(cas_filters, {"id": CONTAINER_A, "user_id": USER_A, "status": ContainerStatus.HIBERNATED})
+        self.assertEqual(cas_data, {"device_id": DEVICE_A, "status": ContainerStatus.RESUMING})
+        # Only reserved once - no release call, since the CAS actually won.
+        self.assertEqual(mock_device_ops.update.call_count, 1)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_lost_cas_race_releases_reservation(self, mock_container_ops_cls, mock_device_ops_cls):
+        '''Another request already won the resume race between this handler's own read and
+        write - the reservation this call made must be given back.'''
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_container_row(
+                status="Hibernated", cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi", device_id=None,
+            )),
+            # Re-fetch shows someone else already resumed it onto a DIFFERENT device.
+            OperationResult(success=True, data=_container_row(status="Resuming", device_id="some-other-device")),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        result = asyncio.run(container_handlers.resume_container(
+            self._request({"user_id": USER_A, "device_id": DEVICE_A})
+        ))
+        self.assertEqual(result.status_code, 409)
+
+        # Reserved, then released back - net zero.
+        self.assertEqual(mock_device_ops.update.call_count, 2)
+        release_filters, release_data = mock_device_ops.update.call_args_list[1].args
+        self.assertEqual(release_filters, {"id": DEVICE_A, "user_id": USER_A})
+        self.assertEqual(release_data, {"used_cpu": 0, "used_memory_bytes": 0, "used_storage_bytes": 0})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_over_capacity_device_rejected_before_any_reservation(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            status="Hibernated", cpu_limit="5", memory_limit="1Gi", storage_limit="2Gi",
+        ))
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(
+            success=True, data=_device_row(allocated_cpu=1, used_cpu=1),
+        )
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        result = asyncio.run(container_handlers.resume_container(
+            self._request({"user_id": USER_A, "device_id": DEVICE_A})
+        ))
+        self.assertEqual(result.status_code, 400)
+        mock_device_ops.update.assert_not_called()
+        mock_ops.update.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_omitted_device_id_resolves_active_device(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_container_row(
+                status="Hibernated", cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi", device_id=None,
+            )),
+            OperationResult(success=True, data=_container_row(status="Resuming", device_id=DEVICE_A)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        result = asyncio.run(container_handlers.resume_container(self._request({"user_id": USER_A})))
+        self.assertEqual(result.status_code, 200)
+        mock_device_ops.find_one.assert_called_once_with({"user_id": USER_A, "status": DeviceStatus.ACTIVE})
+
+
 class TestGetContainerOwnership(unittest.TestCase):
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
