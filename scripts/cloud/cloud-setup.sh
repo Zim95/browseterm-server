@@ -11,7 +11,7 @@
 
 # Check if enough arguments are provided
 if [ $# -lt 11 ]; then
-    echo "Usage: $0 <namespace> <repo-name> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <auth-redirect-base-uri> <local-callback-url> <allowed-hosts> <cloud-ingress-host> [postgres-host] [postgres-port] [snapshot-registry-repo-prefix]"
+    echo "Usage: $0 <namespace> <repo-name> <redis-host> <redis-port> <redis-password> <redis-username> <redis-db> <auth-redirect-base-uri> <local-callback-url> <allowed-hosts> <cloud-ingress-host> [postgres-host] [postgres-port] [snapshot-registry-repo-prefix] [expected-kube-context]"
     exit 1
 fi
 
@@ -33,6 +33,21 @@ POSTGRES_PORT=${13:-5432}
 # comment at this env var. Defaults to "browseterm" (matching src/common/config.py's own
 # default and the actual Docker Hub org created for this), but overridable per-deployment.
 SNAPSHOT_REGISTRY_REPO_PREFIX=${14:-browseterm}
+# P23 (~/browseterm/p.md's "P23" section, plan section 22: "Every script checks kube context
+# before applying"): this project runs two separate k3d clusters (Cloud/Local) reachable from
+# the same host - applying against the wrong one is a real, previously-unguarded mistake class
+# (this exact script's own manifest change caused a live incident during P20 for an unrelated
+# reason - a context guard wouldn't have caught THAT bug, but it closes off a different, real
+# way to apply the wrong thing to the wrong cluster). Optional (empty = no check) so this
+# doesn't break an existing call site not yet passing it.
+EXPECTED_KUBE_CONTEXT=${15:-}
+if [ -n "$EXPECTED_KUBE_CONTEXT" ]; then
+    ACTUAL_KUBE_CONTEXT=$(kubectl config current-context)
+    if [ "$ACTUAL_KUBE_CONTEXT" != "$EXPECTED_KUBE_CONTEXT" ]; then
+        echo "ERROR: current kube context is '$ACTUAL_KUBE_CONTEXT', expected '$EXPECTED_KUBE_CONTEXT'. Aborting." >&2
+        exit 1
+    fi
+fi
 
 export NAMESPACE=$NAMESPACE
 export REPO_NAME=$REPO_NAME

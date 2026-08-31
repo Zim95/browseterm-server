@@ -20,7 +20,8 @@ setup:
 		"$(CLOUD_INGRESS_HOST)" \
 		"$(POSTGRES_HOST)" \
 		"$(POSTGRES_PORT)" \
-		"$(SNAPSHOT_REGISTRY_REPO_PREFIX)"
+		"$(SNAPSHOT_REGISTRY_REPO_PREFIX)" \
+		"$(EXPECTED_KUBE_CONTEXT)"
 
 teardown:
 	./scripts/cloud/cloud-teardown.sh $(NAMESPACE)
