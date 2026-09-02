@@ -825,5 +825,158 @@ class TestHibernateContainer(unittest.TestCase):
         self.assertEqual(result.status_code, 500)
 
 
+class TestGetContainerInternal(unittest.TestCase):
+    '''container-maker's off-direct-Postgres migration: GET /internal/containers/{container_id}
+    (no user_id scoping - same trusted-SYSTEM-caller pattern as hibernate/status).'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, headers={})
+        result = asyncio.run(container_handlers.get_container_internal(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_unknown_container_404s(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.get_container_internal(request))
+        self.assertEqual(result.status_code, 404)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_found_container_returned_unscoped_by_user(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.get_container_internal(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["container"]["id"], CONTAINER_A)
+        mock_ops.find_one.assert_called_once_with({"id": CONTAINER_A})
+
+
+class TestUpdateContainerInternal(unittest.TestCase):
+    '''container-maker's off-direct-Postgres migration: POST /internal/containers/{container_id}
+    - a strict field whitelist (kubernetes_id/save_status/save_error only), not a passthrough of
+    the request body like the user-scoped update_container.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, headers={})
+        result = asyncio.run(container_handlers.update_container_internal(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_self_heal_updates_only_kubernetes_id(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            path_params={"container_id": CONTAINER_A}, body={"kubernetes_id": "new-pod-uid"}
+        )
+        result = asyncio.run(container_handlers.update_container_internal(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"kubernetes_id": "new-pod-uid"})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_reconciler_updates_save_status_and_error(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            path_params={"container_id": CONTAINER_A},
+            body={"save_status": "Failed", "save_error": "job disappeared"},
+        )
+        result = asyncio.run(container_handlers.update_container_internal(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_called_once_with(
+            {"id": CONTAINER_A}, {"save_status": "Failed", "save_error": "job disappeared"}
+        )
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_disallowed_fields_are_stripped_not_applied(self, mock_container_ops_cls):
+        '''A caller trying to sneak status/device_id through this endpoint must be ignored - those
+        have their own dedicated, more carefully-guarded endpoints.'''
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(
+            path_params={"container_id": CONTAINER_A},
+            body={"kubernetes_id": "new-pod-uid", "status": "Deleted", "device_id": "sneaky"},
+        )
+        asyncio.run(container_handlers.update_container_internal(request))
+        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"kubernetes_id": "new-pod-uid"})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_no_updatable_fields_is_400(self):
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, body={"status": "Deleted"})
+        result = asyncio.run(container_handlers.update_container_internal(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_update_failure_returns_500(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.update.return_value = OperationResult(success=False, error="db down")
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, body={"kubernetes_id": "x"})
+        result = asyncio.run(container_handlers.update_container_internal(request))
+        self.assertEqual(result.status_code, 500)
+
+
+class TestListStuckSaves(unittest.TestCase):
+    '''container-maker's save_reconciler off-direct-Postgres migration:
+    GET /internal/containers/stuck-saves.'''
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(headers={})
+        result = asyncio.run(container_handlers.list_stuck_saves(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_returns_rows_across_all_users(self, mock_container_ops_cls):
+        rows = [
+            _container_row(id="c1", user_id="user-a", save_status="Pending"),
+            _container_row(id="c2", user_id="user-b", save_status="Running"),
+        ]
+        mock_ops = MagicMock()
+        mock_ops.find_stuck_saves.return_value = OperationResult(success=True, data=rows)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request()
+        result = asyncio.run(container_handlers.list_stuck_saves(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        body = json.loads(result.body)
+        self.assertEqual(len(body["containers"]), 2)
+        self.assertEqual({c["user_id"] for c in body["containers"]}, {"user-a", "user-b"})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_query_failure_returns_500(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_stuck_saves.return_value = OperationResult(success=False, error="db down")
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request()
+        result = asyncio.run(container_handlers.list_stuck_saves(request))
+        self.assertEqual(result.status_code, 500)
+
+
 if __name__ == "__main__":
     unittest.main()

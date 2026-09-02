@@ -593,6 +593,93 @@ async def hibernate_container(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
 
 
+async def get_container_internal(request: Request) -> JSONResponse:
+    '''
+    GET /internal/containers/{container_id}
+
+    Migrates container-maker off its former direct `ContainerOps.find_one({"id": ...})` call
+    (containers.py's save() self-heal path - see p.md's writeup on this migration). Same
+    trusted-SYSTEM-caller pattern as every other /internal/containers/* route: container-maker's
+    own id-only lookup (no user_id at all) was already effectively unscoped by user before this
+    migration, so this endpoint doesn't newly grant anything it didn't already have.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        container_id = request.path_params["container_id"]
+        ops = ContainerOps(DB_CONFIG)
+        result = await asyncio.to_thread(ops.find_one, {"id": container_id})
+        if not result.data:
+            return _not_found()
+        return JSONResponse(content={"container": result.data})
+    except Exception:
+        logger.error("get container (internal) failed", exc_info=True)
+        return JSONResponse(content={"error": "Error getting container"}, status_code=500)
+
+
+# Fields container-maker is actually allowed to touch through update_container_internal - not a
+# passthrough of the whole request body, so this endpoint can't be used to move status/device_id/
+# anything else a SYSTEM caller shouldn't unilaterally change outside the dedicated endpoints
+# (update_container_status, hibernate_container) that already exist for those.
+_INTERNAL_UPDATABLE_FIELDS = {"kubernetes_id", "save_status", "save_error"}
+
+
+async def update_container_internal(request: Request) -> JSONResponse:
+    '''
+    POST /internal/containers/{container_id}
+
+    Migrates container-maker off two former direct `ContainerOps.update()` calls:
+    - containers.py's save() self-heal (`kubernetes_id` only, when the DB's stored pod uid has
+      drifted from the pod's real current one).
+    - save_reconciler.py's `_mark_failed` (`save_status`/`save_error`, when a save's own snapshot
+      Job died without ever recording its own failure - see save_reconciler.py's module
+      docstring for why this exists).
+    Deliberately whitelists ONLY those fields (see _INTERNAL_UPDATABLE_FIELDS) rather than
+    accepting an arbitrary body, unlike the user-scoped update_container above.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        container_id = request.path_params["container_id"]
+        body = await request.json()
+        data = {k: v for k, v in body.items() if k in _INTERNAL_UPDATABLE_FIELDS}
+        if not data:
+            return JSONResponse(content={"error": "No updatable fields provided"}, status_code=400)
+
+        ops = ContainerOps(DB_CONFIG)
+        result = await asyncio.to_thread(ops.update, {"id": container_id}, data)
+        if not result.success:
+            logger.error("update container (internal) failed", extra={"container_id": container_id, "error": result.error})
+            return JSONResponse(content={"error": "Error updating container"}, status_code=500)
+        return JSONResponse(content={"ok": True})
+    except Exception:
+        logger.error("update container (internal) failed", exc_info=True)
+        return JSONResponse(content={"error": "Error updating container"}, status_code=500)
+
+
+async def list_stuck_saves(request: Request) -> JSONResponse:
+    '''
+    GET /internal/containers/stuck-saves
+
+    Migrates container-maker's save_reconciler off its former direct
+    `ContainerOps.find_stuck_saves()` call - containers whose save_status is currently Pending or
+    Running, across ALL users (a cluster-wide sweep, matching this route's trusted-SYSTEM-caller
+    scoping - see save_reconciler.py's own module docstring for what it does with these rows).
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        ops = ContainerOps(DB_CONFIG)
+        result = await asyncio.to_thread(ops.find_stuck_saves)
+        if not result.success:
+            logger.error("list stuck saves failed", extra={"error": result.error})
+            return JSONResponse(content={"error": "Error listing stuck saves"}, status_code=500)
+        return JSONResponse(content={"containers": result.data})
+    except Exception:
+        logger.error("list stuck saves failed", exc_info=True)
+        return JSONResponse(content={"error": "Error listing stuck saves"}, status_code=500)
+
+
 async def reconcile_device_resources(request: Request) -> JSONResponse:
     '''
     POST /internal/devices/resources/reconcile

@@ -49,14 +49,17 @@ from src.cloud.container_handlers import (
     create_container,
     delete_container,
     get_container,
+    get_container_internal,
     hibernate_container,
     list_containers,
     list_idle_containers,
     list_images,
+    list_stuck_saves,
     list_subscription_types,
     reconcile_device_resources,
     resume_container,
     update_container,
+    update_container_internal,
     update_container_status,
 )
 from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result
@@ -149,6 +152,13 @@ app.add_api_route(
 app.add_api_route(
     path="/internal/containers/{container_id}/hibernate", endpoint=hibernate_container, methods=["POST"]
 )
+# container-maker's off-direct-Postgres migration (see p.md's writeup): self-heal of a drifted
+# kubernetes_id, and the save reconciler's stuck-save sweep/mark-failed. The literal
+# /stuck-saves route MUST be registered before the {container_id} routes below it, or Starlette
+# would match "stuck-saves" as a container_id value instead.
+app.add_api_route(path="/internal/containers/stuck-saves", endpoint=list_stuck_saves, methods=["GET"])
+app.add_api_route(path="/internal/containers/{container_id}", endpoint=get_container_internal, methods=["GET"])
+app.add_api_route(path="/internal/containers/{container_id}", endpoint=update_container_internal, methods=["POST"])
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
 app.add_api_route(path="/subscriptions/current", endpoint=get_current_subscription, methods=["GET"])
