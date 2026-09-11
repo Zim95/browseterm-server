@@ -84,3 +84,34 @@ class TestCloudConfigResolvesRedis(TestCase):
         }
         exported = set(cloud_config.__all__)
         self.assertTrue(exported.isdisjoint(local_only_names), exported & local_only_names)
+
+
+class TestCorsAllowedOriginsIsNeverWildcardByDefault(TestCase):
+    '''A real regression: CORSMiddleware applies to the whole app, not just the one SSE route
+    that actually needs a browser-facing origin allowed (see app.py's own comment). A wildcard
+    default here would silently re-open every endpoint on Cloud to cross-origin reads from any
+    site on the internet, not just browseterm.local.com - these tests exist so that mistake can't
+    land again without a test failing.'''
+
+    def test_default_is_derived_from_the_local_callback_url_not_a_wildcard(self) -> None:
+        code = (
+            "from src.common.config import BROWSETERM_CORS_ALLOWED_ORIGINS\n"
+            "assert BROWSETERM_CORS_ALLOWED_ORIGINS == ['http://browseterm.local.com'], "
+            "BROWSETERM_CORS_ALLOWED_ORIGINS\n"
+            "assert '*' not in BROWSETERM_CORS_ALLOWED_ORIGINS\n"
+            "print('OK')\n"
+        )
+        result = _run(code, {"BROWSETERM_LOCAL_CALLBACK_URL": "http://browseterm.local.com/auth/callback"})
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("OK", result.stdout)
+
+    def test_explicit_override_is_respected(self) -> None:
+        code = (
+            "from src.common.config import BROWSETERM_CORS_ALLOWED_ORIGINS\n"
+            "assert BROWSETERM_CORS_ALLOWED_ORIGINS == ['https://example.com', 'https://other.example.com'], "
+            "BROWSETERM_CORS_ALLOWED_ORIGINS\n"
+            "print('OK')\n"
+        )
+        result = _run(code, {"BROWSETERM_CORS_ALLOWED_ORIGINS": "https://example.com,https://other.example.com"})
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertIn("OK", result.stdout)

@@ -8,6 +8,11 @@ src.common.config, and the redirect_uri they present to the provider is Cloud's 
 /auth/<provider>/callback (src.common.config.GOOGLE_AUTH_REDIRECT_URI /
 GITHUB_AUTH_REDIRECT_URI), never a Local or Desktop URL - see p07.md section 5. Local no longer
 has any copy of this code (p07.md section 38/39 - provider secrets must not exist client-side).
+
+Also holds `GoogleDeviceAuthService` (below), the OAuth Device Authorization Grant (RFC 8628)
+counterpart used by Desktop's login flow so it never needs Local reachable to authenticate a
+user - see the device-auth follow-up to p07.md. Same "Desktop never holds a provider secret"
+principle applies: this class's GOOGLE_DEVICE_CLIENT_ID/SECRET never leave Cloud.
 '''
 from abc import abstractmethod
 from typing import Optional
@@ -17,8 +22,9 @@ import httpx
 from src.common.config import (
     GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_AUTH_REDIRECT_URI, GOOGLE_ACCESS_TOKEN_URL, GOOGLE_USER_INFO_URL,
     GOOGLE_TOKEN_EXCHANGE_HEADERS,
+    GOOGLE_DEVICE_CLIENT_ID, GOOGLE_DEVICE_CLIENT_SECRET, GOOGLE_DEVICE_AUTHORIZATION_URL, GOOGLE_DEVICE_SCOPE,
     GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, GITHUB_AUTH_REDIRECT_URI, GITHUB_ACCESS_TOKEN_URL, GITHUB_USER_INFO_URL,
-    GITHUB_TOKEN_EXCHANGE_HEADERS,
+    GITHUB_TOKEN_EXCHANGE_HEADERS, GITHUB_DEVICE_AUTHORIZATION_URL, GITHUB_AUTH_SCOPE,
 )
 from src.common.logging_setup import get_logger
 
@@ -125,3 +131,120 @@ PROVIDER_AUTH_META_URLS = {
 PROVIDER_SCOPES = {"google": "openid email profile", "github": "user:email user"}
 PROVIDER_CLIENT_IDS = {"google": GOOGLE_CLIENT_ID, "github": GITHUB_CLIENT_ID}
 PROVIDER_REDIRECT_URIS = {"google": GOOGLE_AUTH_REDIRECT_URI, "github": GITHUB_AUTH_REDIRECT_URI}
+
+
+class GoogleDeviceAuthService:
+    '''OAuth Device Authorization Grant (RFC 8628) against Google -- the login path Desktop uses
+    so it never needs Local reachable to authenticate (see the device-auth follow-up to p07.md).
+    Uses the separate GOOGLE_DEVICE_CLIENT_ID/SECRET ("TVs and Limited Input devices" client type;
+    device flow is not available on the "Web application" client GoogleUserInfoService above uses).
+    Desktop never holds this secret -- it only calls Cloud's /auth/device/start and
+    /auth/device/poll (src/cloud/oauth_handlers.py), which are the only callers of this class.
+
+    See GithubDeviceAuthService below for the GitHub counterpart - both providers are wired up in
+    DEVICE_FLOW_SERVICES, though GitHub's will error until its OAuth App has "Enable Device Flow"
+    turned on (a manual console step, tracked separately).
+    '''
+
+    async def start(self) -> Optional[dict]:
+        '''POST to Google's device authorization endpoint. Returns Google's raw response dict
+        (device_code, user_code, verification_url, expires_in, interval) on success, None on any
+        failure -- same "never raise for a routine failure" convention as fetch_user_info above.'''
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GOOGLE_DEVICE_AUTHORIZATION_URL,
+                data={"client_id": GOOGLE_DEVICE_CLIENT_ID, "scope": GOOGLE_DEVICE_SCOPE},
+                headers=GOOGLE_TOKEN_EXCHANGE_HEADERS,
+            )
+            if response.status_code != 200:
+                logger.warning("device authorization start failed", extra={"status_code": response.status_code})
+                return None
+            return response.json()
+
+    async def poll(self, device_code: str) -> dict:
+        '''POST to Google's token endpoint using the device_code grant. Always returns Google's
+        raw JSON response, success or not -- per RFC 8628, a pending/denied/expired poll is a
+        normal (non-200) response with an "error" field, not a transport failure; the caller
+        (src.cloud.oauth_handlers.device_auth_poll) is the one that interprets that field.'''
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GOOGLE_ACCESS_TOKEN_URL,
+                data={
+                    "client_id": GOOGLE_DEVICE_CLIENT_ID,
+                    "client_secret": GOOGLE_DEVICE_CLIENT_SECRET,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                headers=GOOGLE_TOKEN_EXCHANGE_HEADERS,
+            )
+            return response.json()
+
+    async def fetch_user_info(self, access_token: str) -> Optional[UserInfoModel]:
+        '''Same userinfo call/transform GoogleUserInfoService uses, just handed an access token
+        obtained via the device grant instead of the authorization-code grant.'''
+        async with httpx.AsyncClient() as client:
+            user_response = await client.get(
+                GOOGLE_USER_INFO_URL, headers={'Authorization': f'Bearer {access_token}'}
+            )
+            if user_response.status_code != 200:
+                logger.warning("device flow user info API error", extra={"status_code": user_response.status_code})
+                return None
+            return GoogleUserInfoTransformer.transform(user_response.json())
+
+
+class GithubDeviceAuthService:
+    '''OAuth Device Authorization Grant against GitHub - the same RFC 8628 shape as
+    GoogleDeviceAuthService, but reuses the existing GITHUB_CLIENT_ID/SECRET (the authorization-
+    code flow's own OAuth App): GitHub's device flow is a per-app toggle ("Enable Device Flow"),
+    not a separate client type the way Google's is. Its token endpoint also doesn't take a client
+    secret at all (client_id + device_code is enough) - one genuine simplification over Google's
+    flow, not an oversight here.
+
+    Wired up in full so the desktop login UI can offer a GitHub button alongside Google's, but
+    this will fail until the GitHub OAuth App this project's GITHUB_CLIENT_ID belongs to has
+    "Enable Device Flow" turned on in its own settings (a manual console step, tracked separately
+    - see the two-button login follow-up to the device-auth work above). Until then, `start()`
+    gets a real error response from GitHub (e.g. a "device flow not enabled" error) rather than a
+    device_code, which device_auth_start already turns into a clean 502 for the caller.'''
+
+    async def start(self) -> Optional[dict]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GITHUB_DEVICE_AUTHORIZATION_URL,
+                data={"client_id": GITHUB_CLIENT_ID, "scope": GITHUB_AUTH_SCOPE},
+                headers=GITHUB_TOKEN_EXCHANGE_HEADERS,
+            )
+            body = response.json()
+            if response.status_code != 200 or not body.get("device_code"):
+                logger.warning(
+                    "github device authorization start failed",
+                    extra={"status_code": response.status_code, "error": body.get("error")},
+                )
+                return None
+            return body
+
+    async def poll(self, device_code: str) -> dict:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GITHUB_ACCESS_TOKEN_URL,
+                data={
+                    "client_id": GITHUB_CLIENT_ID,
+                    "device_code": device_code,
+                    "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                },
+                headers=GITHUB_TOKEN_EXCHANGE_HEADERS,
+            )
+            return response.json()
+
+    async def fetch_user_info(self, access_token: str) -> Optional[UserInfoModel]:
+        async with httpx.AsyncClient() as client:
+            user_response = await client.get(
+                GITHUB_USER_INFO_URL, headers={'Authorization': f'Bearer {access_token}'}
+            )
+            if user_response.status_code != 200:
+                logger.warning("device flow user info API error", extra={"status_code": user_response.status_code})
+                return None
+            return GithubUserInfoTransformer.transform(user_response.json())
+
+
+DEVICE_FLOW_SERVICES = {"google": GoogleDeviceAuthService, "github": GithubDeviceAuthService}

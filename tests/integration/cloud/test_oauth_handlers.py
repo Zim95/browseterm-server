@@ -242,5 +242,165 @@ class TestDeviceBootstrapRedeem(unittest.TestCase):
         self.assertEqual(second.status_code, 401)
 
 
+class TestDeviceFlowServices(unittest.TestCase):
+    def test_both_google_and_github_are_registered(self):
+        '''Regression guard: the two-button login UI (Desktop) assumes both keys exist here -- a
+        provider silently missing from this dict would make its button 400 instead of actually
+        attempting (and, for GitHub today, failing against the live API until Device Flow is
+        enabled on its OAuth App - a very different, much more informative failure).'''
+        from src.authentication.provider_oauth_service import DEVICE_FLOW_SERVICES
+        self.assertEqual(set(DEVICE_FLOW_SERVICES.keys()), {"google", "github"})
+
+
+class TestDeviceAuthStart(unittest.TestCase):
+    def test_unsupported_provider_rejected(self):
+        request = _mock_request(body={"provider": "facebook"})
+        result = asyncio.run(oauth_handlers.device_auth_start(request))
+        self.assertEqual(result.status_code, 400)
+
+    def test_github_provider_uses_github_service(self):
+        request = _mock_request(body={"provider": "github"})
+        with patch("src.cloud.oauth_handlers.DEVICE_FLOW_SERVICES") as mock_services:
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock(return_value={
+                "device_code": "dc1", "user_code": "WXYZ-9876", "verification_uri": "https://github.com/login/device",
+                "expires_in": 900, "interval": 5,
+            })
+            mock_services.__contains__.return_value = True
+            mock_services.__getitem__.return_value = lambda: mock_instance
+            result = asyncio.run(oauth_handlers.device_auth_start(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        payload = json.loads(result.body)
+        self.assertEqual(payload["provider"], "github")
+        self.assertEqual(payload["verification_uri"], "https://github.com/login/device")
+
+    def test_defaults_to_google_when_no_provider_given(self):
+        request = _mock_request(body={})
+        with patch("src.cloud.oauth_handlers.DEVICE_FLOW_SERVICES") as mock_services:
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock(return_value={
+                "device_code": "dc1", "user_code": "ABCD-1234", "verification_url": "https://google.com/device",
+                "expires_in": 1800, "interval": 5,
+            })
+            mock_services.__contains__.return_value = True
+            mock_services.__getitem__.return_value = lambda: mock_instance
+            result = asyncio.run(oauth_handlers.device_auth_start(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        payload = json.loads(result.body)
+        self.assertEqual(payload["provider"], "google")
+        self.assertEqual(payload["verification_uri"], "https://google.com/device")
+
+    def test_provider_failure_returns_502(self):
+        request = _mock_request(body={"provider": "google"})
+        with patch("src.cloud.oauth_handlers.DEVICE_FLOW_SERVICES") as mock_services:
+            mock_instance = MagicMock()
+            mock_instance.start = AsyncMock(return_value=None)
+            mock_services.__contains__.return_value = True
+            mock_services.__getitem__.return_value = lambda: mock_instance
+            result = asyncio.run(oauth_handlers.device_auth_start(request))
+        self.assertEqual(result.status_code, 502)
+
+
+class TestDeviceAuthPoll(unittest.TestCase):
+    _DEVICE_BODY = {
+        "device_name": "macbook", "os": "macOS", "architecture": "arm64",
+        "total_cpu": 8, "total_memory_bytes": 16, "total_storage_bytes": 16,
+        "allocated_cpu": 4, "allocated_memory_bytes": 8, "allocated_storage_bytes": 8,
+    }
+
+    def _patch_service(self, poll_result: dict, user_info=None):
+        mock_instance = MagicMock()
+        mock_instance.poll = AsyncMock(return_value=poll_result)
+        mock_instance.fetch_user_info = AsyncMock(return_value=user_info)
+        patcher = patch("src.cloud.oauth_handlers.DEVICE_FLOW_SERVICES")
+        mock_services = patcher.start()
+        mock_services.__contains__.return_value = True
+        mock_services.__getitem__.return_value = lambda: mock_instance
+        return patcher
+
+    def test_missing_device_code_or_device_rejected(self):
+        request = _mock_request(body={"provider": "google"})
+        result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        self.assertEqual(result.status_code, 400)
+
+    def test_unsupported_provider_rejected(self):
+        request = _mock_request(body={"provider": "facebook", "device_code": "dc1", "device": self._DEVICE_BODY})
+        result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        self.assertEqual(result.status_code, 400)
+
+    def test_authorization_pending_returns_pending_status(self):
+        patcher = self._patch_service({"error": "authorization_pending"})
+        try:
+            request = _mock_request(body={"provider": "google", "device_code": "dc1", "device": self._DEVICE_BODY})
+            result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        finally:
+            patcher.stop()
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["status"], "pending")
+
+    def test_expired_token_returns_expired_status(self):
+        patcher = self._patch_service({"error": "expired_token"})
+        try:
+            request = _mock_request(body={"provider": "google", "device_code": "dc1", "device": self._DEVICE_BODY})
+            result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        finally:
+            patcher.stop()
+        self.assertEqual(result.status_code, 400)
+        import json
+        self.assertEqual(json.loads(result.body)["status"], "expired")
+
+    def test_access_denied_returns_denied_status(self):
+        patcher = self._patch_service({"error": "access_denied"})
+        try:
+            request = _mock_request(body={"provider": "google", "device_code": "dc1", "device": self._DEVICE_BODY})
+            result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        finally:
+            patcher.stop()
+        self.assertEqual(result.status_code, 403)
+        import json
+        self.assertEqual(json.loads(result.body)["status"], "denied")
+
+    def test_success_without_user_info_returns_502(self):
+        patcher = self._patch_service({"access_token": "at1"}, user_info=None)
+        try:
+            request = _mock_request(body={"provider": "google", "device_code": "dc1", "device": self._DEVICE_BODY})
+            result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        finally:
+            patcher.stop()
+        self.assertEqual(result.status_code, 502)
+
+    @patch("src.cloud.oauth_handlers.DeviceTokenManager")
+    @patch("src.cloud.oauth_handlers._register_or_activate", new_callable=AsyncMock)
+    @patch("src.cloud.oauth_handlers.process_user_info", new_callable=AsyncMock)
+    def test_complete_registers_device_and_issues_token(
+        self, mock_process_user_info, mock_register, mock_token_cls
+    ):
+        mock_process_user_info.return_value = SessionResponseModel(
+            session_id="s1", user_info={"id": "u1"}, subscription_info={}, current_subscription_plan={}
+        )
+        mock_register.return_value = {"id": "device-1", "device_name": "macbook"}
+        mock_token_cls.return_value.issue_token.return_value = "bst_device_xyz"
+
+        patcher = self._patch_service({"access_token": "at1"}, user_info=MagicMock())
+        try:
+            request = _mock_request(body={"provider": "google", "device_code": "dc1", "device": self._DEVICE_BODY})
+            result = asyncio.run(oauth_handlers.device_auth_poll(request))
+        finally:
+            patcher.stop()
+
+        self.assertEqual(result.status_code, 200)
+        import json
+        payload = json.loads(result.body)
+        self.assertEqual(payload["status"], "complete")
+        self.assertEqual(payload["device_token"], "bst_device_xyz")
+        self.assertEqual(payload["device"]["id"], "device-1")
+        mock_register.assert_called_once()
+        self.assertEqual(mock_register.call_args.args[0], "u1")  # user_id from process_user_info, not the request
+        mock_token_cls.return_value.issue_token.assert_called_once_with("u1", "device-1", unittest.mock.ANY)
+
+
 if __name__ == "__main__":
     unittest.main()

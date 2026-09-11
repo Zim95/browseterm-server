@@ -29,7 +29,7 @@ from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations.all_operations import DeviceOps
 
 from src.authentication.device_token_manager import DeviceTokenManager
-from src.cloud.config import DB_CONFIG
+from src.cloud.config import CLOUD_INTERNAL_API_TOKEN, DB_CONFIG
 from src.cloud.device_data_models import (
     NON_NULLABLE_UPDATE_FIELDS,
     UPDATABLE_DEVICE_FIELDS,
@@ -52,6 +52,10 @@ def _device_not_found() -> JSONResponse:
 
 def _unauthorized() -> JSONResponse:
     return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+
+
+def _internal_auth_ok(request: Request) -> bool:
+    return request.headers.get("X-Internal-Service-Token") == CLOUD_INTERNAL_API_TOKEN
 
 
 def _serialize_device(device: dict) -> dict:
@@ -306,3 +310,33 @@ async def heartbeat_device(request: Request) -> JSONResponse:
     except Exception:
         logger.error("device heartbeat failed", exc_info=True)
         return JSONResponse(content={"error": "Error updating device heartbeat"}, status_code=500)
+
+
+async def get_active_device_internal(request: Request) -> JSONResponse:
+    '''
+    GET /internal/users/{user_id}/active-device -- internal-token-gated, called by Local's own
+    Profile page (src/template_handlers.py:profile) to show which device this user is currently
+    working from. Local never holds a device Bearer token (that credential belongs to Desktop
+    alone - p07.md section 16), so it can't call the Bearer-gated /devices route to find out; this
+    is the trusted-SYSTEM-caller route instead, same pattern as every other /internal/* endpoint -
+    Local has already authenticated the browser session itself before making this call, the same
+    way it's already trusted for /auth/sessions/validate.
+
+    "Active" is exactly the invariant `_demote_other_devices` already enforces elsewhere in this
+    file: at most one ACTIVE device per user at a time, so there is never an ambiguous answer to
+    "which one." Returns `{"device": null}`, not a 404, when the user has no active device (never
+    logged in via Desktop yet, or every device is currently INACTIVE) -- this is Profile's normal
+    "nothing to show" case, not an error.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        user_id = request.path_params["user_id"]
+        device_ops = DeviceOps(DB_CONFIG)
+        result = await asyncio.to_thread(device_ops.find_one, {"user_id": user_id, "status": DeviceStatus.ACTIVE})
+        if not result.data:
+            return JSONResponse(content={"device": None})
+        return JSONResponse(content={"device": _serialize_device(result.data)})
+    except Exception:
+        logger.error("get active device (internal) failed", exc_info=True)
+        return JSONResponse(content={"error": "Error getting active device"}, status_code=500)

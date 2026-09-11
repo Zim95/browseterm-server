@@ -5,7 +5,10 @@
 #   browseterm-db-credentials      keys: DB_USERNAME, DB_PASSWORD, DB_DATABASE
 #   browseterm-internal-api-token  key:  CLOUD_INTERNAL_API_TOKEN
 #   browseterm-oauth-credentials   keys: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
-#                                        GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET  (P07)
+#                                        GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET,  (P07)
+#                                        GOOGLE_DEVICE_CLIENT_ID, GOOGLE_DEVICE_CLIENT_SECRET
+#                                        (device-auth follow-up to P07 - optional in cloud.yaml,
+#                                        but required for Desktop's login flow to actually work)
 # e.g.: kubectl create secret generic browseterm-internal-api-token \
 #         --from-literal=CLOUD_INTERNAL_API_TOKEN="$(openssl rand -hex 32)" -n <namespace>
 

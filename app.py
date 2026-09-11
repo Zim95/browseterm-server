@@ -16,15 +16,17 @@ import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.common.logging_setup import configure_logging
 configure_logging("browseterm-server-cloud")  # structured JSON logs to stdout (before anything logs)
 
-from src.common.config import BROWSETERM_ALLOWED_HOSTS
+from src.common.config import BROWSETERM_ALLOWED_HOSTS, BROWSETERM_CORS_ALLOWED_ORIGINS
 
 from src.cloud.health_handlers import healthz
 from src.cloud.device_handlers import (
+    get_active_device_internal,
     get_device,
     heartbeat_device,
     list_devices,
@@ -39,6 +41,8 @@ from src.cloud.auth_handlers import (
     validate_session,
 )
 from src.cloud.oauth_handlers import (
+    device_auth_poll,
+    device_auth_start,
     device_bootstrap_redeem,
     device_bootstrap_start,
     handoff_redeem,
@@ -84,6 +88,22 @@ app = FastAPI(lifespan=lifespan)
 # "*" is the explicit dev-permissive default; set BROWSETERM_ALLOWED_HOSTS in production.
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=BROWSETERM_ALLOWED_HOSTS)
 
+# P10 follow-up (see src/common/config.py's BROWSETERM_CORS_ALLOWED_ORIGINS comment for the full
+# story): terminals.js/terminalpage.js's EventSource connects to GET /events/stream directly from
+# the browser, a genuine cross-origin request browseterm.local.com -> browseterm.cloud.com:9999.
+# Deliberately scoped, not wildcard: allow_origins defaults to the one real caller (derived from
+# BROWSETERM_LOCAL_CALLBACK_URL), allow_credentials=False since this endpoint is query-token
+# authenticated rather than cookie-authenticated, allow_methods is just GET (EventSource never
+# sends anything else), and allow_headers is left at CORSMiddleware's own default (the CORS
+# safelisted headers) rather than "*", since EventSource sends no custom headers here at all -
+# nothing about this needs to be any broader than what's actually used.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=BROWSETERM_CORS_ALLOWED_ORIGINS,
+    allow_credentials=False,
+    allow_methods=["GET"],
+)
+
 app.add_api_route(path="/healthz", endpoint=healthz, methods=["GET"])
 
 # Device Cloud API (P05, device-token auth as of P07 - see device_handlers.py). POST /devices
@@ -93,6 +113,9 @@ app.add_api_route(path="/devices", endpoint=list_devices, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=get_device, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=update_device, methods=["POST"])
 app.add_api_route(path="/devices/{device_id}/heartbeat", endpoint=heartbeat_device, methods=["POST"])
+app.add_api_route(
+    path="/internal/users/{user_id}/active-device", endpoint=get_active_device_internal, methods=["GET"]
+)
 
 # Session/auth API (replaces Local's direct Redis/Postgres session access) - internal-service auth
 app.add_api_route(path="/auth/sessions", endpoint=create_session_from_user_info, methods=["POST"])
@@ -110,6 +133,12 @@ app.add_api_route(path="/auth/{provider}/callback", endpoint=oauth_callback, met
 app.add_api_route(path="/auth/handoff/redeem", endpoint=handoff_redeem, methods=["POST"])
 app.add_api_route(path="/auth/device-bootstrap", endpoint=device_bootstrap_start, methods=["POST"])
 app.add_api_route(path="/auth/device-bootstrap/redeem", endpoint=device_bootstrap_redeem, methods=["POST"])
+
+# OAuth Device Authorization Grant (RFC 8628) - Desktop's login flow, no Local involvement (see
+# the device-auth follow-up to p07.md and src/cloud/oauth_handlers.py's route-map docstring).
+# Both public; /poll is possession-gated on a live device_code from /start.
+app.add_api_route(path="/auth/device/start", endpoint=device_auth_start, methods=["POST"])
+app.add_api_route(path="/auth/device/poll", endpoint=device_auth_poll, methods=["POST"])
 
 # Container/workspace metadata API (replaces Local's direct ContainerOps/ImageOps/
 # SubscriptionTypeOps access)

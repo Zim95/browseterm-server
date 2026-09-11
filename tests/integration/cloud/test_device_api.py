@@ -253,6 +253,47 @@ class TestHeartbeatDeviceOwnership(TestCase):
         )
 
 
+class TestGetActiveDeviceInternal(TestCase):
+    '''GET /internal/users/{user_id}/active-device -- internal-token-gated (Local's Profile page),
+    not device-token gated, so it doesn't use `_mock_request` above at all.'''
+
+    def _internal_request(self, user_id: str = USER_A, token: str = "internal-token") -> MagicMock:
+        request = MagicMock(spec=Request)
+        request.path_params = {"user_id": user_id}
+        request.headers = {"X-Internal-Service-Token": token}
+        return request
+
+    @patch("src.cloud.device_handlers.CLOUD_INTERNAL_API_TOKEN", "internal-token")
+    def test_missing_internal_token_rejected(self) -> None:
+        request = self._internal_request(token="wrong-token")
+        result = asyncio.run(device_handlers.get_active_device_internal(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.device_handlers.CLOUD_INTERNAL_API_TOKEN", "internal-token")
+    @patch("src.cloud.device_handlers.DeviceOps")
+    def test_returns_the_active_device_for_the_user(self, mock_device_ops_cls) -> None:
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_device_row())
+        request = self._internal_request()
+        result = asyncio.run(device_handlers.get_active_device_internal(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        payload = json.loads(result.body)
+        self.assertEqual(payload["device"]["id"], DEVICE_A)
+        mock_device_ops_cls.return_value.find_one.assert_called_once_with(
+            {"user_id": USER_A, "status": DeviceStatus.ACTIVE}
+        )
+
+    @patch("src.cloud.device_handlers.CLOUD_INTERNAL_API_TOKEN", "internal-token")
+    @patch("src.cloud.device_handlers.DeviceOps")
+    def test_returns_null_device_not_404_when_none_active(self, mock_device_ops_cls) -> None:
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=None)
+        request = self._internal_request()
+        result = asyncio.run(device_handlers.get_active_device_internal(request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertIsNone(json.loads(result.body)["device"])
+
+
 class TestDeviceApiRouting(TestCase):
     '''
     End-to-end sanity check through the real FastAPI app -- proves routes are wired correctly AND

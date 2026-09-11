@@ -9,8 +9,19 @@ Route map (registered in app.py):
     POST /auth/device-bootstrap     - internal-token-gated (Local calls this server-to-server,
                                        after already verifying the caller's browser session)
     POST /auth/device-bootstrap/redeem - public but possession-gated, called by Desktop directly
+    POST /auth/device/start         - public, starts an OAuth Device Authorization Grant
+                                       (RFC 8628) against a provider (Google or GitHub - see the
+                                       device-auth follow-up to p07.md; GitHub 502s until its
+                                       OAuth App has Device Flow enabled)
+    POST /auth/device/poll          - public but possession-gated (needs the device_code
+                                       device/start just returned), called repeatedly by Desktop
+                                       until the user approves on the provider's own verification
+                                       page - no Local involvement anywhere in this path, which is
+                                       the whole point: it breaks the login/cluster chicken-and-egg
+                                       Local's own presence in the /start-/callback path caused.
 '''
 import asyncio
+import json
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -21,7 +32,7 @@ from src.authentication.dto.session_dto import SessionResponseModel
 from src.authentication.handoff_manager import HandoffManager
 from src.authentication.oauth_state_manager import OAuthStateManager
 from src.authentication.provider_oauth_service import PROVIDER_SERVICES, PROVIDER_AUTH_META_URLS, PROVIDER_SCOPES, \
-    PROVIDER_CLIENT_IDS, PROVIDER_REDIRECT_URIS
+    PROVIDER_CLIENT_IDS, PROVIDER_REDIRECT_URIS, DEVICE_FLOW_SERVICES
 from src.authentication.session_manager import RedisSessionManager
 from src.authentication.device_token_manager import DeviceTokenManager
 from src.cloud.config import CLOUD_INTERNAL_API_TOKEN
@@ -208,3 +219,121 @@ async def device_bootstrap_redeem(request: Request) -> JSONResponse:
         ["device:read", "device:update", "device:heartbeat"],
     )
     return JSONResponse(content={"device": serialized_device, "device_token": device_token}, status_code=201)
+
+
+async def device_auth_start(request: Request) -> JSONResponse:
+    '''POST /auth/device/start -- public (same "anyone may initiate, they only ever authenticate
+    as themselves" reasoning as oauth_start). Starts an OAuth Device Authorization Grant (RFC
+    8628) against the given provider ("google" or "github" - see
+    src.authentication.provider_oauth_service.DEVICE_FLOW_SERVICES) and hands Desktop everything
+    it needs to show the user a code and open the provider's verification page: no Local
+    involvement at all, unlike oauth_start. GitHub is wired up but will 502 here until its OAuth
+    App has "Enable Device Flow" turned on (see GithubDeviceAuthService's docstring) -
+    Desktop's own UI still offers both buttons regardless, per the user's explicit ask.'''
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    provider = body.get("provider", "google")
+    if provider not in DEVICE_FLOW_SERVICES:
+        return _bad_request("Unsupported or not-yet-implemented device-flow provider")
+
+    result = await DEVICE_FLOW_SERVICES[provider]().start()
+    if not result or not result.get("device_code") or not result.get("user_code"):
+        logger.error("device auth start: provider did not return a device_code")
+        return JSONResponse(content={"error": "Could not start device authorization"}, status_code=502)
+
+    return JSONResponse(content={
+        "provider": provider,
+        "device_code": result["device_code"],
+        "user_code": result["user_code"],
+        # RFC 8628 names this verification_uri; Google's own API still returns the pre-RFC
+        # verification_url field name - accept either.
+        "verification_uri": result.get("verification_uri") or result.get("verification_url"),
+        "verification_uri_complete": result.get("verification_uri_complete"),
+        "expires_in": result.get("expires_in", 1800),
+        "interval": result.get("interval", 5),
+    })
+
+
+# RFC 8628 section 3.5 error codes -> (response body, HTTP status). A dict dispatch instead of an
+# if/elif chain: adding a provider error code Google starts returning later is a one-line entry
+# here, not a new branch in device_auth_poll, and the "no entry matches" case (some provider error
+# this project has never seen) falls straight through to .get()'s own default below.
+_POLL_ERROR_RESPONSES: dict[str, tuple[dict, int]] = {
+    "authorization_pending": ({"status": "pending"}, 200),
+    "slow_down": ({"status": "pending", "slow_down": True}, 200),
+    "expired_token": ({"status": "expired"}, 400),
+    "access_denied": ({"status": "denied"}, 403),
+}
+
+
+async def device_auth_poll(request: Request) -> JSONResponse:
+    '''POST /auth/device/poll -- public but possession-gated (needs a live device_code from
+    device_auth_start). Desktop calls this every `interval` seconds until the response's "status"
+    is no longer "pending". On "complete", this runs the exact same find-or-create-user +
+    register-or-activate-device + issue-device-token pipeline device_bootstrap_redeem uses - the
+    only difference is how the user's identity was established (a provider device grant here,
+    vs. a Local-mediated browser handoff there) - so a device logged in this way is
+    indistinguishable from one bootstrapped the old way. No HandoffManager hop is needed: Desktop
+    is already the one polling directly, with nothing in between to hand a code to.
+
+    One try wrapping the whole pipeline, dispatched by exception type on the way out, rather than
+    a try around each step: every step here fails in a genuinely distinct, non-overlapping way
+    (bad JSON, a bad device payload, a registration conflict, or something unexpected), so a
+    single ordered set of except clauses loses no information a per-step try had - json.
+    JSONDecodeError and ValidationError/DeviceRegistrationError are real, disjoint types, and the
+    trailing bare `except Exception` is the same last-resort catch-all this file already uses
+    elsewhere (see oauth_callback above) for a step that should never actually fail.'''
+    try:
+        body = await request.json()
+        provider = body.get("provider", "google")
+        device_code = body.get("device_code")
+        device = body.get("device")
+        if provider not in DEVICE_FLOW_SERVICES:
+            return _bad_request("Unsupported or not-yet-implemented device-flow provider")
+        if not device_code or not isinstance(device, dict):
+            return _bad_request("device_code and device are required")
+
+        service = DEVICE_FLOW_SERVICES[provider]()
+        token_result = await service.poll(device_code)
+        error = token_result.get("error")
+        if error:
+            content, status_code = _POLL_ERROR_RESPONSES.get(
+                error, ({"status": "error", "error": "Authentication failed"}, 502)
+            )
+            if error not in _POLL_ERROR_RESPONSES:
+                logger.warning("device auth poll: unexpected provider error", extra={"error": error})
+            return JSONResponse(content=content, status_code=status_code)
+
+        access_token = token_result.get("access_token")
+        if not access_token:
+            logger.error("device auth poll: provider success response had no access_token")
+            return JSONResponse(content={"status": "error", "error": "Authentication failed"}, status_code=502)
+
+        user_info = await service.fetch_user_info(access_token)
+        if not user_info:
+            return JSONResponse(content={"status": "error", "error": "Authentication failed"}, status_code=502)
+
+        session_response: SessionResponseModel = await process_user_info(user_info)
+        user_id = session_response.user_info["id"]
+
+        register_request = RegisterDeviceRequest(**device)
+        serialized_device = await _register_or_activate(user_id, register_request)
+
+        device_token = await asyncio.to_thread(
+            DeviceTokenManager().issue_token,
+            user_id,
+            serialized_device["id"],
+            ["device:read", "device:update", "device:heartbeat"],
+        )
+        return JSONResponse(content={"status": "complete", "device": serialized_device, "device_token": device_token})
+    except json.JSONDecodeError:
+        return _bad_request("Invalid JSON body")
+    except ValidationError as e:
+        return _bad_request(str(e))
+    except DeviceRegistrationError as e:
+        return JSONResponse(content={"status": "error", "error": e.message}, status_code=e.status_code)
+    except Exception:
+        logger.error("device auth poll: unexpected failure", exc_info=True)
+        return JSONResponse(content={"status": "error", "error": "Unexpected error completing login"}, status_code=500)

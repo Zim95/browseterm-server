@@ -123,6 +123,28 @@ spec:
             secretKeyRef:
               name: browseterm-oauth-credentials
               key: GITHUB_CLIENT_SECRET
+        # Device-auth follow-up to P07: OAuth Device Authorization Grant (RFC 8628) login,
+        # Desktop's login path now (src/cloud/oauth_handlers.py device_auth_start/poll). A
+        # genuinely separate Google client ("TVs and Limited Input devices" type - device flow
+        # isn't available on the "Web application" client GOOGLE_CLIENT_ID/SECRET above belong
+        # to). GitHub device flow isn't implemented yet, so no GITHUB_DEVICE_* keys exist here.
+        # `optional: true` so a not-yet-patched browseterm-oauth-credentials Secret (these two
+        # keys were added after the Secret itself was first created) degrades to device-login
+        # 401ing rather than crash-looping the whole pod on a missing key - see P20's real
+        # crash-loop incident from an unquoted Makefile arg for why this manifest is cautious
+        # about that failure mode now.
+        - name: GOOGLE_DEVICE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_DEVICE_CLIENT_ID
+              optional: true
+        - name: GOOGLE_DEVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_DEVICE_CLIENT_SECRET
+              optional: true
         # P20 (~/browseterm/p.md's "P20" section): the Docker Hub account/org snapshot repos get
         # pushed under (allocate_snapshot builds "{SNAPSHOT_REGISTRY_REPO_PREFIX}/{user_id}_
         # {container_id}"). Explicitly wired here to the real "browseterm" Docker Hub

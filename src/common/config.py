@@ -1,4 +1,5 @@
 import os
+from urllib.parse import urlparse
 from browseterm_db.common.config import DBConfig
 
 
@@ -53,6 +54,34 @@ BROWSETERM_LOCAL_CALLBACK_URL: str = os.getenv(
 # doesn't exist yet. Comma-separated in production, e.g. "browseterm.cloud.com".
 BROWSETERM_ALLOWED_HOSTS: list = [h.strip() for h in os.getenv("BROWSETERM_ALLOWED_HOSTS", "*").split(",")]
 
+# CORS (p07.md section 27/58, p.md's own "CORS: deliberately not added" note). That note was
+# correct when written -- no browser JS called Cloud directly at the time. P10 changed that:
+# terminals.js/terminalpage.js's EventSource connects straight to Cloud's GET /events/stream from
+# the browser (a genuine cross-origin request, browseterm.local.com -> browseterm.cloud.com:9999),
+# and nobody revisited the CORS decision when P10 shipped -- discovered live this session as the
+# actual cause of a terminal's status appearing stuck on Pending in the UI even though the
+# database and every backend service had already correctly moved it to Running: the browser
+# silently can't receive the SSE push without CORS headers, so only a full page reload (which
+# re-fetches state directly, not via SSE) ever showed the real status.
+#
+# Deliberately NOT a wildcard default, even though this endpoint is query-token-authenticated
+# rather than cookie-authenticated (allow_credentials=False in app.py either way, so a leaked
+# token can't be paired with cross-site cookie ambient auth the way p07.md section 58's banned
+# "credentialed wildcard CORS" describes) -- CORSMiddleware applies to the whole app, not just
+# this one route, and the token is carried in a URL query string, which is exactly the kind of
+# value that leaks into Referer headers/access logs/browser history. Restricting the allowed
+# origin to the one real caller costs nothing (this project already knows it - it's the same
+# origin BROWSETERM_LOCAL_CALLBACK_URL points at) and removes the exposure entirely: even a
+# leaked token is useless to a page served from any other origin, and no other origin could ever
+# legitimately BE browseterm.local.com anyway, since that hostname only resolves at all via the
+# same machine's own /etc/hosts. Comma-separated to override/extend in a real deployment.
+BROWSETERM_CORS_ALLOWED_ORIGINS: list = [
+    o.strip() for o in os.getenv(
+        "BROWSETERM_CORS_ALLOWED_ORIGINS",
+        f"{urlparse(BROWSETERM_LOCAL_CALLBACK_URL).scheme}://{urlparse(BROWSETERM_LOCAL_CALLBACK_URL).netloc}",
+    ).split(",")
+]
+
 # Google Authentication Config
 GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET")
@@ -62,6 +91,18 @@ GOOGLE_AUTH_REDIRECT_URI: str = f"{AUTH_REDIRECT_BASE_URI}/auth/google/callback"
 GOOGLE_ACCESS_TOKEN_URL: str = 'https://oauth2.googleapis.com/token'
 GOOGLE_USER_INFO_URL: str = 'https://www.googleapis.com/oauth2/v2/userinfo'
 GOOGLE_TOKEN_EXCHANGE_HEADERS: dict = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+# Google OAuth Device Authorization Grant (RFC 8628) config -- Desktop's login flow, so it never
+# needs Local reachable to authenticate. Google requires a genuinely separate OAuth client of type
+# "TVs and Limited Input devices" for this flow (device flow is not available on the "Web
+# application" client type GOOGLE_CLIENT_ID/SECRET above belong to) -- see
+# ~/browseterm/browseterm-monorepo/env.mk's SERVER_GOOGLE_DEVICE_CLIENT_ID comment for where this
+# client was created. Only Cloud ever holds this secret; Desktop only ever calls Cloud's own
+# /auth/device/start and /auth/device/poll (src/cloud/oauth_handlers.py).
+GOOGLE_DEVICE_CLIENT_ID: str = os.getenv("GOOGLE_DEVICE_CLIENT_ID")
+GOOGLE_DEVICE_CLIENT_SECRET: str = os.getenv("GOOGLE_DEVICE_CLIENT_SECRET")
+GOOGLE_DEVICE_AUTHORIZATION_URL: str = 'https://oauth2.googleapis.com/device/code'
+GOOGLE_DEVICE_SCOPE: str = 'openid email profile'
 
 # Github Authentication Config
 GITHUB_CLIENT_ID: str = os.getenv("GITHUB_CLIENT_ID")
@@ -76,6 +117,13 @@ GITHUB_TOKEN_EXCHANGE_HEADERS: dict = {
     'Accept': 'application/json',
     'Accept-Encoding': 'application/json'
 }
+
+# GitHub OAuth Device Authorization Grant config -- reuses the same GITHUB_CLIENT_ID/SECRET as the
+# authorization-code flow above (no separate app needed: GitHub's device flow is just a toggle,
+# "Enable Device Flow", on the existing OAuth App - unlike Google, which requires a genuinely
+# separate client type). GitHub's device flow doesn't need a Google-style "device flow client
+# secret" concept at all: its token endpoint below accepts client_id + device_code with no secret.
+GITHUB_DEVICE_AUTHORIZATION_URL: str = 'https://github.com/login/device/code'
 
 # Redis Configuration
 REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
