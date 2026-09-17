@@ -126,7 +126,7 @@ sqlalchemy = "^2.0.43"
 type = "git"
 url = "https://github.com/Zim95/browseterm-db.git"
 reference = "main"
-resolved_reference = "2d935cca321fe0aecca43816f853a1cd019c0928"
+resolved_reference = "141f847b0357bd38c8e68e21d5a9179e29a73f01"
 
 [[package]]
 name = "certifi"
