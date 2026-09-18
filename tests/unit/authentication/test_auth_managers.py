@@ -11,6 +11,7 @@ from unittest.mock import patch
 from src.authentication.oauth_state_manager import OAuthStateManager
 from src.authentication.handoff_manager import HandoffManager
 from src.authentication.device_token_manager import DeviceTokenManager
+from src.authentication.terminal_ticket_manager import TerminalTicketManager, TICKET_TTL_SECONDS
 
 
 class _FakeRedis:
@@ -18,9 +19,11 @@ class _FakeRedis:
 
     def __init__(self):
         self._store: dict = {}
+        self._ttls: dict = {}  # name -> the ttl setex was called with, for tests that check it
 
     def setex(self, name, time, value):
         self._store[name] = value
+        self._ttls[name] = time
 
     def get(self, name):
         return self._store.get(name)
@@ -139,6 +142,59 @@ class TestDeviceTokenManager(unittest.TestCase):
         self.manager.revoke_token(t2)
         self.assertIsNotNone(self.manager.validate_token(t1))
         self.assertIsNone(self.manager.validate_token(t2))
+
+
+class TestTerminalTicketManager(unittest.TestCase):
+    '''remotetunelling.md Phase 5 - single-use, container-and-device-bound terminal tickets.'''
+
+    def setUp(self):
+        self.fake_redis = _FakeRedis()
+        patcher = patch("src.authentication.terminal_ticket_manager.redis.Redis", return_value=self.fake_redis)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.manager = TerminalTicketManager()
+
+    def test_valid_ticket_round_trips_user_device_and_container(self):
+        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        data = self.manager.consume_ticket(ticket)
+        self.assertEqual(data["user_id"], "u1")
+        self.assertEqual(data["device_id"], "d1")
+        self.assertEqual(data["container_id"], "c1")
+
+    def test_ticket_is_random_and_unguessable(self):
+        t1 = self.manager.create_ticket("u1", "d1", "c1")
+        t2 = self.manager.create_ticket("u1", "d1", "c1")
+        self.assertNotEqual(t1, t2)
+        self.assertGreater(len(t1), 20)
+
+    def test_ticket_expires_after_the_documented_ttl(self):
+        '''Locks in that create_ticket actually asks Redis to expire the key after
+        TICKET_TTL_SECONDS (~30s per remotetunelling.md Phase 5) - real expiry enforcement is
+        Redis's own job (not simulated here), same boundary every other manager's TTL test in
+        this file draws.'''
+        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        key = next(iter(self.fake_redis._store))
+        self.assertIn(ticket, key)
+        self.assertEqual(self.fake_redis._ttls[key], TICKET_TTL_SECONDS)
+
+    def test_missing_or_expired_ticket_rejected(self):
+        self.assertIsNone(self.manager.consume_ticket("never-issued"))
+
+    def test_ticket_replay_rejected(self):
+        '''GETDEL pops the key on first use - a second consume (replay, or two concurrent
+        consumers racing for the same ticket) can only ever see it missing thereafter. This is
+        the same atomicity guarantee Redis's GETDEL provides for real concurrent requests; a
+        sequential replay is the practical unit-test proxy for it, matching how HandoffManager's
+        own "second redemption fails" test above treats the same property.'''
+        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        first = self.manager.consume_ticket(ticket)
+        second = self.manager.consume_ticket(ticket)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+
+    def test_corrupt_ticket_value_rejected_not_raised(self):
+        self.fake_redis._store["terminal:ticket:corrupt"] = "not-json"
+        self.assertIsNone(self.manager.consume_ticket("corrupt"))
 
 
 if __name__ == "__main__":
