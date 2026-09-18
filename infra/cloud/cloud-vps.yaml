@@ -1,0 +1,231 @@
+# Cloud browseterm-server, production VPS variant.
+#
+# Same Deployment/Service as cloud.yaml (the local-k3d-cluster manifest, which stays untouched -
+# see its own header comment); this file exists only because the VPS's ingress controller and TLS
+# setup differ from local dev: k3s's bundled Traefik + cert-manager (letsencrypt-production
+# ClusterIssuer, HTTP-01 via ingressClassName: traefik) instead of ingress-nginx. Mirrors
+# ~/ikompare/deploy/app/ingress.yaml's proven-live pattern on this same cluster.
+#
+# Two differences from cloud.yaml's probes worth calling out: both gain an explicit `Host` header
+# override. Once BROWSETERM_ALLOWED_HOSTS is locked to the real domain (app.py's
+# TrustedHostMiddleware), kubelet's own HTTP probe -- which sends the pod IP as its Host header,
+# not the real domain -- would otherwise be rejected with 400 and crash-loop the pod.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browseterm-server-cloud
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-cloud
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browseterm-server-cloud
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: browseterm-server-cloud
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9999"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: browseterm-server-cloud
+        image: ${IMAGE}
+        imagePullPolicy: ${IMAGE_PULL_POLICY}
+        ports:
+        - name: http
+          containerPort: 9999
+          protocol: TCP
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: REDIS_HOST
+          value: "${REDIS_HOST}"
+        - name: REDIS_PORT
+          value: "${REDIS_PORT}"
+        - name: REDIS_PASSWORD
+          value: "${REDIS_PASSWORD}"
+        - name: REDIS_USERNAME
+          value: "${REDIS_USERNAME}"
+        - name: REDIS_DB
+          value: "${REDIS_DB}"
+        - name: POSTGRES_HOST
+          value: "${POSTGRES_HOST}"
+        - name: POSTGRES_PORT
+          value: "${POSTGRES_PORT}"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_DATABASE
+        - name: CLOUD_INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-internal-api-token
+              key: CLOUD_INTERNAL_API_TOKEN
+        - name: AUTH_REDIRECT_BASE_URI
+          value: "${AUTH_REDIRECT_BASE_URI}"
+        - name: BROWSETERM_LOCAL_CALLBACK_URL
+          value: "${BROWSETERM_LOCAL_CALLBACK_URL}"
+        - name: BROWSETERM_ALLOWED_HOSTS
+          value: "${BROWSETERM_ALLOWED_HOSTS}"
+        - name: GOOGLE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_CLIENT_ID
+        - name: GOOGLE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_CLIENT_SECRET
+        - name: GITHUB_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GITHUB_CLIENT_ID
+        - name: GITHUB_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GITHUB_CLIENT_SECRET
+        - name: GOOGLE_DEVICE_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_DEVICE_CLIENT_ID
+              optional: true
+        - name: GOOGLE_DEVICE_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-oauth-credentials
+              key: GOOGLE_DEVICE_CLIENT_SECRET
+              optional: true
+        - name: SNAPSHOT_REGISTRY_REPO_PREFIX
+          value: "${SNAPSHOT_REGISTRY_REPO_PREFIX}"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 9999
+            httpHeaders:
+            - name: Host
+              value: "${CLOUD_INGRESS_HOST}"
+          initialDelaySeconds: 15
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 9999
+            httpHeaders:
+            - name: Host
+              value: "${CLOUD_INGRESS_HOST}"
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 3
+          failureThreshold: 2
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: browseterm-server-cloud-service
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-cloud
+spec:
+  type: ClusterIP
+  selector:
+    app: browseterm-server-cloud
+  ports:
+  - name: http
+    protocol: TCP
+    port: 9999
+    targetPort: http
+---
+# Traefik + cert-manager, mirrors ~/ikompare/deploy/app/ingress.yaml's already-proven-live setup
+# on this same cluster (ikompare-tls, Ready: True).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: browseterm-server-cloud-ingress
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-server-cloud
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - ${CLOUD_INGRESS_HOST}
+      secretName: browseterm-cloud-tls
+  rules:
+  - host: ${CLOUD_INGRESS_HOST}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: browseterm-server-cloud-service
+            port:
+              number: 9999
+---
+# Ingress only from Traefik (kube-system) -- mirrors
+# ~/ikompare/deploy/app/networkpolicy.yaml's app-allow-ingress-only exactly. data-access: "true"
+# on this namespace (set separately) is what grants egress-side access to Postgres/Redis in the
+# `data` namespace; this policy is the ingress-side counterpart, scoping who may reach this app.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: app-allow-ingress-only
+  namespace: ${NAMESPACE}
+spec:
+  podSelector:
+    matchLabels:
+      app: browseterm-server-cloud
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: http
+          protocol: TCP
