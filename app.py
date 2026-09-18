@@ -71,6 +71,7 @@ from src.cloud.container_handlers import (
 from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result
 from src.cloud.sse_broadcaster import sse_broadcaster
 from src.cloud.sse_handlers import events_stream
+from src.cloud.terminal_handlers import consume_terminal_session, create_terminal_session
 from src.cloud.subscription_handlers import get_current_subscription
 
 
@@ -196,6 +197,17 @@ app.add_api_route(
 app.add_api_route(path="/internal/containers/stuck-saves", endpoint=list_stuck_saves, methods=["GET"])
 app.add_api_route(path="/internal/containers/{container_id}", endpoint=get_container_internal, methods=["GET"])
 app.add_api_route(path="/internal/containers/{container_id}", endpoint=update_container_internal, methods=["POST"])
+# remotetunelling.md Phase 5/7 - single-use terminal authorization tickets. create_terminal_session
+# is internal-token-gated (Local calls it server-to-server, same trust boundary as every other
+# route above); consume_terminal_session is Bearer-device-token-gated (socket-ssh calls it,
+# proving it's running on the ticket's own device) - see terminal_handlers.py's own docstring.
+app.add_api_route(
+    path="/internal/containers/{container_id}/terminal-session",
+    endpoint=create_terminal_session, methods=["POST"],
+)
+app.add_api_route(
+    path="/internal/terminal-tickets/consume", endpoint=consume_terminal_session, methods=["POST"],
+)
 app.add_api_route(path="/catalog/images", endpoint=list_images, methods=["GET"])
 app.add_api_route(path="/catalog/subscription-types", endpoint=list_subscription_types, methods=["GET"])
 app.add_api_route(path="/subscriptions/current", endpoint=get_current_subscription, methods=["GET"])

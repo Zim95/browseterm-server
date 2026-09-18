@@ -34,6 +34,12 @@ from src.common.config import (
 # CLOUD_INTERNAL_API_TOKEN.
 CLOUD_INTERNAL_API_TOKEN: str = os.getenv("CLOUD_INTERNAL_API_TOKEN", "")
 
+# remotetunelling.md: "offline threshold: 60-90 seconds" - a device/tunnel counts as online for
+# terminal-session purposes only if its last tunnel heartbeat is within this window. The
+# registrar's own default heartbeat interval is 20s (browseterm_workload/tunnel_registrar), so
+# 90s tolerates a couple of missed/delayed heartbeats before treating it as actually offline.
+TUNNEL_OFFLINE_THRESHOLD_SECONDS: int = int(os.getenv("TUNNEL_OFFLINE_THRESHOLD_SECONDS", "90"))
+
 __all__ = [
     "DB_CONFIG",
     "POSTGRES_HOST",
@@ -48,4 +54,5 @@ __all__ = [
     "REDIS_DB",
     "CLOUD_INTERNAL_API_TOKEN",
     "SNAPSHOT_REGISTRY_REPO_PREFIX",
+    "TUNNEL_OFFLINE_THRESHOLD_SECONDS",
 ]
