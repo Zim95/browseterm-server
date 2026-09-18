@@ -29,7 +29,9 @@ from src.cloud.device_handlers import (
     get_active_device_internal,
     get_device,
     heartbeat_device,
+    heartbeat_tunnel,
     list_devices,
+    register_tunnel,
     update_device,
 )
 from src.cloud.auth_handlers import (
@@ -113,6 +115,12 @@ app.add_api_route(path="/devices", endpoint=list_devices, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=get_device, methods=["GET"])
 app.add_api_route(path="/devices/{device_id}", endpoint=update_device, methods=["POST"])
 app.add_api_route(path="/devices/{device_id}/heartbeat", endpoint=heartbeat_device, methods=["POST"])
+# remotetunelling.md Phase 3/4 - tunnel registration/heartbeat, same Bearer-device-token auth as
+# every other /devices/{device_id}/* route above.
+app.add_api_route(path="/devices/{device_id}/tunnel", endpoint=register_tunnel, methods=["POST"])
+app.add_api_route(
+    path="/devices/{device_id}/tunnel/heartbeat", endpoint=heartbeat_tunnel, methods=["POST"]
+)
 app.add_api_route(
     path="/internal/users/{user_id}/active-device", endpoint=get_active_device_internal, methods=["GET"]
 )

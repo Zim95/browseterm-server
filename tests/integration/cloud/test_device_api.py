@@ -67,6 +67,12 @@ def _device_row(**overrides) -> dict:
         "used_cpu": 0,
         "used_memory_bytes": 0,
         "used_storage_bytes": 0,
+        "tunnel_provider": None,
+        "tunnel_public_url": None,
+        "tunnel_status": None,
+        "tunnel_generation": 0,
+        "tunnel_connected_at": None,
+        "tunnel_last_heartbeat_at": None,
         "gpu_info": None,
         "status": "Active",
         "registered_at": "2026-01-01T00:00:00+00:00",
@@ -251,6 +257,166 @@ class TestHeartbeatDeviceOwnership(TestCase):
         mock_ops.update.assert_called_with(
             {"id": "device-sibling-id", "user_id": USER_A}, {"status": DeviceStatus.INACTIVE}
         )
+
+
+_VALID_NGROK_URL = "https://abcd1234.ngrok-free.app"
+
+
+class TestRegisterTunnel(TestCase):
+    '''POST /devices/{device_id}/tunnel (remotetunelling.md Phase 3/4)'''
+
+    def test_owner_can_register_its_own_tunnel(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_device_row()),
+            OperationResult(success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=1)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": _VALID_NGROK_URL, "generation": 1, "status": "online"},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+
+        self.assertEqual(result.status_code, 200)
+        update_filters, update_data = mock_ops.update.call_args.args
+        self.assertEqual(update_filters, {"id": DEVICE_A, "user_id": USER_A})
+        self.assertEqual(update_data["tunnel_public_url"], _VALID_NGROK_URL)
+        self.assertEqual(update_data["tunnel_generation"], 1)
+        self.assertIn("tunnel_connected_at", update_data)  # a genuinely new URL
+
+    def test_reregistering_the_same_url_does_not_reset_connected_at(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=1)),
+            OperationResult(success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=1)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": _VALID_NGROK_URL, "generation": 1, "status": "online"},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+        _, update_data = mock_ops.update.call_args.args
+        self.assertNotIn("tunnel_connected_at", update_data)
+
+    def test_d1_token_cannot_register_tunnel_for_d2(self) -> None:
+        mock_ops = MagicMock()
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": _VALID_NGROK_URL, "generation": 1},
+            path_params={"device_id": DEVICE_B},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 404)
+        mock_ops.update.assert_not_called()
+
+    def test_non_https_url_rejected(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": "http://abcd1234.ngrok-free.app", "generation": 1},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 400)
+        mock_ops.update.assert_not_called()
+
+    def test_non_ngrok_host_rejected(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": "https://evil.example.com", "generation": 1},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 400)
+        mock_ops.update.assert_not_called()
+
+    def test_older_generation_cannot_overwrite_newer(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(
+            success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=5)
+        )
+        request = _mock_request(
+            body={"provider": "ngrok", "public_url": "https://new-url.ngrok-free.app", "generation": 3},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 409)
+        mock_ops.update.assert_not_called()
+
+
+class TestHeartbeatTunnel(TestCase):
+    '''POST /devices/{device_id}/tunnel/heartbeat'''
+
+    def test_owner_heartbeat_updates_last_heartbeat_at(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.side_effect = [
+            OperationResult(success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=2)),
+            OperationResult(success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=2)),
+        ]
+        mock_ops.update.return_value = OperationResult(success=True)
+        request = _mock_request(
+            body={"generation": 2, "status": "online"},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.heartbeat_tunnel.__wrapped__(request=request))
+
+        self.assertEqual(result.status_code, 200)
+        update_filters, update_data = mock_ops.update.call_args.args
+        self.assertEqual(update_filters, {"id": DEVICE_A, "user_id": USER_A})
+        self.assertIn("tunnel_last_heartbeat_at", update_data)
+        self.assertNotIn("tunnel_public_url", update_data)  # heartbeat never touches the URL
+
+    def test_d1_token_cannot_heartbeat_d2_tunnel(self) -> None:
+        mock_ops = MagicMock()
+        request = _mock_request(
+            body={"generation": 1},
+            path_params={"device_id": DEVICE_B},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.heartbeat_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 404)
+        mock_ops.update.assert_not_called()
+
+    def test_stale_generation_heartbeat_rejected(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(
+            success=True, data=_device_row(tunnel_public_url=_VALID_NGROK_URL, tunnel_generation=5)
+        )
+        request = _mock_request(
+            body={"generation": 2, "status": "online"},
+            path_params={"device_id": DEVICE_A},
+            user_id=USER_A,
+            device_id=DEVICE_A,
+        )
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.heartbeat_tunnel.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 409)
+        mock_ops.update.assert_not_called()
 
 
 class TestGetActiveDeviceInternal(TestCase):

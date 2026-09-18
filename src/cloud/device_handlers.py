@@ -34,6 +34,8 @@ from src.cloud.device_data_models import (
     NON_NULLABLE_UPDATE_FIELDS,
     UPDATABLE_DEVICE_FIELDS,
     RegisterDeviceRequest,
+    RegisterTunnelRequest,
+    TunnelHeartbeatRequest,
     UpdateDeviceRequest,
 )
 from src.common.logging_setup import get_logger
@@ -340,3 +342,145 @@ async def get_active_device_internal(request: Request) -> JSONResponse:
     except Exception:
         logger.error("get active device (internal) failed", exc_info=True)
         return JSONResponse(content={"error": "Error getting active device"}, status_code=500)
+
+
+def _tunnel_status_ok(request_data: dict) -> Optional[JSONResponse]:
+    '''Both tunnel endpoints accept the same free-text status field but only ever persist it as
+    TunnelStatus's own enum values - reject anything else up front rather than 500ing inside the
+    DB layer's enum conversion.'''
+    status = request_data.get("status", "online")
+    if str(status).lower() not in ("online", "offline"):
+        return JSONResponse(content={"error": "status must be 'online' or 'offline'"}, status_code=400)
+    return None
+
+
+@authenticate_device
+async def register_tunnel(request: Request) -> JSONResponse:
+    '''
+    POST /devices/{device_id}/tunnel (remotetunelling.md Phase 3/4) -- token-scoped, same
+    404-on-mismatch as every other device route (a device's own Bearer token can only ever
+    register a tunnel for itself, never another device - the id ownership check below is what
+    makes "possession of the public ngrok URL is not authorization" true elsewhere in the system).
+
+    Rejects a stale generation (a delayed write from a dead/replaced registrar instance) rather
+    than letting it silently overwrite a newer tunnel - the registrar owns this counter and must
+    increment it itself whenever it detects the actual public URL changed (see registrar's own
+    module docstring for why a plain "last write wins" isn't safe across a registrar restart).
+    '''
+    try:
+        device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
+        user_id = request.state.user_id
+        device_ops = DeviceOps(DB_CONFIG)
+
+        existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        if not existing.data:
+            return _device_not_found()
+
+        request_data: dict = await request.json()
+        bad_status = _tunnel_status_ok(request_data)
+        if bad_status:
+            return bad_status
+        try:
+            validated = RegisterTunnelRequest(**request_data)
+        except ValidationError as e:
+            return JSONResponse(content={"error": str(e)}, status_code=400)
+
+        if validated.generation < existing.data["tunnel_generation"]:
+            logger.info(
+                "rejected stale tunnel generation",
+                extra={
+                    "device_id": device_id,
+                    "incoming_generation": validated.generation,
+                    "current_generation": existing.data["tunnel_generation"],
+                },
+            )
+            return JSONResponse(content={"error": "Stale tunnel generation"}, status_code=409)
+
+        now = datetime.now(timezone.utc)
+        update_data = {
+            "tunnel_provider": validated.provider,
+            "tunnel_public_url": validated.public_url,
+            "tunnel_status": validated.status.capitalize(),
+            "tunnel_generation": validated.generation,
+            "tunnel_last_heartbeat_at": now,
+        }
+        # Only a genuinely new URL counts as a new connection - a re-register of the same URL
+        # (e.g. the registrar restarting but ngrok's session survived) shouldn't reset this.
+        if validated.public_url != existing.data["tunnel_public_url"]:
+            update_data["tunnel_connected_at"] = now
+
+        result = await asyncio.to_thread(device_ops.update, {"id": device_id, "user_id": user_id}, update_data)
+        if not result.success:
+            logger.error("tunnel registration failed", extra={"error": result.error})
+            return JSONResponse(content={"error": "Error registering tunnel"}, status_code=500)
+
+        updated = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        logger.info(
+            "tunnel.registered",
+            extra={"device_id": device_id, "generation": validated.generation},
+        )
+        return JSONResponse(content={"device": _serialize_device(updated.data)})
+    except Exception:
+        logger.error("tunnel registration failed", exc_info=True)
+        return JSONResponse(content={"error": "Error registering tunnel"}, status_code=500)
+
+
+@authenticate_device
+async def heartbeat_tunnel(request: Request) -> JSONResponse:
+    '''
+    POST /devices/{device_id}/tunnel/heartbeat -- token-scoped, same 404-on-mismatch. Lighter
+    than register_tunnel: never touches tunnel_public_url/tunnel_provider, only confirms "the
+    tunnel at this generation is still alive" and bumps tunnel_last_heartbeat_at. Still rejects a
+    stale generation, for the same reason register_tunnel does.
+    '''
+    try:
+        device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
+        user_id = request.state.user_id
+        device_ops = DeviceOps(DB_CONFIG)
+
+        existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        if not existing.data:
+            return _device_not_found()
+
+        request_data: dict = await request.json()
+        bad_status = _tunnel_status_ok(request_data)
+        if bad_status:
+            return bad_status
+        try:
+            validated = TunnelHeartbeatRequest(**request_data)
+        except ValidationError as e:
+            return JSONResponse(content={"error": str(e)}, status_code=400)
+
+        if validated.generation < existing.data["tunnel_generation"]:
+            logger.info(
+                "tunnel.heartbeat_failed",
+                extra={
+                    "device_id": device_id,
+                    "reason": "stale_generation",
+                    "incoming_generation": validated.generation,
+                    "current_generation": existing.data["tunnel_generation"],
+                },
+            )
+            return JSONResponse(content={"error": "Stale tunnel generation"}, status_code=409)
+
+        result = await asyncio.to_thread(
+            device_ops.update,
+            {"id": device_id, "user_id": user_id},
+            {
+                "tunnel_status": validated.status.capitalize(),
+                "tunnel_last_heartbeat_at": datetime.now(timezone.utc),
+            },
+        )
+        if not result.success:
+            logger.error("tunnel heartbeat failed", extra={"error": result.error})
+            return JSONResponse(content={"error": "Error updating tunnel heartbeat"}, status_code=500)
+
+        updated = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        return JSONResponse(content={"device": _serialize_device(updated.data)})
+    except Exception:
+        logger.error("tunnel heartbeat failed", exc_info=True)
+        return JSONResponse(content={"error": "Error updating tunnel heartbeat"}, status_code=500)

@@ -6,9 +6,26 @@ Client-supplied identity/state fields (`id`, `user_id`, `used_*`, `status`, `reg
 body simply has nothing to bind to -- the server (`device_handlers.py`) is the only writer of
 those fields.
 '''
+import re
 from typing import Any, Optional
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+# remotetunelling.md: "Accept only: https scheme; Expected ngrok domain patterns for the MVP; a
+# URL registered by an authenticated device for itself." Deliberately an allowlist of exact host
+# suffixes, not a substring/prefix check - ngrok's own domains for the free/paid tiers in use.
+_ALLOWED_TUNNEL_HOST_SUFFIXES = (".ngrok-free.app", ".ngrok.app", ".ngrok.io")
+
+
+def _validate_tunnel_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise ValueError("tunnel public_url must use https")
+    host = parsed.hostname or ""
+    if not any(host.endswith(suffix) for suffix in _ALLOWED_TUNNEL_HOST_SUFFIXES):
+        raise ValueError("tunnel public_url must be an ngrok domain")
+    return url
 
 
 class RegisterDeviceRequest(BaseModel):
@@ -85,3 +102,27 @@ class UpdateDeviceRequest(BaseModel):
     allocated_storage_bytes: Optional[int] = Field(default=None, ge=0)
 
     gpu_info: Optional[dict[str, Any]] = None
+
+
+class RegisterTunnelRequest(BaseModel):
+    '''Body of POST /devices/{device_id}/tunnel (remotetunelling.md Phase 3/4). provider is
+    currently always "ngrok" but kept as a field rather than hardcoded so a future provider
+    doesn't need a schema change. generation must be a monotonically increasing counter the
+    registrar owns - see device_handlers.register_tunnel for the stale-write rejection.'''
+    provider: str
+    public_url: str
+    generation: int = Field(ge=0)
+    status: str = "online"
+
+    @field_validator("public_url")
+    @classmethod
+    def _validate_public_url(cls, value: str) -> str:
+        return _validate_tunnel_url(value)
+
+
+class TunnelHeartbeatRequest(BaseModel):
+    '''Body of POST /devices/{device_id}/tunnel/heartbeat. No public_url here deliberately - a
+    heartbeat reaffirms "the tunnel at generation N is still alive", it never changes the URL
+    (that's what register_tunnel is for, when the registrar detects an actual change).'''
+    generation: int = Field(ge=0)
+    status: str = "online"
