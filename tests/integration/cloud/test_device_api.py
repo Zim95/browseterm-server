@@ -362,6 +362,11 @@ class TestRegisterTunnel(TestCase):
             result = asyncio.run(device_handlers.register_tunnel.__wrapped__(request=request))
         self.assertEqual(result.status_code, 409)
         mock_ops.update.assert_not_called()
+        # Durability-in-terminals: a restarted registrar has no way to know Cloud's real
+        # generation on its own (reproduced 2026-09-19: stuck retrying a stale guess forever
+        # without this) - the 409 body must carry it so the caller can resync.
+        import json
+        self.assertEqual(json.loads(result.body)["current_generation"], 5)
 
 
 class TestHeartbeatTunnel(TestCase):
@@ -417,6 +422,8 @@ class TestHeartbeatTunnel(TestCase):
             result = asyncio.run(device_handlers.heartbeat_tunnel.__wrapped__(request=request))
         self.assertEqual(result.status_code, 409)
         mock_ops.update.assert_not_called()
+        import json
+        self.assertEqual(json.loads(result.body)["current_generation"], 5)
 
 
 class TestGetActiveDeviceInternal(TestCase):

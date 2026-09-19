@@ -396,7 +396,16 @@ async def register_tunnel(request: Request) -> JSONResponse:
                     "current_generation": existing.data["tunnel_generation"],
                 },
             )
-            return JSONResponse(content={"error": "Stale tunnel generation"}, status_code=409)
+            # Durability-in-terminals: a registrar that just restarted always starts its own
+            # generation counter back at 0, with no way on its own to learn what Cloud's is - a
+            # bare "Stale tunnel generation" error left it stuck retrying generation 1 forever
+            # (reproduced 2026-09-19: a pod restart mid-session permanently locked the tunnel out
+            # until a manual DB reset). Telling it the real current value lets it resync itself on
+            # the very next tick instead.
+            return JSONResponse(
+                content={"error": "Stale tunnel generation", "current_generation": existing.data["tunnel_generation"]},
+                status_code=409,
+            )
 
         now = datetime.now(timezone.utc)
         update_data = {
@@ -465,7 +474,10 @@ async def heartbeat_tunnel(request: Request) -> JSONResponse:
                     "current_generation": existing.data["tunnel_generation"],
                 },
             )
-            return JSONResponse(content={"error": "Stale tunnel generation"}, status_code=409)
+            return JSONResponse(
+                content={"error": "Stale tunnel generation", "current_generation": existing.data["tunnel_generation"]},
+                status_code=409,
+            )
 
         result = await asyncio.to_thread(
             device_ops.update,
