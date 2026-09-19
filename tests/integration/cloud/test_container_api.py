@@ -719,6 +719,92 @@ class TestReconcileDeviceResources(unittest.TestCase):
         self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
 
 
+def _running_row(container_id: str, updated_at, **overrides) -> dict:
+    row = {
+        "id": container_id, "user_id": USER_A, "device_id": DEVICE_A,
+        "status": ContainerStatus.RUNNING.value, "updated_at": updated_at,
+    }
+    row.update(overrides)
+    return row
+
+
+class TestListActiveContainersForDevice(unittest.TestCase):
+    '''
+    GET /internal/devices/{device_id}/active-containers - status_monitor's periodic "does the DB
+    think something is Running that I can't actually find a pod for" safety net.
+    '''
+
+    def setUp(self) -> None:
+        from datetime import datetime, timedelta, timezone
+        now = datetime.now(timezone.utc)
+        self.FRESH = (now - timedelta(seconds=5)).isoformat()   # inside the grace window
+        self.OLD = (now - timedelta(seconds=200)).isoformat()   # well past the grace window
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    def test_missing_token_rejected(self):
+        request = _mock_request(path_params={"device_id": DEVICE_A}, headers={})
+        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_returns_running_containers_older_than_the_grace_window(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = OperationResult(success=True, data=[_running_row("c1", self.OLD)])
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+
+        self.assertEqual(result.status_code, 200)
+        mock_ops.find.assert_called_once_with({"device_id": DEVICE_A, "status": ContainerStatus.RUNNING})
+        import json
+        self.assertEqual(json.loads(result.body)["container_ids"], ["c1"])
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_excludes_a_container_still_inside_the_grace_window(self, mock_container_ops_cls):
+        '''A container that JUST became Running must not be flagged - status_monitor's own
+        separately-fetched pod list may not show it yet purely from timing skew, not loss.'''
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = OperationResult(success=True, data=[_running_row("c1", self.FRESH)])
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+
+        import json
+        self.assertEqual(json.loads(result.body)["container_ids"], [])
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_only_queries_this_devices_running_containers(self, mock_container_ops_cls):
+        '''Ownership: the query itself is scoped to {device_id, status=Running} - PENDING/
+        RESUMING/HIBERNATED rows and other devices' containers are never even fetched.'''
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"device_id": "device-b-id"})
+        asyncio.run(container_handlers.list_active_containers_for_device(request))
+
+        mock_ops.find.assert_called_once_with({"device_id": "device-b-id", "status": ContainerStatus.RUNNING})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_no_running_containers_returns_empty_list(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find.return_value = OperationResult(success=True, data=[])
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _mock_request(path_params={"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["container_ids"], [])
+
+
 class TestListIdleContainers(unittest.TestCase):
     '''P18: GET /internal/devices/{device_id}/containers/idle.'''
 

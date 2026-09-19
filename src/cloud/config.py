@@ -40,6 +40,15 @@ CLOUD_INTERNAL_API_TOKEN: str = os.getenv("CLOUD_INTERNAL_API_TOKEN", "")
 # 90s tolerates a couple of missed/delayed heartbeats before treating it as actually offline.
 TUNNEL_OFFLINE_THRESHOLD_SECONDS: int = int(os.getenv("TUNNEL_OFFLINE_THRESHOLD_SECONDS", "90"))
 
+# status_monitor's periodic "does the DB's idea of what's Running still have a live pod behind
+# it" safety net (see src/cloud/container_handlers.py::list_active_containers_for_device) only
+# considers a Running container eligible to be flagged missing once it's been Running for at
+# least this long. A container that JUST transitioned to Running (e.g. the live pod_watcher wrote
+# it a moment ago) may not yet be visible in status_monitor's own independently-fetched pod list
+# purely due to normal timing skew between two separate reads - without this grace window a
+# perfectly healthy, brand-new container could be wrongly hibernated out from under a live pod.
+LOST_CONTAINER_GRACE_SECONDS: int = int(os.getenv("LOST_CONTAINER_GRACE_SECONDS", "90"))
+
 __all__ = [
     "DB_CONFIG",
     "POSTGRES_HOST",
@@ -55,4 +64,5 @@ __all__ = [
     "CLOUD_INTERNAL_API_TOKEN",
     "SNAPSHOT_REGISTRY_REPO_PREFIX",
     "TUNNEL_OFFLINE_THRESHOLD_SECONDS",
+    "LOST_CONTAINER_GRACE_SECONDS",
 ]

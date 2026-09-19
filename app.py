@@ -58,6 +58,7 @@ from src.cloud.container_handlers import (
     get_container_internal,
     hibernate_container,
     list_containers,
+    list_active_containers_for_device,
     list_idle_containers,
     list_images,
     list_stuck_saves,
@@ -170,6 +171,13 @@ app.add_api_route(
 # any drift in P12's cached device used_* counters.
 app.add_api_route(
     path="/internal/devices/resources/reconcile", endpoint=reconcile_device_resources, methods=["POST"]
+)
+# Durability-in-terminals: status_monitor's own periodic safety net for "the DB thinks this
+# device's container is Running but I can't actually find its pod" - see the handler's own
+# docstring for why this needs to be a device-scoped pull rather than relying on a live watch event.
+app.add_api_route(
+    path="/internal/devices/{device_id}/active-containers",
+    endpoint=list_active_containers_for_device, methods=["GET"],
 )
 # P16 - snapshot_job allocates a container_snapshots row here instead of writing to Postgres
 # directly. Same trusted-SYSTEM-caller pattern as the two routes above.

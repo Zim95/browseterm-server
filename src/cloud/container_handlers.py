@@ -13,6 +13,7 @@ Ownership is still enforced on every write/read: every lookup of an EXISTING con
 on {id, user_id} together (matching P03's ownership hardening exactly), never id alone.
 '''
 import asyncio
+from datetime import datetime, timezone
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -21,7 +22,7 @@ from browseterm_db.models.containers import ContainerStatus
 from browseterm_db.models.devices import DeviceStatus
 from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, ImageOps, SubscriptionTypeOps
 
-from src.cloud.config import DB_CONFIG, CLOUD_INTERNAL_API_TOKEN
+from src.cloud.config import DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, LOST_CONTAINER_GRACE_SECONDS
 from src.cloud.resource_quantity import InvalidQuantityError, parse_cpu_cores, parse_memory_bytes
 from src.common.logging_setup import get_logger
 
@@ -742,6 +743,64 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
     except Exception:
         logger.error("device resource reconcile failed", exc_info=True)
         return JSONResponse(content={"error": "Error reconciling device resources"}, status_code=500)
+
+
+async def list_active_containers_for_device(request: Request) -> JSONResponse:
+    '''
+    GET /internal/devices/{device_id}/active-containers
+
+    Durability-in-terminals: status_monitor's own live pod watch can miss a pod's deletion if the
+    pod disappears while the watch's own connection to the k8s API is down (or, worse, if
+    status_monitor itself restarts and loses whatever it remembered) - in both cases a container
+    can be stuck `Running` in the DB forever with no pod behind it, no way to notice on its own.
+
+    This is the other half of that fix: on its own periodic timer, status_monitor calls this to
+    ask "what does the DB think is Running for me right now", independent of anything it has or
+    hasn't observed, then checks each one against its own fresh, independently-gathered pod list.
+    Anything the DB says is Running that status_monitor can't actually find gets routed through
+    the exact same guarded hibernate-if-still-running path a live DELETED event already uses.
+
+    Only `RUNNING` is considered - not `PENDING`/`RESUMING` - since those states have a real,
+    ordinary window where a pod legitimately doesn't exist yet (the DB row lands before
+    container-maker's own pod-create call does), so "no pod yet" there means nothing is wrong.
+    Also excludes anything not yet `LOST_CONTAINER_GRACE_SECONDS` old (default 90s) - a container
+    that just transitioned to Running a moment ago may not yet be visible in status_monitor's own
+    separately-fetched pod list purely from ordinary timing skew between two independent reads,
+    not because anything is actually lost.
+
+    Same trusted-SYSTEM-caller pattern as reconcile_device_resources - status_monitor has no
+    user_id or device Bearer credential of its own (see its own cloud_client.py docstring for
+    why), it's just told its own device_id via plain (non-secret) config, same as reaper already
+    is.
+    '''
+    if not _internal_auth_ok(request):
+        return _unauthorized()
+    try:
+        device_id = request.path_params["device_id"]
+        ops = ContainerOps(DB_CONFIG)
+        result = await asyncio.to_thread(
+            ops.find, {"device_id": device_id, "status": ContainerStatus.RUNNING}
+        )
+        if not result.success:
+            logger.error("list active containers failed", extra={"error": result.error, "device_id": device_id})
+            return JSONResponse(content={"error": "Error listing active containers"}, status_code=500)
+
+        now = datetime.now(timezone.utc)
+        container_ids = []
+        for container in result.data:
+            updated_at = container.get("updated_at")
+            if isinstance(updated_at, str):
+                updated_at = datetime.fromisoformat(updated_at)
+            if updated_at and updated_at.tzinfo is None:
+                updated_at = updated_at.replace(tzinfo=timezone.utc)
+            if not updated_at or (now - updated_at).total_seconds() < LOST_CONTAINER_GRACE_SECONDS:
+                continue
+            container_ids.append(container["id"])
+
+        return JSONResponse(content={"container_ids": container_ids})
+    except Exception:
+        logger.error("list active containers failed", exc_info=True)
+        return JSONResponse(content={"error": "Error listing active containers"}, status_code=500)
 
 
 async def list_images(request: Request) -> JSONResponse:
