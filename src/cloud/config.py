@@ -49,6 +49,21 @@ TUNNEL_OFFLINE_THRESHOLD_SECONDS: int = int(os.getenv("TUNNEL_OFFLINE_THRESHOLD_
 # perfectly healthy, brand-new container could be wrongly hibernated out from under a live pod.
 LOST_CONTAINER_GRACE_SECONDS: int = int(os.getenv("LOST_CONTAINER_GRACE_SECONDS", "90"))
 
+# Migration Parts 8-11: request-from-limit ratios for the container_config_json snapshot Cloud
+# builds for Device Agent - same defaults browseterm-server-local's RESOURCE_*_REQUEST_RATIO
+# already used, so a Device Agent-created pod gets identical requests to what Local created.
+RESOURCE_CPU_REQUEST_RATIO: float = float(os.getenv("RESOURCE_CPU_REQUEST_RATIO", "0.1"))
+RESOURCE_MEMORY_REQUEST_RATIO: float = float(os.getenv("RESOURCE_MEMORY_REQUEST_RATIO", "0.5"))
+RESOURCE_EPHEMERAL_REQUEST_RATIO: float = float(os.getenv("RESOURCE_EPHEMERAL_REQUEST_RATIO", "0.5"))
+
+# Migration Part 3 "Preserve compatibility during migration" feature flags. Default False in
+# development/this session - production defaults at final cutover must flip these on (Part 20/25),
+# not done here since that is a deployment-time decision, not a code default.
+DEVICE_COMMAND_CREATE_ENABLED: bool = os.getenv("DEVICE_COMMAND_CREATE_ENABLED", "false").lower() == "true"
+DEVICE_COMMAND_DELETE_ENABLED: bool = os.getenv("DEVICE_COMMAND_DELETE_ENABLED", "false").lower() == "true"
+DEVICE_COMMAND_HIBERNATE_ENABLED: bool = os.getenv("DEVICE_COMMAND_HIBERNATE_ENABLED", "false").lower() == "true"
+DEVICE_COMMAND_RESUME_ENABLED: bool = os.getenv("DEVICE_COMMAND_RESUME_ENABLED", "false").lower() == "true"
+
 __all__ = [
     "DB_CONFIG",
     "POSTGRES_HOST",
@@ -65,4 +80,11 @@ __all__ = [
     "SNAPSHOT_REGISTRY_REPO_PREFIX",
     "TUNNEL_OFFLINE_THRESHOLD_SECONDS",
     "LOST_CONTAINER_GRACE_SECONDS",
+    "RESOURCE_CPU_REQUEST_RATIO",
+    "RESOURCE_MEMORY_REQUEST_RATIO",
+    "RESOURCE_EPHEMERAL_REQUEST_RATIO",
+    "DEVICE_COMMAND_CREATE_ENABLED",
+    "DEVICE_COMMAND_DELETE_ENABLED",
+    "DEVICE_COMMAND_HIBERNATE_ENABLED",
+    "DEVICE_COMMAND_RESUME_ENABLED",
 ]

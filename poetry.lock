@@ -126,7 +126,7 @@ sqlalchemy = "^2.0.43"
 type = "git"
 url = "https://github.com/Zim95/browseterm-db.git"
 reference = "main"
-resolved_reference = "e5e8d0bed94e2096abc3e18a1756fcdb4e195466"
+resolved_reference = "9a07380be5c7560b80ae289a503f66516f32f02d"
 
 [[package]]
 name = "browseterm-device-control-spec"
@@ -147,7 +147,7 @@ protobuf = "^5.29.0"
 type = "git"
 url = "https://github.com/Zim95/browseterm-device-control-spec.git"
 reference = "main"
-resolved_reference = "f305506a052b863b716cb9c6e4dac221084357c6"
+resolved_reference = "5f3ba24749f6ad55782d9d5ae5e81a27ba1f5c00"
 
 [[package]]
 name = "certifi"

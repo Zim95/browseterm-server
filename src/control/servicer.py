@@ -33,6 +33,7 @@ from src.cloud.config import DB_CONFIG
 from src.control.auth import authenticate_stream
 from src.control.config import MINIMUM_AGENT_PROTOCOL_VERSION, PING_INTERVAL_SECONDS
 from src.control.connection_registry import connection_registry, CHECK_PENDING_SENTINEL, ConnectionState
+from src.control.container_mutation import apply_command_result
 from src.common.logging_setup import get_logger
 
 logger = get_logger("device_control_servicer")
@@ -164,6 +165,7 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
                 placement_generation=command["placement_generation"],
                 expected_container_state=command["expected_container_state"] or "",
                 trace_id=command["correlation_id"] or command["request_id"] or "",
+                container_config_json=command.get("container_config_json") or "",
             ))
         return execute_commands
 
@@ -247,6 +249,10 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
             },
         )
         await asyncio.to_thread(command_ops.release_quota_for_command, result.command_id)
+        await apply_command_result(
+            existing.data, "succeeded" if model_status == CommandStatus.SUCCEEDED else "failed",
+            result.result_json or None, result.error_message or None,
+        )
 
 
 _OPERATION_TO_WIRE = {

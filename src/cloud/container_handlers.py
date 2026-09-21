@@ -20,11 +20,19 @@ from fastapi.responses import JSONResponse
 
 from browseterm_db.models.containers import ContainerStatus
 from browseterm_db.models.devices import DeviceStatus
-from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, ImageOps, SubscriptionTypeOps
+from browseterm_db.models.device_commands import CommandOperation
+from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, ImageOps, SubscriptionTypeOps, DeviceCommandOps
 
-from src.cloud.config import DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, LOST_CONTAINER_GRACE_SECONDS
+from src.cloud.config import (
+    DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, LOST_CONTAINER_GRACE_SECONDS,
+    DEVICE_COMMAND_CREATE_ENABLED, DEVICE_COMMAND_DELETE_ENABLED,
+    DEVICE_COMMAND_HIBERNATE_ENABLED, DEVICE_COMMAND_RESUME_ENABLED,
+)
 from src.cloud.resource_quantity import InvalidQuantityError, parse_cpu_cores, parse_memory_bytes
-from src.common.logging_setup import get_logger
+from src.cloud.container_config_snapshot import (
+    build_create_config_json, build_delete_config_json, build_hibernate_config_json, build_resume_config_json,
+)
+from src.common.logging_setup import get_logger, request_id_var
 
 logger = get_logger("cloud_container_handlers")
 
@@ -182,6 +190,9 @@ async def create_container(request: Request) -> JSONResponse:
         if resource_errors:
             return JSONResponse(content={"error": resource_errors}, status_code=400)
 
+        if DEVICE_COMMAND_CREATE_ENABLED:
+            return await _create_container_via_device_command(body, user_id, device_id, requested_cpu, requested_memory, requested_storage)
+
         # Reserve usage before creating the row (see docstring for why this ordering).
         reserve_result = await asyncio.to_thread(
             device_ops.update,
@@ -218,6 +229,62 @@ async def create_container(request: Request) -> JSONResponse:
     except Exception:
         logger.error("container create failed", exc_info=True)
         return JSONResponse(content={"error": "Error creating container"}, status_code=500)
+
+
+async def _create_container_via_device_command(
+    body: dict, user_id: str, device_id: str, requested_cpu: int, requested_memory: int, requested_storage: int,
+) -> JSONResponse:
+    '''
+    Migration Part 8 path (DEVICE_COMMAND_CREATE_ENABLED): insert the container row QUEUED (no
+    kubernetes_id yet), then atomically reserve device quota and create a durable CREATE command
+    (DeviceCommandOps.reserve_quota_and_create_command - Part 1) - the dispatcher (Part 6's
+    CommandBroadcaster/gRPC server) delivers it to the assigned Device Agent from there. Returns
+    202, not 201 - the pod does not exist yet, only the intent does ("Return 202 Accepted with
+    container/command IDs").
+
+    Note: reserve_quota_and_create_command reserves into devices.reserved_* (in-flight quota),
+    NOT used_cpu directly - used_cpu is confirmed-running capacity, only ever updated once
+    status_monitor (Part 12) observes the pod actually exists. This is a deliberate accounting
+    change from the old synchronous path, not an oversight - see Part 1's progress-log notes.
+    '''
+    ops = ContainerOps(DB_CONFIG)
+    image_ops = ImageOps(DB_CONFIG)
+
+    image_id = body.get("image_id")
+    image_name = None
+    if image_id:
+        image_result = await asyncio.to_thread(image_ops.find_one, {"id": image_id})
+        if not image_result.data:
+            return JSONResponse(content={"error": f"Image {image_id} not found"}, status_code=404)
+        image_name = image_result.data["image"]
+    if not image_name:
+        return JSONResponse(content={"error": "image_id is required"}, status_code=400)
+
+    insert_data = {k: v for k, v in body.items() if k != "id"}
+    insert_data["device_id"] = device_id
+    insert_data["status"] = ContainerStatus.QUEUED
+    insert_result = await asyncio.to_thread(ops.insert, insert_data)
+    if not insert_result.success:
+        logger.error("container create (device command path) failed", extra={"error": insert_result.error})
+        return JSONResponse(content={"error": "Error creating container"}, status_code=500)
+    container = insert_result.data
+
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    reserve_result = await asyncio.to_thread(
+        command_ops.reserve_quota_and_create_command,
+        user_id, device_id, container["id"], CommandOperation.CREATE,
+        requested_cpu, requested_memory, requested_storage,
+        expected_container_state=None, request_id=request_id_var.get(),
+    )
+    if not reserve_result.success:
+        logger.error("quota reservation/command creation failed", extra={"error": reserve_result.error, "container_id": container["id"]})
+        await asyncio.to_thread(ops.delete, {"id": container["id"], "user_id": user_id})
+        return JSONResponse(content={"error": reserve_result.error or "Error reserving device quota"}, status_code=500)
+
+    config_json = build_create_config_json(container, image_name)
+    await asyncio.to_thread(command_ops.update, {"id": reserve_result.data["id"]}, {"container_config_json": config_json})
+
+    return JSONResponse(content={"container": container, "command": reserve_result.data}, status_code=202)
 
 
 async def resume_container(request: Request) -> JSONResponse:
@@ -300,6 +367,9 @@ async def resume_container(request: Request) -> JSONResponse:
         if resource_errors:
             return JSONResponse(content={"error": resource_errors}, status_code=400)
 
+        if DEVICE_COMMAND_RESUME_ENABLED:
+            return await _resume_container_via_device_command(container, user_id, device_id, requested_cpu, requested_memory, requested_storage)
+
         # Reserve usage before the CAS transition (see docstring for why this ordering).
         reserve_result = await asyncio.to_thread(
             device_ops.update,
@@ -350,6 +420,39 @@ async def resume_container(request: Request) -> JSONResponse:
     except Exception:
         logger.error("resume failed", exc_info=True)
         return JSONResponse(content={"error": "Error resuming container"}, status_code=500)
+
+
+async def _resume_container_via_device_command(
+    container: dict, user_id: str, device_id: str, requested_cpu: int, requested_memory: int, requested_storage: int,
+) -> JSONResponse:
+    '''
+    Migration Part 11 path (revised - see the RECHECK note in BROWSETERM_MIGRATION_PROGRESS.md):
+    uses container["saved_image"] exactly as stored, no digest verification. Quota reservation +
+    placement_generation bump + device_id assignment all happen atomically inside
+    reserve_quota_and_create_command (Part 1) - this function does not perform its own CAS on
+    containers.status the way the old synchronous path did; conditional_container_update (applied
+    from container_mutation.py once the RESUME command's result arrives) is what actually flips
+    status to RUNNING, gated on the SAME placement_generation this call establishes.
+    '''
+    if not container.get("saved_image"):
+        return JSONResponse(content={"error": "Container has no saved_image to resume from"}, status_code=409)
+
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    reserve_result = await asyncio.to_thread(
+        command_ops.reserve_quota_and_create_command,
+        user_id, device_id, container["id"], CommandOperation.RESUME,
+        requested_cpu, requested_memory, requested_storage,
+        expected_container_state=ContainerStatus.HIBERNATED.value, request_id=request_id_var.get(),
+    )
+    if not reserve_result.success:
+        return JSONResponse(content={"error": reserve_result.error or "Error reserving device quota"}, status_code=409)
+
+    config_json = build_resume_config_json(container)
+    await asyncio.to_thread(command_ops.update, {"id": reserve_result.data["id"]}, {"container_config_json": config_json})
+
+    ops = ContainerOps(DB_CONFIG)
+    await asyncio.to_thread(ops.update, {"id": container["id"], "user_id": user_id}, {"status": ContainerStatus.RESUMING})
+    return JSONResponse(content={"command": reserve_result.data}, status_code=202)
 
 
 async def get_container(request: Request) -> JSONResponse:
@@ -455,6 +558,9 @@ async def delete_container(request: Request) -> JSONResponse:
         if not existing.data:
             return _not_found()
 
+        if DEVICE_COMMAND_DELETE_ENABLED and existing.data.get("device_id"):
+            return await _delete_container_via_device_command(existing.data, user_id)
+
         result = await asyncio.to_thread(ops.delete, {"id": container_id, "user_id": user_id})
         if not result.success:
             logger.error("container delete failed", extra={"error": result.error})
@@ -465,6 +571,29 @@ async def delete_container(request: Request) -> JSONResponse:
     except Exception:
         logger.error("container delete failed", exc_info=True)
         return JSONResponse(content={"error": "Error deleting container"}, status_code=500)
+
+
+async def _delete_container_via_device_command(container: dict, user_id: str) -> JSONResponse:
+    '''Migration Part 9 path: DELETE never reserves quota (only CREATE/RESUME do - Part 1), so
+    this goes through the plain command_ops.insert(), not reserve_quota_and_create_command. The
+    container row itself is only actually removed once Device Agent's CommandResult confirms the
+    delete succeeded (src/control/container_mutation.py) - never deleted eagerly here, or a
+    result arriving afterward would have no row/command left to apply to (CASCADE on
+    device_commands.container_id).'''
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    config_json = build_delete_config_json(container)
+    insert_result = await asyncio.to_thread(command_ops.insert, {
+        "user_id": user_id, "device_id": container["device_id"], "container_id": container["id"],
+        "operation": CommandOperation.DELETE, "placement_generation": container["placement_generation"],
+        "container_config_json": config_json, "request_id": request_id_var.get(),
+    })
+    if not insert_result.success:
+        logger.error("delete command creation failed", extra={"error": insert_result.error, "container_id": container["id"]})
+        return JSONResponse(content={"error": insert_result.error or "Error creating delete command"}, status_code=500)
+
+    ops = ContainerOps(DB_CONFIG)
+    await asyncio.to_thread(ops.update, {"id": container["id"], "user_id": user_id}, {"status": ContainerStatus.DELETING})
+    return JSONResponse(content={"command": insert_result.data}, status_code=202)
 
 
 async def update_container_status(request: Request) -> JSONResponse:
@@ -580,6 +709,9 @@ async def hibernate_container(request: Request) -> JSONResponse:
         if not existing.data:
             return _not_found()
 
+        if DEVICE_COMMAND_HIBERNATE_ENABLED and existing.data.get("device_id"):
+            return await _hibernate_container_via_device_command(existing.data)
+
         result = await asyncio.to_thread(
             ops.update, {"id": container_id}, {"status": ContainerStatus.HIBERNATED, "device_id": None}
         )
@@ -592,6 +724,33 @@ async def hibernate_container(request: Request) -> JSONResponse:
     except Exception:
         logger.error("hibernate failed", exc_info=True)
         return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
+
+
+async def _hibernate_container_via_device_command(container: dict) -> JSONResponse:
+    '''
+    Migration Part 10 path. Caller-contract change from the old flow: the OLD `hibernate_container`
+    assumed the caller (reaper, or Local's own manual-hibernate orchestration) had ALREADY
+    confirmed a successful save and just wanted the compound DB transition applied. Device Agent's
+    hibernate.py handler now performs the entire save-then-delete sequence itself and reports one
+    terminal CommandResult - so this endpoint's job shrinks to "create a HIBERNATE command",
+    nothing more. Part 12 must update reaper's caller code to match (stop polling save_status
+    itself, just request this and wait for the SSE/status transition instead) - not done here,
+    flagged as required follow-up work for that part.
+    '''
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    config_json = build_hibernate_config_json(container)
+    insert_result = await asyncio.to_thread(command_ops.insert, {
+        "user_id": container["user_id"], "device_id": container["device_id"], "container_id": container["id"],
+        "operation": CommandOperation.HIBERNATE, "placement_generation": container["placement_generation"],
+        "container_config_json": config_json, "request_id": request_id_var.get(),
+    })
+    if not insert_result.success:
+        logger.error("hibernate command creation failed", extra={"error": insert_result.error, "container_id": container["id"]})
+        return JSONResponse(content={"error": insert_result.error or "Error creating hibernate command"}, status_code=500)
+
+    ops = ContainerOps(DB_CONFIG)
+    await asyncio.to_thread(ops.update, {"id": container["id"]}, {"status": ContainerStatus.HIBERNATING})
+    return JSONResponse(content={"command": insert_result.data}, status_code=202)
 
 
 async def get_container_internal(request: Request) -> JSONResponse:

@@ -1,0 +1,134 @@
+'''
+Container-field mutation from a terminal CommandResult (migration Parts 8-11). Deliberately
+separate from src/control/servicer.py's generic command-row bookkeeping (Part 6) - what fields
+change and how is operation-specific, this module is where that per-operation knowledge lives.
+
+Every mutation goes through DeviceCommandOps.conditional_container_update (device_id +
+placement_generation gated) so a stale/superseded command can never overwrite a newer placement -
+the same invariant Part 1 built and Part 6's own CommandResult handling already checks before
+calling into here.
+'''
+import asyncio
+import json
+from datetime import datetime, timezone
+from typing import Optional
+
+from browseterm_db.models.containers import ContainerStatus
+from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, DeviceCommandOps
+
+from src.cloud.config import DB_CONFIG
+from src.cloud.resource_quantity import InvalidQuantityError, parse_cpu_cores, parse_memory_bytes
+from src.common.logging_setup import get_logger
+
+logger = get_logger("container_mutation")
+
+
+async def apply_command_result(command: dict, status: str, result_json: Optional[str], error_message: Optional[str]) -> None:
+    if not command.get("container_id"):
+        return  # device-wide commands (none exist yet) have nothing to mutate
+    operation = command["operation"]
+    try:
+        result = json.loads(result_json) if result_json else {}
+    except (json.JSONDecodeError, ValueError):
+        result = {}
+
+    if operation == "Create":
+        await _apply_create_or_resume(command, status, result)
+    elif operation == "Delete":
+        await _apply_delete(command, status)
+    elif operation == "Hibernate":
+        await _apply_hibernate(command, status, result)
+    elif operation == "Resume":
+        await _apply_create_or_resume(command, status, result)
+    # Reconcile: Part 22, not mutating container fields here.
+
+
+async def _apply_create_or_resume(command: dict, status: str, result: dict) -> None:
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    if status == "succeeded":
+        update_data = {
+            "status": ContainerStatus.RUNNING,
+            "kubernetes_id": result.get("kubernetes_id"),
+            "ip_address": result.get("ip_address"),
+            "associated_resources": result.get("associated_resources"),
+        }
+    else:
+        # "If pod creation fails, release reservation and return to HIBERNATED when safe" (Part
+        # 11) - for Create there's no prior HIBERNATED state to return to, so FAILED is the
+        # honest terminal state instead (matches ContainerStatus's existing FAILED value).
+        update_data = {"status": ContainerStatus.HIBERNATED if command["operation"] == "Resume" else ContainerStatus.FAILED}
+    matched = await asyncio.to_thread(
+        command_ops.conditional_container_update,
+        command["container_id"], command["device_id"], command["placement_generation"], update_data,
+    )
+    if not matched.success or matched.data.get("matched", 0) == 0:
+        logger.info("container mutation skipped (stale placement)", extra={"command_id": command["id"], "operation": command["operation"]})
+
+
+async def _apply_delete(command: dict, status: str) -> None:
+    if status != "succeeded":
+        # "Missing pod/service is success" already makes delete.py's handler report SUCCEEDED
+        # for an already-gone pod - a real FAILED here means something else went wrong. Leave the
+        # row as-is (still whatever status it was) rather than guessing a new one; Part 22's
+        # reconciliation loop is the backstop for anything this leaves inconsistent.
+        return
+
+    container_ops = ContainerOps(DB_CONFIG)
+    device_ops = DeviceOps(DB_CONFIG)
+    existing = await asyncio.to_thread(container_ops.find_one, {"id": command["container_id"], "user_id": command["user_id"]})
+    if not existing.data:
+        return  # already gone (e.g. a duplicate result for an already-processed delete)
+
+    delete_result = await asyncio.to_thread(container_ops.delete, {"id": command["container_id"], "user_id": command["user_id"]})
+    if not delete_result.success:
+        logger.error("container row delete failed after successful device delete", extra={"command_id": command["id"]})
+        return
+
+    await _release_used_resources(existing.data, device_ops)
+
+
+async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    if status != "succeeded":
+        return  # pod is still running (see hibernate.py's own POD_DELETE_FAILED_AFTER_SAVE note) - leave status as RUNNING, unchanged
+
+    container_ops = ContainerOps(DB_CONFIG)
+    existing = await asyncio.to_thread(container_ops.find_one, {"id": command["container_id"], "user_id": command["user_id"]})
+
+    matched = await asyncio.to_thread(
+        command_ops.conditional_container_update,
+        command["container_id"], command["device_id"], command["placement_generation"],
+        {"status": ContainerStatus.HIBERNATED, "device_id": None, "saved_image": result.get("saved_image")},
+    )
+    if matched.success and matched.data.get("matched", 0) > 0 and existing.data:
+        await _release_used_resources(existing.data, DeviceOps(DB_CONFIG))
+
+
+async def _release_used_resources(container: dict, device_ops: DeviceOps) -> None:
+    '''Mirrors container_handlers.py's own _release_device_resources - duplicated rather than
+    imported to avoid a control -> cloud module dependency; kept deliberately small and identical
+    in behavior. A real shared-util extraction is reasonable future cleanup, not required here.'''
+    device_id = container.get("device_id")
+    if not device_id:
+        return
+    try:
+        cpu = parse_cpu_cores(container["cpu_limit"])
+        memory = parse_memory_bytes(container["memory_limit"])
+        storage = parse_memory_bytes(container["storage_limit"])
+    except (InvalidQuantityError, KeyError, TypeError):
+        logger.error("could not parse container resource limits for release", extra={"container_id": container.get("id")})
+        return
+
+    device_result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": container.get("user_id")})
+    if not device_result.data:
+        return
+    device = device_result.data
+    await asyncio.to_thread(
+        device_ops.update,
+        {"id": device_id, "user_id": container.get("user_id")},
+        {
+            "used_cpu": max(0, device["used_cpu"] - cpu),
+            "used_memory_bytes": max(0, device["used_memory_bytes"] - memory),
+            "used_storage_bytes": max(0, device["used_storage_bytes"] - storage),
+        },
+    )

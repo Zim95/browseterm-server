@@ -59,3 +59,30 @@ def parse_memory_bytes(value: str) -> int:
     if suffix not in _MEMORY_SUFFIXES:
         raise InvalidQuantityError(f"Invalid memory/storage quantity: {value!r}")
     return math.ceil(number * _MEMORY_SUFFIXES[suffix])
+
+
+def derive_cpu_request_string(limit: str, ratio: float) -> str:
+    '''Migration Parts 8/11: the container_config_json snapshot Cloud sends Device Agent needs a
+    literal Kubernetes CPU quantity STRING for the request (not just the whole-cores-rounded-up
+    integer parse_cpu_cores uses for device accounting) - e.g. limit="1", ratio=0.1 -> "100m".
+    Ported from browseterm-server-local's ResourceUnitConverter.derive_cpu_request, reimplemented
+    dependency-free here (no `kubernetes` client - see this module's own docstring for why Cloud
+    never takes that dependency).'''
+    number, suffix = _split(limit)
+    millicores = number if suffix == "m" else number * 1000
+    derived_millicores = int(millicores * ratio)
+    if derived_millicores >= 1000 and derived_millicores % 1000 == 0:
+        return str(derived_millicores // 1000)
+    return f"{derived_millicores}m"
+
+
+def derive_memory_request_string(limit: str, ratio: float) -> str:
+    '''Same as derive_cpu_request_string but for memory/storage - "1Gi", ratio=0.5 -> "512Mi".'''
+    derived_bytes = int(parse_memory_bytes(limit) * ratio)
+    if derived_bytes % _MEMORY_SUFFIXES["Gi"] == 0:
+        return f"{derived_bytes // _MEMORY_SUFFIXES['Gi']}Gi"
+    if derived_bytes % _MEMORY_SUFFIXES["Mi"] == 0:
+        return f"{derived_bytes // _MEMORY_SUFFIXES['Mi']}Mi"
+    if derived_bytes % _MEMORY_SUFFIXES["Ki"] == 0:
+        return f"{derived_bytes // _MEMORY_SUFFIXES['Ki']}Ki"
+    return str(derived_bytes)
