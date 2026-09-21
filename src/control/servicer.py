@@ -63,6 +63,48 @@ def _bump_connection_generation(device_id: str) -> None:
         session.close()
 
 
+def _maybe_activate_on_startup(user_id: str, device_id: str, startup_id: str) -> None:
+    '''
+    Migration Part 14: "A real Desktop/CLI startup may request activation once... Duplicate
+    request with the same startup ID is idempotent... gRPC reconnects reuse the startup ID and
+    must not cause another activation."
+
+    A genuine new startup is detected by comparing the incoming Hello's startup_id against
+    devices.startup_id as currently stored - different means this is the first Hello of an
+    actual new process startup (Desktop/CLI mints a fresh startup_id once per real launch, not
+    per reconnect), so activate via DeviceCommandOps.activate_device (Part 1's single atomic
+    UPDATE - the fix for _demote_other_devices' non-atomic find-then-loop pattern, which is still
+    used by the old REST heartbeat_device route and deliberately left alone here - this is an
+    additive path for gRPC-connected devices, not a replacement of the old one, since Desktop
+    still depends on the old route's current behavior until it moves onto Device Agent itself).
+    Empty startup_id (no real supervisor minted one, e.g. local dev) never activates - matches
+    main.py's own "startup_id is optional in local/dev environments" note on the Device Agent side.
+    '''
+    if not startup_id:
+        return
+    session = DB_CONFIG.get_db_session()
+    try:
+        row = session.execute(
+            text("SELECT startup_id FROM devices WHERE id = :device_id"), {"device_id": device_id},
+        ).fetchone()
+        if row is None or row[0] == startup_id:
+            return  # unknown device (auth already checked this can't happen) or a reconnect, not a new startup
+        session.execute(
+            text("UPDATE devices SET startup_id = :startup_id, updated_at = :now WHERE id = :device_id"),
+            {"device_id": device_id, "startup_id": startup_id, "now": datetime.now(timezone.utc)},
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    result = command_ops.activate_device(user_id, device_id)
+    if not result.success:
+        logger.error("startup activation failed", extra={"device_id": device_id, "user_id": user_id, "error": result.error})
+    else:
+        logger.info("device.activated_on_startup", extra={"device_id": device_id, "user_id": user_id})
+
+
 class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
 
     async def Connect(self, request_iterator: AsyncIterator[DeviceToCloud], context: grpc.aio.ServicerContext):
@@ -93,6 +135,7 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
 
         device_id = auth.device_id
         user_id = auth.user_id
+        await asyncio.to_thread(_maybe_activate_on_startup, user_id, device_id, hello.startup_id)
         state: ConnectionState = connection_registry.register(device_id, user_id)
         await asyncio.to_thread(_bump_connection_generation, device_id)
         logger.info("device.connected", extra={"device_id": device_id, "user_id": user_id, "generation": state.generation})
