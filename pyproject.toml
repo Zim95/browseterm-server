@@ -8,15 +8,22 @@ readme = "README.md"
 [tool.poetry.dependencies]
 # Trimmed in P06 to what the Cloud app (app.py, src/cloud/*, and the shared
 # session-validation/db_ops slice under src/authentication, src/db_ops) actually imports.
-# grpcio(-tools)/container-maker-spec/payment-gateway-spec/paramiko/websocket-client/kubernetes/
-# jinja2/ipython were all Local-only (ContainerMaker gRPC, Socket-SSH, workspace templates,
-# dev REPL) and moved to browseterm-server-local with the code that used them.
+# container-maker-spec/payment-gateway-spec/paramiko/websocket-client/kubernetes/jinja2/ipython
+# were all Local-only (ContainerMaker gRPC, Socket-SSH, workspace templates, dev REPL) and moved
+# to browseterm-server-local with the code that used them.
+#
+# Cloud Control Plane migration Part 6 reintroduces grpcio here (deliberately, not a regression
+# of the P06 trim above) - Cloud now runs its OWN gRPC server (src/control/*, grpc_server.py) for
+# the Device Agent's inbound control stream. This is unrelated to browseterm-server-local's
+# ContainerMaker gRPC *client* usage; Cloud is a gRPC server here, never a ContainerMaker client.
 python = ">=3.11,<3.12"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
 redis = "^5.0.0"
 httpx = "^0.27.0"
+grpcio = "^1.70.0"
 browseterm-db = {git = "https://github.com/Zim95/browseterm-db.git", rev = "main"}
+browseterm-device-control-spec = {git = "https://github.com/Zim95/browseterm-device-control-spec.git", rev = "main"}
 
 
 [build-system]
