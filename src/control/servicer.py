@@ -10,6 +10,7 @@ timestamps), releases quota exactly once, and redelivers unfinished commands - t
 envelope every operation shares.
 '''
 import asyncio
+import json
 import time
 import uuid
 from datetime import datetime, timezone
@@ -18,8 +19,9 @@ from typing import AsyncIterator, List, Optional
 import grpc
 from sqlalchemy import text
 
-from browseterm_db.operations.all_operations import DeviceCommandOps
+from browseterm_db.operations.all_operations import DeviceCommandOps, DeviceOps
 from browseterm_db.models.device_commands import CommandStatus
+from browseterm_db.models.devices import TunnelStatus
 
 from device_control_spec import device_control_pb2_grpc
 from device_control_spec.device_control_pb2 import DeviceToCloud, CloudToDevice
@@ -184,8 +186,11 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
                     await self._handle_command_result(device_id, message.command_result)
                 elif kind == "pong":
                     pass
-                # inventory_report / terminal_tunnel_registration / local_event: reconciliation
-                # (Part 22) and tunnel cutover (Part 13) - intentionally not handled yet here.
+                elif kind == "local_event":
+                    await self._handle_local_event(device_id, message.local_event)
+                elif kind == "terminal_tunnel_registration":
+                    await self._handle_terminal_tunnel_registration(device_id, message.terminal_tunnel_registration)
+                # inventory_report: reconciliation, Part 22 - not handled yet here.
         except asyncio.CancelledError:
             pass
         except grpc.aio.AioRpcError:
@@ -253,6 +258,60 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
             existing.data, "succeeded" if model_status == CommandStatus.SUCCEEDED else "failed",
             result.result_json or None, result.error_message or None,
         )
+
+    async def _handle_local_event(self, device_id: str, local_event) -> None:
+        '''Migration Part 12: Device Agent's LocalDeviceAgent.ReportContainerStatus forwards here
+        as a LocalEvent(event_type="container_status_report") - status_monitor no longer calls
+        Cloud's /internal/containers/{id}/status directly with the global token, it goes through
+        Device Agent's local API, which relays it over this already-authenticated stream instead.
+        Applies a conditional (device_id + placement_generation gated) update, same staleness
+        protection every other command-driven container mutation gets.'''
+        if local_event.event_type != "container_status_report":
+            return
+        try:
+            payload = json.loads(local_event.payload_json)
+        except (json.JSONDecodeError, ValueError):
+            logger.error("malformed container_status_report payload", extra={"device_id": device_id})
+            return
+        container_id = payload.get("container_id")
+        placement_generation = payload.get("placement_generation")
+        observed_status = payload.get("observed_status")
+        if not container_id or placement_generation is None or not observed_status:
+            return
+        command_ops = DeviceCommandOps(DB_CONFIG)
+        update_data = {"status": observed_status}
+        if payload.get("kubernetes_id"):
+            update_data["kubernetes_id"] = payload["kubernetes_id"]
+        matched = await asyncio.to_thread(
+            command_ops.conditional_container_update, container_id, device_id, placement_generation, update_data,
+        )
+        if not matched.success:
+            logger.error("container status report apply failed", extra={"device_id": device_id, "container_id": container_id, "error": matched.error})
+
+    async def _handle_terminal_tunnel_registration(self, device_id: str, registration) -> None:
+        '''Migration Part 13 groundwork: Device Agent forwards Tunnel Registrar's report here
+        instead of tunnel_registrar calling Cloud directly with the global token. Same
+        stale-generation rejection as the existing HTTP register_tunnel route
+        (src/cloud/device_handlers.py) - duplicated rather than shared, since that route takes a
+        FastAPI Request and this takes a protobuf message; both apply the identical rule.'''
+        device_ops = DeviceOps(DB_CONFIG)
+        existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id})
+        if not existing.data:
+            return
+        if registration.generation < existing.data["tunnel_generation"]:
+            logger.info("rejected stale tunnel generation over control stream", extra={"device_id": device_id})
+            return
+        now = datetime.now(timezone.utc)
+        update_data = {
+            "tunnel_provider": registration.provider,
+            "tunnel_public_url": registration.public_url,
+            "tunnel_status": TunnelStatus.ONLINE if registration.status == "online" else TunnelStatus.OFFLINE,
+            "tunnel_generation": registration.generation,
+            "tunnel_last_heartbeat_at": now,
+        }
+        if registration.public_url != existing.data["tunnel_public_url"]:
+            update_data["tunnel_connected_at"] = now
+        await asyncio.to_thread(device_ops.update, {"id": device_id}, update_data)
 
 
 _OPERATION_TO_WIRE = {

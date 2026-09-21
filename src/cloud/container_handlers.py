@@ -28,6 +28,7 @@ from src.cloud.config import (
     DEVICE_COMMAND_CREATE_ENABLED, DEVICE_COMMAND_DELETE_ENABLED,
     DEVICE_COMMAND_HIBERNATE_ENABLED, DEVICE_COMMAND_RESUME_ENABLED,
 )
+from src.cloud.device_handlers import authenticate_device
 from src.cloud.resource_quantity import InvalidQuantityError, parse_cpu_cores, parse_memory_bytes
 from src.cloud.container_config_snapshot import (
     build_create_config_json, build_delete_config_json, build_hibernate_config_json, build_resume_config_json,
@@ -724,6 +725,36 @@ async def hibernate_container(request: Request) -> JSONResponse:
     except Exception:
         logger.error("hibernate failed", exc_info=True)
         return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
+
+
+@authenticate_device
+async def request_hibernate_command(request: Request) -> JSONResponse:
+    '''
+    POST /devices/{device_id}/containers/{container_id}/hibernate-request - Bearer device-token
+    gated (src.cloud.device_handlers.authenticate_device), NOT the internal-token route. Migration
+    Part 12: Device Agent's local API (RequestHibernate) calls this synchronously on behalf of
+    Reaper/a manual hibernate trigger, since only Cloud can create a durable command - Device
+    Agent has no direct database access. This is the ONE new Cloud HTTP surface Part 12 needed;
+    every other local-job report (status, snapshot progress, tunnel) forwards asynchronously over
+    the existing Device Control stream instead (see src/control/servicer.py's LocalEvent handling).
+
+    Reuses the same command-creation logic the internal hibernate_container route uses
+    (_hibernate_container_via_device_command) - the doc's own "duplicate idle detections must
+    collapse to one active hibernate command" is enforced by the partial unique index on
+    device_commands (Part 1), not by anything here: a second call for an already-hibernating
+    container fails cleanly via that constraint, surfaced as this route's own 409/500 path.
+    '''
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
+    container_id = request.path_params["container_id"]
+    ops = ContainerOps(DB_CONFIG)
+    existing = await asyncio.to_thread(ops.find_one, {"id": container_id, "user_id": request.state.user_id, "device_id": device_id})
+    if not existing.data:
+        return _not_found()
+    if existing.data["status"] != ContainerStatus.RUNNING.value:
+        return JSONResponse(content={"error": "Only a running terminal can be hibernated"}, status_code=409)
+    return await _hibernate_container_via_device_command(existing.data)
 
 
 async def _hibernate_container_via_device_command(container: dict) -> JSONResponse:

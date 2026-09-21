@@ -64,6 +64,7 @@ from src.cloud.container_handlers import (
     list_stuck_saves,
     list_subscription_types,
     reconcile_device_resources,
+    request_hibernate_command,
     resume_container,
     update_container,
     update_container_internal,
@@ -197,6 +198,12 @@ app.add_api_route(
 )
 app.add_api_route(
     path="/internal/containers/{container_id}/hibernate", endpoint=hibernate_container, methods=["POST"]
+)
+# Migration Part 12 - Device Agent's local API (RequestHibernate) calls this on the device's own
+# Bearer token, not the internal-token route above.
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}/hibernate-request",
+    endpoint=request_hibernate_command, methods=["POST"],
 )
 # container-maker's off-direct-Postgres migration (see p.md's writeup): self-heal of a drifted
 # kubernetes_id, and the save reconciler's stuck-save sweep/mark-failed. The literal
