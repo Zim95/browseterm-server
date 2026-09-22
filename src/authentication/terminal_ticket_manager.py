@@ -31,6 +31,7 @@ class TicketData(TypedDict):
     user_id: str
     device_id: str
     container_id: str
+    placement_generation: int
     created_at: float
 
 
@@ -41,11 +42,11 @@ class TerminalTicketManager:
             db=REDIS_DB, decode_responses=True,
         )
 
-    def create_ticket(self, user_id: str, device_id: str, container_id: str) -> str:
+    def create_ticket(self, user_id: str, device_id: str, container_id: str, placement_generation: int) -> str:
         ticket = secrets.token_urlsafe(32)
         data: TicketData = {
             "user_id": user_id, "device_id": device_id, "container_id": container_id,
-            "created_at": time.time(),
+            "placement_generation": placement_generation, "created_at": time.time(),
         }
         self.redis_client.setex(f"{TICKET_PREFIX}{ticket}", TICKET_TTL_SECONDS, json.dumps(data))
         return ticket

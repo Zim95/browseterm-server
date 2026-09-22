@@ -53,6 +53,7 @@ def _container_row(**overrides) -> dict:
         "device_id": DEVICE_A,
         "status": "Running",
         "ip_address": "10.42.0.5",
+        "placement_generation": 1,
         "port_mappings": [{"publish_port": 2222, "target_port": 22, "protocol": "TCP"}],
         "environment_vars": {"SSH_USERNAME": "u", "SSH_PASSWORD": "p"},
     }
@@ -138,7 +139,7 @@ class TestConsumeTerminalSession(TestCase):
     def test_valid_ticket_returns_connection_info(self) -> None:
         mock_ticket_manager = MagicMock()
         mock_ticket_manager.consume_ticket.return_value = {
-            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A,
+            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1,
         }
         mock_container_ops = MagicMock()
         mock_container_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
@@ -169,7 +170,7 @@ class TestConsumeTerminalSession(TestCase):
         that the handler doesn't add its own accidental second chance for it).'''
         mock_ticket_manager = MagicMock()
         mock_ticket_manager.consume_ticket.side_effect = [
-            {"user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A}, None,
+            {"user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1}, None,
         ]
         mock_container_ops = MagicMock()
         mock_container_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
@@ -188,17 +189,53 @@ class TestConsumeTerminalSession(TestCase):
     def test_wrong_device_cannot_consume_anothers_ticket(self) -> None:
         mock_ticket_manager = MagicMock()
         mock_ticket_manager.consume_ticket.return_value = {
-            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A,
+            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1,
         }
         request = _device_request({"ticket": "real-ticket"}, device_id=DEVICE_B)
         with patch("src.cloud.terminal_handlers.TerminalTicketManager", return_value=mock_ticket_manager):
             result = asyncio.run(terminal_handlers.consume_terminal_session.__wrapped__(request=request))
         self.assertEqual(result.status_code, 401)
 
+    def test_stale_placement_generation_rejected(self) -> None:
+        '''Ticket was minted at placement_generation 1; the container has since moved to
+        generation 2 (e.g. hibernate/resume onto a different device) within the ticket's short
+        TTL window - the ticket must not be honored against the new placement.'''
+        mock_ticket_manager = MagicMock()
+        mock_ticket_manager.consume_ticket.return_value = {
+            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1,
+        }
+        mock_container_ops = MagicMock()
+        mock_container_ops.find_one.return_value = OperationResult(
+            success=True, data=_container_row(placement_generation=2)
+        )
+        request = _device_request({"ticket": "real-ticket"}, device_id=DEVICE_A)
+        with patch("src.cloud.terminal_handlers.TerminalTicketManager", return_value=mock_ticket_manager), \
+             patch("src.cloud.terminal_handlers.ContainerOps", return_value=mock_container_ops):
+            result = asyncio.run(terminal_handlers.consume_terminal_session.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 409)
+
+    def test_container_moved_to_another_device_rejected(self) -> None:
+        '''The redeeming device matches the ticket's own device_id, but the container itself has
+        since been reassigned to a different device (the ticket's device_id check alone doesn't
+        catch this - the container's live device_id must also still match).'''
+        mock_ticket_manager = MagicMock()
+        mock_ticket_manager.consume_ticket.return_value = {
+            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1,
+        }
+        mock_container_ops = MagicMock()
+        mock_container_ops.find_one.return_value = OperationResult(
+            success=True, data=_container_row(device_id=DEVICE_B, placement_generation=1)
+        )
+        request = _device_request({"ticket": "real-ticket"}, device_id=DEVICE_A)
+        with patch("src.cloud.terminal_handlers.TerminalTicketManager", return_value=mock_ticket_manager), \
+             patch("src.cloud.terminal_handlers.ContainerOps", return_value=mock_container_ops):
+            result = asyncio.run(terminal_handlers.consume_terminal_session.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 409)
+
     def test_container_no_longer_running_rejected(self) -> None:
         mock_ticket_manager = MagicMock()
         mock_ticket_manager.consume_ticket.return_value = {
-            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A,
+            "user_id": USER_A, "device_id": DEVICE_A, "container_id": CONTAINER_A, "placement_generation": 1,
         }
         mock_container_ops = MagicMock()
         mock_container_ops.find_one.return_value = OperationResult(

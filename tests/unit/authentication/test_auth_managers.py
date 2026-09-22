@@ -155,15 +155,16 @@ class TestTerminalTicketManager(unittest.TestCase):
         self.manager = TerminalTicketManager()
 
     def test_valid_ticket_round_trips_user_device_and_container(self):
-        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        ticket = self.manager.create_ticket("u1", "d1", "c1", 1)
         data = self.manager.consume_ticket(ticket)
         self.assertEqual(data["user_id"], "u1")
         self.assertEqual(data["device_id"], "d1")
         self.assertEqual(data["container_id"], "c1")
+        self.assertEqual(data["placement_generation"], 1)
 
     def test_ticket_is_random_and_unguessable(self):
-        t1 = self.manager.create_ticket("u1", "d1", "c1")
-        t2 = self.manager.create_ticket("u1", "d1", "c1")
+        t1 = self.manager.create_ticket("u1", "d1", "c1", 1)
+        t2 = self.manager.create_ticket("u1", "d1", "c1", 1)
         self.assertNotEqual(t1, t2)
         self.assertGreater(len(t1), 20)
 
@@ -172,7 +173,7 @@ class TestTerminalTicketManager(unittest.TestCase):
         TICKET_TTL_SECONDS (~30s per remotetunelling.md Phase 5) - real expiry enforcement is
         Redis's own job (not simulated here), same boundary every other manager's TTL test in
         this file draws.'''
-        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        ticket = self.manager.create_ticket("u1", "d1", "c1", 1)
         key = next(iter(self.fake_redis._store))
         self.assertIn(ticket, key)
         self.assertEqual(self.fake_redis._ttls[key], TICKET_TTL_SECONDS)
@@ -186,7 +187,7 @@ class TestTerminalTicketManager(unittest.TestCase):
         the same atomicity guarantee Redis's GETDEL provides for real concurrent requests; a
         sequential replay is the practical unit-test proxy for it, matching how HandoffManager's
         own "second redemption fails" test above treats the same property.'''
-        ticket = self.manager.create_ticket("u1", "d1", "c1")
+        ticket = self.manager.create_ticket("u1", "d1", "c1", 1)
         first = self.manager.consume_ticket(ticket)
         second = self.manager.consume_ticket(ticket)
         self.assertIsNotNone(first)

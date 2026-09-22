@@ -281,7 +281,9 @@ async def terminal_session(request: Request) -> JSONResponse:
     if not device or not _tunnel_is_online(device):
         return JSONResponse(content={"error": "Device is offline"}, status_code=409)
 
-    ticket = TerminalTicketManager().create_ticket(user_id, device_id, container_id)
+    ticket = TerminalTicketManager().create_ticket(
+        user_id, device_id, container_id, container["placement_generation"]
+    )
     return JSONResponse(content={"websocket_url": _wss_url(device), "ticket": ticket})
 
 

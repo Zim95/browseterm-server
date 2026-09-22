@@ -97,7 +97,9 @@ async def create_terminal_session(request: Request) -> JSONResponse:
         if not device or not _tunnel_is_online(device):
             return JSONResponse(content={"error": "Device is offline"}, status_code=409)
 
-        ticket = TerminalTicketManager().create_ticket(user_id, device_id, container_id)
+        ticket = TerminalTicketManager().create_ticket(
+            user_id, device_id, container_id, container["placement_generation"]
+        )
         expires_at = datetime.now(timezone.utc).timestamp() + 30
         logger.info(
             "terminal.ticket_issued",
@@ -145,6 +147,18 @@ async def consume_terminal_session(request: Request) -> JSONResponse:
         container = container_result.data
         if not container or container["status"] != ContainerStatus.RUNNING.value:
             logger.warning("terminal.ticket_rejected", extra={"reason": "container_not_running"})
+            return JSONResponse(content={"error": "Container is not available"}, status_code=409)
+
+        # A ticket is minted against a specific placement (device + generation). If the container
+        # moved (hibernate/resume onto a different device, or a new placement on the same device)
+        # in the short window between issuance and redemption, the ticket must not be honored
+        # against the container's new placement - stale-generation rejection, same principle every
+        # other command/result path in this migration already applies.
+        if (
+            container.get("device_id") != data["device_id"]
+            or container.get("placement_generation") != data["placement_generation"]
+        ):
+            logger.warning("terminal.ticket_rejected", extra={"reason": "stale_placement"})
             return JSONResponse(content={"error": "Container is not available"}, status_code=409)
 
         ssh_port_mapping = next(
