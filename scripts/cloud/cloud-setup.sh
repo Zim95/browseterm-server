@@ -35,7 +35,7 @@ POSTGRES_PORT=${13:-5432}
 # P20: the real Docker Hub Organization snapshot repos get pushed under - see cloud.yaml's own
 # comment at this env var. Defaults to "browseterm" (matching src/common/config.py's own
 # default and the actual Docker Hub org created for this), but overridable per-deployment.
-SNAPSHOT_REGISTRY_REPO_PREFIX=${14:-browseterm}
+SNAPSHOT_REGISTRY_REPO_PREFIX=${14:-zim95/browseterm}
 # P23 (~/browseterm/p.md's "P23" section, plan section 22: "Every script checks kube context
 # before applying"): this project runs two separate k3d clusters (Cloud/Local) reachable from
 # the same host - applying against the wrong one is a real, previously-unguarded mistake class

@@ -139,8 +139,9 @@ deliberate scope decision.
   `(container_id, request_id)` row verbatim if one exists (idempotent retry), else reads/
   increments `containers.next_snapshot_sequence` (a plain increment - the plan explicitly
   tolerates version-number gaps after crashes) and creates a new `Pending` row.
-  `SNAPSHOT_REGISTRY_REPO_PREFIX` builds the flat, UUID-based `image_repository`. See
-  `~/browseterm/p.md`'s P16 section.
+  `SNAPSHOT_REGISTRY_REPO_PREFIX` (default `zim95/browseterm`) is the single fixed repository
+  every snapshot is pushed to - identity/version lives entirely in the tag (`image_tag`,
+  `u_<user_id>_c_<container_id>_v_<version>`) instead of a separate repository per tenant.
 
 ## P17 - snapshot job reports results through Cloud
 

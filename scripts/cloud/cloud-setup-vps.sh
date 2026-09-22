@@ -30,7 +30,7 @@ CLOUD_INGRESS_HOST=${12}
 EXPECTED_KUBE_CONTEXT=${13}
 POSTGRES_HOST=${14:-postgres.data.svc.cluster.local}
 POSTGRES_PORT=${15:-5432}
-SNAPSHOT_REGISTRY_REPO_PREFIX=${16:-browseterm}
+SNAPSHOT_REGISTRY_REPO_PREFIX=${16:-zim95/browseterm}
 
 if [ -z "$EXPECTED_KUBE_CONTEXT" ]; then
     echo "ERROR: expected-kube-context is required for the VPS deploy script." >&2
