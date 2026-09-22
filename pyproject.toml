@@ -16,12 +16,17 @@ readme = "README.md"
 # of the P06 trim above) - Cloud now runs its OWN gRPC server (src/control/*, grpc_server.py) for
 # the Device Agent's inbound control stream. This is unrelated to browseterm-server-local's
 # ContainerMaker gRPC *client* usage; Cloud is a gRPC server here, never a ContainerMaker client.
+#
+# Migration Part 3 reintroduces jinja2 here too (also deliberate, not a regression of the P06
+# trim) - Cloud now serves its own browser templates (src/cloud/page_handlers.py's
+# Jinja2Templates) since the browser UI moved from Local to Cloud.
 python = ">=3.11,<3.12"
 fastapi = "^0.115.11"
 uvicorn = "0.33.0"
 redis = "^5.0.0"
 httpx = "^0.27.0"
 grpcio = "^1.70.0"
+jinja2 = "^3.1.4"
 browseterm-db = {git = "https://github.com/Zim95/browseterm-db.git", rev = "main"}
 browseterm-device-control-spec = {git = "https://github.com/Zim95/browseterm-device-control-spec.git", rev = "main"}
 
