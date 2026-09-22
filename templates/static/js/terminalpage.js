@@ -144,7 +144,8 @@ class TerminalPageHandler {
             saveStatusInfo: document.getElementById('saveStatusInfo'),
             saveStatusLastSaved: document.getElementById('saveStatusLastSaved'),
             saveStatusLastAttempt: document.getElementById('saveStatusLastAttempt'),
-            saveStatusBadge: document.getElementById('saveStatusBadge')
+            saveStatusBadge: document.getElementById('saveStatusBadge'),
+            saveActionBtn: document.getElementById('saveActionBtn')
         };
     }
 
@@ -218,9 +219,8 @@ class TerminalPageHandler {
         if (this.terminalInfo.port) {
             this.elements.terminalPort.textContent = this.terminalInfo.port;
         }
-        // Purely informational - the manual Save trigger lives on the terminals list page.
         // Reflects real save_status/last_saved_at/last_save_attempted_at DB state via SSE,
-        // whether it's from a manual Save click or a Hibernate-triggered one.
+        // whether it's from this page's own Save button or a Hibernate-triggered save.
         this.renderSaveStatusInfo({
             saveStatus: this.terminalInfo.saveStatus,
             lastSavedAt: this.terminalInfo.lastSavedAt,
@@ -230,6 +230,42 @@ class TerminalPageHandler {
 
     setupEventListeners() {
         this.setupSaveStatusStream();
+        if (this.elements.saveActionBtn) {
+            this.elements.saveActionBtn.addEventListener('click', () => this.handleSave());
+        }
+    }
+
+    /**
+     * POST /app/containers/{id}/save - core reliability feature: snapshots this terminal without
+     * stopping it (unlike Hibernate, which saves then stops). Sends a durable command to the
+     * device agent the same way every other lifecycle action does. Lives here on the terminal
+     * page itself, not on the terminals list card - this is the session you're actually using.
+     */
+    async handleSave() {
+        const btn = this.elements.saveActionBtn;
+        if (!btn || btn.disabled) return;
+
+        btn.disabled = true;
+        const label = btn.querySelector('span');
+        const originalLabel = label ? label.textContent : null;
+        if (label) label.textContent = 'Saving...';
+
+        try {
+            const resp = await fetch(`/app/containers/${this.terminalId}/save`, {
+                method: 'POST',
+                headers: TerminalPageUtilities.csrfHeaders(),
+            });
+            const result = await resp.json().catch(() => ({}));
+            if (!resp.ok) {
+                throw new Error(result.error || `HTTP ${resp.status}`);
+            }
+            TerminalPageUtilities.showNotification('success', 'Saving', 'A snapshot of this terminal is being saved.', 4000);
+        } catch (e) {
+            TerminalPageUtilities.showNotification('error', 'Save Failed', e.message, 6000);
+        } finally {
+            btn.disabled = false;
+            if (label && originalLabel) label.textContent = originalLabel;
+        }
     }
 
     handleResize() {

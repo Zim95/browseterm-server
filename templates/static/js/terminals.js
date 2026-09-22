@@ -114,7 +114,6 @@ class TerminalsHandler {
         // Container IDs whose creation is still pending confirmation - cleared up on Running/Failed.
         this.pendingContainers = new Set();
         this.hibernatingIds = new Set();
-        this.savingIds = new Set();
     }
 
     async init() {
@@ -259,16 +258,8 @@ class TerminalsHandler {
                     <span class="loading-text">Hibernating...</span>
                 </div>`;
         }
-        if (this.savingIds.has(terminalId)) {
-            return `
-                <div class="terminal-loading">
-                    <span class="loading-spinner"></span>
-                    <span class="loading-text">Saving...</span>
-                </div>`;
-        }
-
         const controlsConfig = {
-            running: { showPlay: true, showInfo: true, showSave: true, showHibernate: true, showDelete: true, showLoading: false },
+            running: { showPlay: true, showInfo: true, showHibernate: true, showDelete: true, showLoading: false },
             failed: { showPlay: false, showInfo: true, showDelete: true, showLoading: false },
             queued: { showPlay: false, showDelete: false, showLoading: true },
             pending: { showPlay: false, showDelete: false, showLoading: true },
@@ -299,21 +290,16 @@ class TerminalsHandler {
                     <i class="fas fa-play"></i>
                 </button>`
                 : `
-                <button class="control-btn play-btn" data-terminal-id="${terminalId}" disabled
-                        title="Your machine is offline - start BrowseTerm on it to open this terminal">
-                    <i class="fas fa-play"></i>
-                </button>`;
+                <span class="play-btn-wrapper" title="Your machine is offline - start BrowseTerm on it to open this terminal">
+                    <button class="control-btn play-btn" data-terminal-id="${terminalId}" disabled>
+                        <i class="fas fa-play"></i>
+                    </button>
+                </span>`;
         }
         if (config.showInfo) {
             html += `
                 <button class="control-btn info-btn" data-terminal-id="${terminalId}" title="Terminal info">
                     <i class="fas fa-circle-info"></i>
-                </button>`;
-        }
-        if (config.showSave) {
-            html += `
-                <button class="control-btn save-btn" data-terminal-id="${terminalId}" title="Save snapshot">
-                    <i class="fas fa-floppy-disk"></i>
                 </button>`;
         }
         if (config.showHibernate) {
@@ -401,9 +387,6 @@ class TerminalsHandler {
         });
         document.querySelectorAll('.info-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.handleInfo(e.target.closest('button').getAttribute('data-terminal-id')));
-        });
-        document.querySelectorAll('.save-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => this.handleSave(e.target.closest('button').getAttribute('data-terminal-id')));
         });
         document.querySelectorAll('.hibernate-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.handleHibernate(e.target.closest('button').getAttribute('data-terminal-id')));
@@ -558,36 +541,6 @@ class TerminalsHandler {
     closeInfoModal() {
         this.elements.infoModalOverlay.classList.remove('active');
         document.body.style.overflow = '';
-    }
-
-    /**
-     * POST /app/containers/{id}/save - core reliability feature: snapshots the terminal without
-     * stopping it (unlike Hibernate, which saves then stops). Sends a durable command to the
-     * device agent the same way every other lifecycle action does.
-     */
-    async handleSave(terminalId) {
-        const terminal = this.terminals.find(t => t.id === terminalId);
-        const terminalName = terminal?.name || 'this terminal';
-
-        this.savingIds.add(terminalId);
-        this.renderTerminalsList();
-
-        try {
-            const resp = await fetch(`/app/containers/${terminalId}/save`, {
-                method: 'POST',
-                headers: TerminalsUtilities.csrfHeaders(),
-            });
-            const result = await resp.json().catch(() => ({}));
-            if (!resp.ok) {
-                throw new Error(result.error || `HTTP ${resp.status}`);
-            }
-            TerminalsUtilities.showNotification('success', 'Saving', `A snapshot of "${terminalName}" is being saved.`, 4000);
-        } catch (e) {
-            TerminalsUtilities.showNotification('error', 'Save Failed', e.message, 6000);
-        } finally {
-            this.savingIds.delete(terminalId);
-            await this.loadTerminals();
-        }
     }
 
     /**

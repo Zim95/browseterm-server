@@ -108,6 +108,40 @@ body {
     color: #637AB9;
 }
 
+.header-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #1f6f4a;
+    background-color: #d9f2e6;
+    border: none;
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.header-action-btn:hover:not(:disabled) {
+    background-color: #c5ecd9;
+    transform: translateY(-2px);
+}
+
+.header-action-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+body.dark-mode .header-action-btn {
+    background: #2f7a55;
+    color: #ffffff;
+}
+
+body.dark-mode .header-action-btn:hover:not(:disabled) {
+    background: #256345;
+}
+
 /* Terminal Warning Banner */
 .terminal-warning {
     background-color: #fff3cd;

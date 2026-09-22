@@ -53,6 +53,13 @@
                         <i class="fas fa-plug"></i>
                         <span id="terminalPort">Loading...</span>
                     </span>
+                    <!-- The manual Save trigger - snapshots this terminal without stopping it
+                         (unlike Hibernate). Belongs here, on the terminal page itself, not on the
+                         terminals list card. -->
+                    <button class="header-action-btn" id="saveActionBtn" title="Save snapshot">
+                        <i class="fas fa-floppy-disk"></i>
+                        <span>Save</span>
+                    </button>
                 </div>
             </div>
 
@@ -63,10 +70,10 @@
 
             <div id="terminal" class="xterm-container"></div>
 
-            <!-- Save status (read-only). The manual "Save" trigger itself lives on the terminals
-                 list page (the save-btn there, POST /app/containers/{id}/save) - this panel just
-                 reflects real save_status/last_saved_at history via SSE, whether the save came
-                 from a manual Save click or a Hibernate-triggered one. -->
+            <!-- Save status (read-only) - the actual "Save" trigger is the button in the header
+                 above (POST /app/containers/{id}/save). This panel just reflects real
+                 save_status/last_saved_at history via SSE, whether the save came from that
+                 button or a Hibernate-triggered one. -->
             <div class="terminal-footer">
                 <div class="save-status-info" id="saveStatusInfo" hidden>
                     <div class="save-status-row">

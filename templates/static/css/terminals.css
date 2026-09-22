@@ -164,6 +164,13 @@
     cursor: not-allowed;
 }
 
+/* Disabled buttons don't reliably fire hover in every browser, which native title tooltips
+   depend on - wrapping in an always-hoverable span keeps the "why is this disabled" tooltip
+   showing regardless. */
+.play-btn-wrapper {
+    display: inline-flex;
+}
+
 .delete-btn {
     background-color: #ff4757;
     color: white;
@@ -181,16 +188,6 @@
 
 .info-btn:hover {
     background-color: #b8e2ea;
-    transform: translateY(-2px);
-}
-
-.save-btn {
-    background-color: #d9f2e6;
-    color: #1f6f4a;
-}
-
-.save-btn:hover {
-    background-color: #c5ecd9;
     transform: translateY(-2px);
 }
 
@@ -597,14 +594,6 @@ body.dark-mode .info-btn:hover {
     background: #1a5da3;
 }
 
-body.dark-mode .save-btn {
-    background: #2f7a55;
-    color: #ffffff;
-}
-
-body.dark-mode .save-btn:hover {
-    background: #256345;
-}
 
 body.dark-mode .hibernate-btn {
     background: #5b52a3;
