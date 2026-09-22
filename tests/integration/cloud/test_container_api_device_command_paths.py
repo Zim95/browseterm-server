@@ -136,6 +136,30 @@ class TestHibernateContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(update_call[1]["status"].value, "Hibernating")
 
 
+class TestSaveContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
+    '''Unlike Create/Delete/Hibernate/Resume, _save_container_via_device_command has no public
+    internal-token route of its own - it's called from src.cloud.browser_handlers.save_container
+    (session-authenticated) directly, so it's tested as a unit here rather than through a route
+    wrapper (browser_handlers.py's own tests cover the auth/CSRF/ownership boundary around it).'''
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    async def test_creates_save_command_without_status_transition(self, mock_command_ops_cls) -> None:
+        mock_command_ops_cls.return_value.insert.return_value = OperationResult(success=True, data={"id": "cmd-1"})
+
+        response = await container_handlers._save_container_via_device_command(_container_row(status="Running"))
+
+        self.assertEqual(response.status_code, 202)
+        insert_call = mock_command_ops_cls.return_value.insert.call_args[0][0]
+        self.assertEqual(insert_call["operation"].value, "Save")
+
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    async def test_command_creation_failure_returns_500(self, mock_command_ops_cls) -> None:
+        mock_command_ops_cls.return_value.insert.return_value = OperationResult(success=False, error="only one active command per container")
+
+        response = await container_handlers._save_container_via_device_command(_container_row(status="Running"))
+
+        self.assertEqual(response.status_code, 500)
+
+
 class TestResumeContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DEVICE_COMMAND_RESUME_ENABLED", True)

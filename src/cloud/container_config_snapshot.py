@@ -55,3 +55,9 @@ def build_delete_config_json(container: dict) -> str:
 
 def build_hibernate_config_json(container: dict) -> str:
     return json.dumps({"network_name": f"{container['user_id']}-namespace"})
+
+
+def build_save_config_json(container: dict) -> str:
+    '''Same shape as Hibernate's - the save step itself only needs network_name to locate the
+    pod; SAVE just never proceeds to a delete step afterward.'''
+    return json.dumps({"network_name": f"{container['user_id']}-namespace"})

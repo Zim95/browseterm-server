@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from src.common.logging_setup import configure_logging
@@ -70,11 +71,15 @@ from src.cloud.container_handlers import (
     update_container_internal,
     update_container_status,
 )
-from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result
+from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result, get_save_status
 from src.cloud.sse_broadcaster import sse_broadcaster
 from src.cloud.sse_handlers import events_stream
 from src.cloud.terminal_handlers import consume_terminal_session, create_terminal_session
 from src.cloud.subscription_handlers import get_current_subscription
+
+# Migration Part 3 - browser-facing pages/API, Cloud's own direct session authentication.
+import src.cloud.page_handlers as page_handlers
+import src.cloud.browser_handlers as browser_handlers
 
 
 @asynccontextmanager
@@ -109,7 +114,50 @@ app.add_middleware(
     allow_methods=["GET"],
 )
 
+# Migration Part 3: templates/static, moved and adapted from browseterm-server-local. no-cache on
+# static files (not just default heuristic caching) so a redeploy doesn't look like it "didn't
+# take" from the browser's side - same reasoning browseterm-server-local's own RevalidateStaticFiles
+# already established, ported verbatim.
+class RevalidateStaticFiles(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", RevalidateStaticFiles(directory="templates/static"), name="static")
+
 app.add_api_route(path="/healthz", endpoint=healthz, methods=["GET"])
+
+# Migration Part 3 - browser pages. Public: /, /login. Session-cookie-protected (302 to /login on
+# a missing/invalid session): everything else. See src/cloud/session_auth.py and
+# src/cloud/page_handlers.py.
+app.add_api_route(path="/", endpoint=page_handlers.index, methods=["GET"])
+app.add_api_route(path="/login", endpoint=page_handlers.login, methods=["GET"])
+app.add_api_route(path="/terminals", endpoint=page_handlers.terminals, methods=["GET"])
+app.add_api_route(path="/terminal/{container_id}", endpoint=page_handlers.terminal_page, methods=["GET"])
+app.add_api_route(path="/profile", endpoint=page_handlers.profile, methods=["GET"])
+app.add_api_route(path="/devices", endpoint=page_handlers.devices, methods=["GET"])
+
+# Migration Part 3 - browser-facing auth actions (session-cookie + CSRF, not the internal-token
+# /auth/sessions/* API above, which browseterm-server-local still depends on unchanged).
+app.add_api_route(path="/logout", endpoint=browser_handlers.logout, methods=["POST"])
+app.add_api_route(path="/auth/refresh", endpoint=browser_handlers.auth_refresh, methods=["POST"])
+
+# Migration Part 3 - browser-facing container/lifecycle JSON API. Deliberately under /app/* so it
+# never collides with the internal-token-gated /containers/* routes above, which trust a
+# caller-supplied user_id and must never be reachable from a browser directly - see
+# src/cloud/browser_handlers.py's own module docstring for the full trust-boundary reasoning.
+app.add_api_route(path="/app/containers", endpoint=browser_handlers.list_containers, methods=["GET"])
+app.add_api_route(path="/app/containers", endpoint=browser_handlers.create_container, methods=["POST"])
+app.add_api_route(path="/app/containers/{container_id}", endpoint=browser_handlers.get_container, methods=["GET"])
+app.add_api_route(path="/app/containers/{container_id}/delete", endpoint=browser_handlers.delete_container, methods=["POST"])
+app.add_api_route(path="/app/containers/{container_id}/resume", endpoint=browser_handlers.resume_container, methods=["POST"])
+app.add_api_route(path="/app/containers/{container_id}/hibernate", endpoint=browser_handlers.hibernate_container, methods=["POST"])
+app.add_api_route(path="/app/containers/{container_id}/save", endpoint=browser_handlers.save_container, methods=["POST"])
+app.add_api_route(path="/app/containers/{container_id}/activity", endpoint=browser_handlers.container_activity, methods=["POST"])
+app.add_api_route(path="/app/device-quota", endpoint=browser_handlers.device_quota, methods=["GET"])
+app.add_api_route(path="/app/terminal-session", endpoint=browser_handlers.terminal_session, methods=["POST"])
 
 # Device Cloud API (P05, device-token auth as of P07 - see device_handlers.py). POST /devices
 # (registration) is intentionally NOT a standalone route any more - see oauth_handlers.py
@@ -204,6 +252,12 @@ app.add_api_route(
 app.add_api_route(
     path="/devices/{device_id}/containers/{container_id}/hibernate-request",
     endpoint=request_hibernate_command, methods=["POST"],
+)
+# SAVE (added 2026-09-22): Device Agent's save_execution.py::perform_save() polls this while
+# waiting for a confirmed snapshot outcome - same device-Bearer-token pattern as the route above.
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}/save-status",
+    endpoint=get_save_status, methods=["GET"],
 )
 # container-maker's off-direct-Postgres migration (see p.md's writeup): self-heal of a drifted
 # kubernetes_id, and the save reconciler's stuck-save sweep/mark-failed. The literal

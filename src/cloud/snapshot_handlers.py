@@ -26,6 +26,7 @@ from browseterm_db.operations.all_operations import ContainerOps, SnapshotOps
 from browseterm_db.common.snapshot_version import format_snapshot_version
 
 from src.cloud.config import DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, SNAPSHOT_REGISTRY_REPO_PREFIX
+from src.cloud.device_handlers import authenticate_device
 from src.common.logging_setup import get_logger
 
 logger = get_logger("cloud_snapshot_handlers")
@@ -163,3 +164,52 @@ async def report_snapshot_result(request: Request) -> JSONResponse:
     except Exception:
         logger.error("snapshot result report failed", exc_info=True)
         return JSONResponse(content={"error": "Error reporting snapshot result"}, status_code=500)
+
+
+def _not_found() -> JSONResponse:
+    return JSONResponse(content={"error": "Not found"}, status_code=404)
+
+
+@authenticate_device
+async def get_save_status(request: Request) -> JSONResponse:
+    '''
+    GET /devices/{device_id}/containers/{container_id}/save-status?request_id=...
+
+    SAVE/Hibernate-fix (added 2026-09-22): Device Agent's save_execution.py::perform_save() polls
+    this - Bearer device-token gated, NOT the internal-token route every other snapshot endpoint
+    in this file uses, since Device Agent (not a trusted cluster-wide system job) is the caller.
+    Backed by the exact same (container_id, request_id)-keyed container_snapshots row
+    report_snapshot_result already writes above - no new state, just a device-scoped read of it.
+
+    A container_snapshots row not existing yet (Device Agent started polling before snapshot_job
+    called allocate_snapshot) is reported as status=None, not a 404/error - the caller's own poll
+    loop treats that identically to "still pending" and just keeps waiting.
+    '''
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
+    container_id = request.path_params["container_id"]
+    request_id = request.query_params.get("request_id")
+    if not request_id:
+        return JSONResponse(content={"error": "request_id is required"}, status_code=400)
+
+    container_ops = ContainerOps(DB_CONFIG)
+    container_result = await asyncio.to_thread(
+        container_ops.find_one, {"id": container_id, "user_id": request.state.user_id, "device_id": device_id}
+    )
+    if not container_result.data:
+        return _not_found()
+
+    snapshot_ops = SnapshotOps(DB_CONFIG)
+    snapshot_result = await asyncio.to_thread(
+        snapshot_ops.find_one, {"container_id": container_id, "request_id": request_id}
+    )
+    if not snapshot_result.data:
+        return JSONResponse(content={"status": None, "image_reference": None, "error_detail": None})
+
+    snapshot = snapshot_result.data
+    return JSONResponse(content={
+        "status": snapshot.get("status"),
+        "image_reference": snapshot.get("image_reference"),
+        "error_detail": snapshot.get("error_detail"),
+    })

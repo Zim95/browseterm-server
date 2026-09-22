@@ -40,6 +40,8 @@ async def apply_command_result(command: dict, status: str, result_json: Optional
         await _apply_hibernate(command, status, result)
     elif operation == "Resume":
         await _apply_create_or_resume(command, status, result)
+    elif operation == "Save":
+        await _apply_save(command, status, result)
     # Reconcile: Part 22, not mutating container fields here.
 
 
@@ -102,6 +104,25 @@ async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
     )
     if matched.success and matched.data.get("matched", 0) > 0 and existing.data:
         await _release_used_resources(existing.data, DeviceOps(DB_CONFIG))
+
+
+async def _apply_save(command: dict, status: str, result: dict) -> None:
+    '''SAVE never changes placement/device_id/status - the container stays RUNNING throughout,
+    unlike HIBERNATE. snapshot_handlers.py::report_snapshot_result already updates
+    saved_image/save_status directly as snapshot_job's own report arrives (the authoritative
+    completion signal); this is a redundant-but-harmless confirmation from Device Agent's own
+    terminal CommandResult, applied the same conditional (device_id + placement_generation
+    gated) way every other operation's result is, rather than skipped as a special case. On
+    failure/timeout, leave the container row exactly as report_snapshot_result already left it -
+    no separate "untouched" branch needed here, there is nothing new to apply.'''
+    if status != "succeeded":
+        return
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    await asyncio.to_thread(
+        command_ops.conditional_container_update,
+        command["container_id"], command["device_id"], command["placement_generation"],
+        {"saved_image": result.get("saved_image")},
+    )
 
 
 async def _release_used_resources(container: dict, device_ops: DeviceOps) -> None:

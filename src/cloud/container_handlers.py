@@ -26,12 +26,13 @@ from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, Ima
 from src.cloud.config import (
     DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, LOST_CONTAINER_GRACE_SECONDS,
     DEVICE_COMMAND_CREATE_ENABLED, DEVICE_COMMAND_DELETE_ENABLED,
-    DEVICE_COMMAND_HIBERNATE_ENABLED, DEVICE_COMMAND_RESUME_ENABLED,
+    DEVICE_COMMAND_HIBERNATE_ENABLED, DEVICE_COMMAND_RESUME_ENABLED, DEVICE_COMMAND_SAVE_ENABLED,
 )
 from src.cloud.device_handlers import authenticate_device
 from src.cloud.resource_quantity import InvalidQuantityError, parse_cpu_cores, parse_memory_bytes
 from src.cloud.container_config_snapshot import (
     build_create_config_json, build_delete_config_json, build_hibernate_config_json, build_resume_config_json,
+    build_save_config_json,
 )
 from src.common.logging_setup import get_logger, request_id_var
 
@@ -781,6 +782,33 @@ async def _hibernate_container_via_device_command(container: dict) -> JSONRespon
 
     ops = ContainerOps(DB_CONFIG)
     await asyncio.to_thread(ops.update, {"id": container["id"]}, {"status": ContainerStatus.HIBERNATING})
+    return JSONResponse(content={"command": insert_result.data}, status_code=202)
+
+
+async def _save_container_via_device_command(container: dict) -> JSONResponse:
+    '''
+    SAVE (not one of the doc's original 25 parts - added 2026-09-22, owner's explicit
+    instruction: "Save is one of the biggest features of reliability... we cannot drop it" and
+    "Save needs to work the same way other commands do... it should also send a command to the
+    device agent"). Snapshots the container WITHOUT deleting it - unlike HIBERNATE, no status
+    transition happens here: the container stays RUNNING throughout and after, since nothing
+    about its placement/runtime is changing. No quota reservation either, for the same reason.
+
+    Device Agent's save.py handler performs the trigger-and-confirm sequence (shared with
+    hibernate.py's fixed version via save_execution.perform_save()) and reports one terminal
+    CommandResult; container_mutation.py applies saved_image/save_status on success.
+    '''
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    config_json = build_save_config_json(container)
+    insert_result = await asyncio.to_thread(command_ops.insert, {
+        "user_id": container["user_id"], "device_id": container["device_id"], "container_id": container["id"],
+        "operation": CommandOperation.SAVE, "placement_generation": container["placement_generation"],
+        "container_config_json": config_json, "request_id": request_id_var.get(),
+    })
+    if not insert_result.success:
+        logger.error("save command creation failed", extra={"error": insert_result.error, "container_id": container["id"]})
+        return JSONResponse(content={"error": insert_result.error or "Error creating save command"}, status_code=500)
+
     return JSONResponse(content={"command": insert_result.data}, status_code=202)
 
 

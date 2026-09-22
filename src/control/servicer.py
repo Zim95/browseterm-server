@@ -28,7 +28,7 @@ from device_control_spec.device_control_pb2 import DeviceToCloud, CloudToDevice
 from device_control_spec.device_control_types_pb2 import (
     HelloAccepted, ExecuteCommand, Ping, CommandStatus as WireCommandStatus,
     COMMAND_OPERATION_CREATE, COMMAND_OPERATION_DELETE, COMMAND_OPERATION_HIBERNATE,
-    COMMAND_OPERATION_RESUME, COMMAND_OPERATION_RECONCILE,
+    COMMAND_OPERATION_RESUME, COMMAND_OPERATION_RECONCILE, COMMAND_OPERATION_SAVE,
 )
 
 from src.cloud.config import DB_CONFIG
@@ -363,6 +363,7 @@ _OPERATION_TO_WIRE = {
     "Hibernate": COMMAND_OPERATION_HIBERNATE,
     "Resume": COMMAND_OPERATION_RESUME,
     "Reconcile": COMMAND_OPERATION_RECONCILE,
+    "Save": COMMAND_OPERATION_SAVE,
 }
 
 

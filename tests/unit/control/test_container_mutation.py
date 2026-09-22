@@ -110,3 +110,36 @@ class TestApplyHibernate(IsolatedAsyncioTestCase):
         exactly as it was (still RUNNING, pod still there) rather than being marked HIBERNATED.'''
         await apply_command_result(_command(operation="Hibernate"), "failed", json.dumps({"saved_image": "registry/img:2"}), "delete failed")
         mock_command_ops_cls.return_value.conditional_container_update.assert_not_called()
+
+
+class TestApplySave(IsolatedAsyncioTestCase):
+    '''Unlike Hibernate, a successful Save only ever touches saved_image - never status/device_id
+    (the container stays RUNNING throughout), and never releases any device resources (no
+    quota was ever reserved for a Save in the first place).'''
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_successful_save_updates_saved_image_only(self, mock_command_ops_cls) -> None:
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+
+        await apply_command_result(_command(operation="Save"), "succeeded", json.dumps({"saved_image": "registry/img:3"}), None)
+
+        _, _, _, update_data = mock_command_ops_cls.return_value.conditional_container_update.call_args[0]
+        self.assertEqual(update_data, {"saved_image": "registry/img:3"})
+
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_failed_save_does_not_mutate_container(self, mock_command_ops_cls) -> None:
+        '''report_snapshot_result already left save_status/saved_image exactly as they should be
+        on failure - nothing further to apply here.'''
+        await apply_command_result(_command(operation="Save"), "failed", None, "snapshot failed")
+        mock_command_ops_cls.return_value.conditional_container_update.assert_not_called()
+
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_successful_save_never_releases_device_resources(
+        self, mock_command_ops_cls, mock_container_ops_cls, mock_device_ops_cls,
+    ) -> None:
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+
+        await apply_command_result(_command(operation="Save"), "succeeded", json.dumps({"saved_image": "registry/img:3"}), None)
+
+        mock_device_ops_cls.return_value.update.assert_not_called()

@@ -38,6 +38,7 @@ from src.authentication.device_token_manager import DeviceTokenManager
 from src.cloud.config import CLOUD_INTERNAL_API_TOKEN
 from src.cloud.device_data_models import RegisterDeviceRequest
 from src.cloud.device_handlers import DeviceRegistrationError, _register_or_activate
+from src.cloud.session_auth import set_session_cookies
 from src.common.config import BROWSETERM_LOCAL_CALLBACK_URL
 from src.common.logging_setup import get_logger
 
@@ -45,7 +46,13 @@ logger = get_logger("cloud_oauth_handlers")
 
 # The only `target` values Cloud knows how to complete a login for, and the ONE destination each
 # maps to server-side (p07.md section 10 - never taken from a caller-supplied redirect_uri).
-_TARGET_CALLBACKS = {"local": BROWSETERM_LOCAL_CALLBACK_URL}
+# "local" is the pre-existing handoff-code dance browseterm-server-local still depends on
+# (different origin, so Cloud can't set Local's cookie for it directly - unchanged, not touched
+# by migration Part 3). "cloud" is new (Part 3): Cloud is now the browser origin for its own
+# login page, so there is no cross-origin handoff to do at all - oauth_callback below sets the
+# session cookie directly and redirects straight to /terminals.
+_BROWSER_TARGET = "cloud"
+_TARGET_CALLBACKS = {"local": BROWSETERM_LOCAL_CALLBACK_URL, _BROWSER_TARGET: None}
 
 
 def _internal_auth_ok(request: Request) -> bool:
@@ -80,10 +87,19 @@ async def oauth_start(request: Request) -> RedirectResponse:
 
 async def oauth_callback(request: Request) -> RedirectResponse:
     '''GET /auth/{provider}/callback -- Google/GitHub redirect here directly (never to Local, never
-    to Desktop - p07.md section 5). On any failure, sends the browser back to Local's login with
-    a generic error rather than exposing internals.'''
+    to Desktop - p07.md section 5). On any failure, sends the browser back to login with a generic
+    error rather than exposing internals.
+
+    Migration Part 3: the error-redirect target is Cloud's OWN "/login" (a relative path), not
+    Local's absolute URL - the browser is always physically on Cloud's own origin the instant this
+    handler runs (Google/GitHub redirected it here directly), regardless of which target the
+    now-failed attempt was for, and Cloud has owned a real /login page since Part 3 landed. This
+    intentionally changes the pre-Part-3 default (which had nowhere else to send an error before
+    Cloud had any login page of its own) - safe because every early failure here happens before
+    `target` is even known (state not yet consumed), so there was never a way to route it to the
+    right origin regardless; Cloud's own /login is now correct unconditionally, for both targets.'''
     provider = request.path_params["provider"]
-    error_target_login = f"{BROWSETERM_LOCAL_CALLBACK_URL.rsplit('/auth/callback', 1)[0]}/login"
+    error_target_login = "/login"
 
     def _error_redirect(message: str) -> RedirectResponse:
         from urllib.parse import urlencode
@@ -123,6 +139,15 @@ async def oauth_callback(request: Request) -> RedirectResponse:
         return _error_redirect("Could not create session")
 
     target = state_data["target"]
+
+    if target == _BROWSER_TARGET:
+        # Migration Part 3: Cloud IS the browser origin for its own /login page now, so there is
+        # no cross-origin handoff to do - set the session cookie directly on this response and
+        # send the browser straight to /terminals. No HandoffManager hop, no Local involvement.
+        redirect = RedirectResponse(url="/terminals", status_code=302)
+        set_session_cookies(redirect, session_response.session_id)
+        return redirect
+
     callback_url = _TARGET_CALLBACKS.get(target, BROWSETERM_LOCAL_CALLBACK_URL)
     handoff_code = await asyncio.to_thread(
         HandoffManager().create_handoff, "local_login", session_response.user_info["id"], session_response.session_id

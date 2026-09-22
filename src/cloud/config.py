@@ -63,6 +63,9 @@ DEVICE_COMMAND_CREATE_ENABLED: bool = os.getenv("DEVICE_COMMAND_CREATE_ENABLED",
 DEVICE_COMMAND_DELETE_ENABLED: bool = os.getenv("DEVICE_COMMAND_DELETE_ENABLED", "false").lower() == "true"
 DEVICE_COMMAND_HIBERNATE_ENABLED: bool = os.getenv("DEVICE_COMMAND_HIBERNATE_ENABLED", "false").lower() == "true"
 DEVICE_COMMAND_RESUME_ENABLED: bool = os.getenv("DEVICE_COMMAND_RESUME_ENABLED", "false").lower() == "true"
+# SAVE (not one of the doc's original 25 parts - added 2026-09-22): snapshots a container without
+# deleting it. Wired identically to the four flags above.
+DEVICE_COMMAND_SAVE_ENABLED: bool = os.getenv("DEVICE_COMMAND_SAVE_ENABLED", "false").lower() == "true"
 
 __all__ = [
     "DB_CONFIG",
@@ -87,4 +90,5 @@ __all__ = [
     "DEVICE_COMMAND_DELETE_ENABLED",
     "DEVICE_COMMAND_HIBERNATE_ENABLED",
     "DEVICE_COMMAND_RESUME_ENABLED",
+    "DEVICE_COMMAND_SAVE_ENABLED",
 ]

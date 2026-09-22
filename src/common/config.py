@@ -139,6 +139,10 @@ REDIS_SESSION_PREFIX: str = "session:"
 COOKIE_SECURE: bool = os.getenv("COOKIE_SECURE", "false").lower() == "true"
 # samesite options: "strict", "lax", or "none"
 COOKIE_SAMESITE: str = os.getenv("COOKIE_SAMESITE", "lax")
+# Migration Part 3: matches REDIS_SESSION_EXPIRY above (the Redis-side TTL) - the browser cookie
+# should never outlive the session data it points at. Same default browseterm-server-local's own
+# SESSION_COOKIE_MAX_AGE used.
+SESSION_COOKIE_MAX_AGE: int = int(os.getenv("SESSION_COOKIE_MAX_AGE", "86400"))
 
 # Socket SSH WebSocket Configuration
 # Set via SOCKET_SSH_WSS_URL environment variable
