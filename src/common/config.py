@@ -174,8 +174,13 @@ RESOURCE_MEMORY_REQUEST_RATIO: float = float(os.getenv("RESOURCE_MEMORY_REQUEST_
 # Ephemeral storage: 50% of limit
 RESOURCE_EPHEMERAL_REQUEST_RATIO: float = float(os.getenv("RESOURCE_EPHEMERAL_REQUEST_RATIO", "0.5"))
 
-# P16 (see ~/browseterm/p.md's "P16" section, plan section 6): flat Docker Hub repository prefix
-# for workspace snapshots - "browseterm/<user_id>_<container_id>", never a nested
-# "browseterm/<user>/<container>" path (Docker Hub doesn't support arbitrary nesting) and never a
-# mutable name (UUIDs only). Configurable per the plan's explicit instruction.
-SNAPSHOT_REGISTRY_REPO_PREFIX: str = os.getenv("SNAPSHOT_REGISTRY_REPO_PREFIX", "browseterm")
+# Part 19 (registry): the single, fixed private Docker Hub repository every workspace snapshot is
+# pushed to - "zim95/browseterm" (namespace/repo, Docker Hub's own two-level limit; no nested
+# "namespace/user/container" path is possible there). Per-attempt identity/version is carried
+# entirely in the TAG instead (see snapshot_handlers.py's own image_tag construction:
+# "u_<user_id>_c_<container_id>_v_<version>", immutable - never "latest", never reused), not a
+# separate repository per (user, container) the way an earlier iteration of this did - that would
+# have meant one private Docker Hub repo per tenant, unbounded sprawl for no benefit once the tag
+# alone already uniquely and immutably identifies an attempt. Configurable per the owner's own
+# explicit instruction.
+SNAPSHOT_REGISTRY_REPO_PREFIX: str = os.getenv("SNAPSHOT_REGISTRY_REPO_PREFIX", "zim95/browseterm")

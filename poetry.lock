@@ -126,7 +126,7 @@ sqlalchemy = "^2.0.43"
 type = "git"
 url = "https://github.com/Zim95/browseterm-db.git"
 reference = "main"
-resolved_reference = "f248a7db1fc980122d35a88282bc9765ec5b6606"
+resolved_reference = "335648782a806b5d319cf1274f661b1c89b118b8"
 
 [[package]]
 name = "browseterm-device-control-spec"

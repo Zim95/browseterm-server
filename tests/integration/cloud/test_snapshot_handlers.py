@@ -40,7 +40,8 @@ def _container_row(**overrides) -> dict:
 def _snapshot_row(**overrides) -> dict:
     row = {
         "id": "snapshot-1", "container_id": CONTAINER_A, "version_sequence": 1,
-        "version": "0.0.0.0.1", "image_repository": "browseterm/user-a-id_container-a-id",
+        "version": "0.0.0.0.1", "image_repository": "zim95/browseterm",
+        "image_tag": f"u_{USER_A}_c_{CONTAINER_A}_v_0.0.0.0.1",
         "image_reference": None, "registry_digest": None, "request_id": "req-1",
         "status": "Pending", "error_detail": None,
     }
@@ -116,8 +117,31 @@ class TestAllocateSnapshot(unittest.TestCase):
         insert_data = mock_snapshot_ops.insert.call_args.args[0]
         self.assertEqual(insert_data["version_sequence"], 5)
         self.assertEqual(insert_data["version"], "0.0.0.0.5")
-        self.assertEqual(insert_data["image_repository"], f"browseterm/{USER_A}_{CONTAINER_A}")
+        # Part 19: every snapshot goes to the same fixed repository - image_repository is no
+        # longer derived from user/container, only image_tag carries that identity.
+        self.assertEqual(insert_data["image_repository"], "zim95/browseterm")
+        self.assertEqual(insert_data["image_tag"], f"u_{USER_A}_c_{CONTAINER_A}_v_0.0.0.0.5")
         self.assertEqual(insert_data["request_id"], "req-1")
+
+    @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.snapshot_handlers.SNAPSHOT_REGISTRY_REPO_PREFIX", "myaccount/myrepo")
+    @patch("src.cloud.snapshot_handlers.ContainerOps")
+    @patch("src.cloud.snapshot_handlers.SnapshotOps")
+    def test_repository_is_configurable(self, mock_snapshot_ops_cls, mock_container_ops_cls):
+        mock_snapshot_ops = MagicMock()
+        mock_snapshot_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_snapshot_ops.insert.return_value = OperationResult(success=True, data=_snapshot_row())
+        mock_snapshot_ops_cls.return_value = mock_snapshot_ops
+        mock_container_ops = MagicMock()
+        mock_container_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
+        mock_container_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_container_ops
+
+        request = _mock_request({"request_id": "req-1"})
+        asyncio.run(snapshot_handlers.allocate_snapshot(request))
+
+        insert_data = mock_snapshot_ops.insert.call_args.args[0]
+        self.assertEqual(insert_data["image_repository"], "myaccount/myrepo")
 
     @patch("src.cloud.snapshot_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.snapshot_handlers.ContainerOps")

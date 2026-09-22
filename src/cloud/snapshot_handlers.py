@@ -79,12 +79,19 @@ async def allocate_snapshot(request: Request) -> JSONResponse:
             logger.error("failed to increment next_snapshot_sequence", extra={"error": increment_result.error})
             return JSONResponse(content={"error": "Error allocating snapshot version"}, status_code=500)
 
-        image_repository = f"{SNAPSHOT_REGISTRY_REPO_PREFIX}/{container['user_id']}_{container_id}"
+        # Part 19: every snapshot lands in the same fixed private repository -
+        # SNAPSHOT_REGISTRY_REPO_PREFIX IS the repository now (e.g. "zim95/browseterm"), not a
+        # prefix a per-tenant suffix gets appended to. The tag alone carries identity/version, and
+        # is immutable - never "latest", never reused for a different attempt.
+        version = format_snapshot_version(sequence)
+        image_repository = SNAPSHOT_REGISTRY_REPO_PREFIX
+        image_tag = f"u_{container['user_id']}_c_{container_id}_v_{version}"
         insert_result = await asyncio.to_thread(snapshot_ops.insert, {
             "container_id": container_id,
             "version_sequence": sequence,
-            "version": format_snapshot_version(sequence),
+            "version": version,
             "image_repository": image_repository,
+            "image_tag": image_tag,
             "request_id": request_id,
         })
         if not insert_result.success:
