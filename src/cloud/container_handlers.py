@@ -744,6 +744,12 @@ async def hibernate_container(request: Request) -> JSONResponse:
             return JSONResponse(content={"error": "Error hibernating container"}, status_code=500)
 
         await _release_device_resources(existing.data)
+        # See _release_unreleased_command_quota's own docstring: an earlier CREATE/RESUME
+        # command for this container may hold a reservation that never got released (lost
+        # result, or a status corrected by hand). Hibernate doesn't remove the container row, so
+        # there's no CASCADE data-loss risk the way delete_container has, but left unswept it
+        # would otherwise sit stranded for as long as the container stays hibernated.
+        await _release_unreleased_command_quota(container_id)
         return JSONResponse(content={"ok": True})
     except Exception:
         logger.error("hibernate failed", exc_info=True)

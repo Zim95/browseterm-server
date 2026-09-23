@@ -105,6 +105,13 @@ async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
     )
     if matched.success and matched.data.get("matched", 0) > 0 and existing.data:
         await _release_used_resources(existing.data, DeviceOps(DB_CONFIG))
+        # HIBERNATE itself never reserves quota (only CREATE/RESUME do), but an *earlier*
+        # CREATE/RESUME command for this same container may have reached a terminal status
+        # without its reservation ever being released (a lost CommandResult, or a status
+        # corrected by hand outside release_quota_for_command) - unlike delete_container, this
+        # row survives hibernate (the container isn't removed, so no CASCADE risk), but it would
+        # otherwise sit stranded for as long as the container stays hibernated. Sweep it here too.
+        await _release_unreleased_command_quota(command["container_id"])
 
 
 async def _apply_save(command: dict, status: str, result: dict) -> None:

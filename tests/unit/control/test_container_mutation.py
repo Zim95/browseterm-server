@@ -144,6 +144,37 @@ class TestApplyHibernate(IsolatedAsyncioTestCase):
         await apply_command_result(_command(operation="Hibernate"), "failed", json.dumps({"saved_image": "registry/img:2"}), "delete failed")
         mock_command_ops_cls.return_value.conditional_container_update.assert_not_called()
 
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_successful_hibernate_also_releases_unreleased_command_quota(
+        self, mock_command_ops_cls, mock_container_ops_cls, mock_device_ops_cls,
+    ) -> None:
+        '''
+        Same class of bug as _apply_delete's own regression test: an earlier CREATE/RESUME
+        command for this container may hold a reservation that never got released (a lost
+        CommandResult, or a status corrected by hand outside release_quota_for_command).
+        Hibernate doesn't remove the container row, so there's no CASCADE data-loss risk the way
+        delete has - but left unswept, it would sit stranded on the device for as long as the
+        container stays hibernated. _apply_hibernate must sweep it too, not just used_*.
+        '''
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "c1", "user_id": "u1", "device_id": "d1", "cpu_limit": "1", "memory_limit": "1Gi", "storage_limit": "2Gi"},
+        )
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "d1", "used_cpu": 1, "used_memory_bytes": 1_000_000_000, "used_storage_bytes": 2_000_000_000},
+        )
+        mock_device_ops_cls.return_value.update.return_value = OperationResult(success=True)
+        mock_command_ops_cls.return_value.find.return_value = OperationResult(success=True, data=[
+            {"id": "cmd-stuck", "quota_reserved_cpu": 2, "quota_released_at": None},
+        ])
+        mock_command_ops_cls.return_value.release_quota_for_command.return_value = OperationResult(success=True)
+
+        await apply_command_result(_command(operation="Hibernate", container_id="c1"), "succeeded", json.dumps({"saved_image": "registry/img:2"}), None)
+
+        mock_command_ops_cls.return_value.release_quota_for_command.assert_called_once_with("cmd-stuck")
+
 
 class TestApplySave(IsolatedAsyncioTestCase):
     '''Unlike Hibernate, a successful Save only ever touches saved_image - never status/device_id

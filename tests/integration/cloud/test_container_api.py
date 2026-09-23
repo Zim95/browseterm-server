@@ -954,6 +954,47 @@ class TestHibernateContainer(unittest.TestCase):
         result = asyncio.run(container_handlers.hibernate_container(request))
         self.assertEqual(result.status_code, 500)
 
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_hibernate_releases_unreleased_command_quota_too(
+        self, mock_container_ops_cls, mock_device_ops_cls, mock_command_ops_cls,
+    ):
+        '''
+        Same class of bug as delete_container's own regression test: an earlier CREATE/RESUME
+        command for this container may hold a reservation that never got released (a lost
+        CommandResult, or a status corrected by hand outside release_quota_for_command).
+        Hibernate doesn't remove the container row, so there's no CASCADE data-loss risk the way
+        delete has - but left unswept, it would sit stranded on the device for as long as the
+        container stays hibernated, since nothing else ever looks at reserved_* here. hibernate
+        must sweep it too, not just used_*.
+        '''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            device_id=DEVICE_A, cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+        ))
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_device_ops = MagicMock()
+        mock_device_ops.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        mock_command_ops = MagicMock()
+        mock_command_ops.find.return_value = OperationResult(success=True, data=[
+            {"id": "cmd-stuck", "quota_reserved_cpu": 2, "quota_released_at": None},
+        ])
+        mock_command_ops.release_quota_for_command.return_value = OperationResult(success=True)
+        mock_command_ops_cls.return_value = mock_command_ops
+
+        request = _mock_request(path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.hibernate_container(request))
+
+        self.assertEqual(result.status_code, 200)
+        mock_command_ops.release_quota_for_command.assert_called_once_with("cmd-stuck")
+
 
 class TestGetContainerInternal(unittest.TestCase):
     '''container-maker's off-direct-Postgres migration: GET /internal/containers/{container_id}
