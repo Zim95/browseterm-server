@@ -229,3 +229,157 @@ spec:
       ports:
         - port: http
           protocol: TCP
+---
+# Part 20/6: the Device Control gRPC stream, as its own Deployment/Service (same image as
+# browseterm-server-cloud above, `command` overridden to run grpc_server.py instead of the web
+# server - see that file's own module docstring). Was deployed live to this cluster ahead of this
+# manifest ever tracking it (`kubectl create`, not `kubectl apply -f` against version control) -
+# reconstructed here from the actual running Deployment/Service/NetworkPolicy so a fresh cluster
+# from this script alone reproduces it, not just a hand-patched history of live `kubectl`/`grpcurl`
+# debugging. `strategy: Recreate` (not RollingUpdate) - a long-lived streaming connection can't
+# usefully drain onto an old pod mid-rollout the way a stateless HTTP request can.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: browseterm-control-grpc
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-control-grpc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: browseterm-control-grpc
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: browseterm-control-grpc
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+      - name: browseterm-control-grpc
+        image: ${IMAGE}
+        imagePullPolicy: ${IMAGE_PULL_POLICY}
+        command: ["/app/.venv/bin/python", "grpc_server.py"]
+        ports:
+        - name: grpc
+          containerPort: 50060
+          protocol: TCP
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        env:
+        - name: GRPC_CONTROL_PORT
+          value: "50060"
+        - name: REDIS_HOST
+          value: "${REDIS_HOST}"
+        - name: REDIS_PORT
+          value: "${REDIS_PORT}"
+        - name: REDIS_PASSWORD
+          value: "${REDIS_PASSWORD}"
+        - name: REDIS_USERNAME
+          value: "${REDIS_USERNAME}"
+        - name: REDIS_DB
+          value: "${REDIS_DB}"
+        - name: POSTGRES_HOST
+          value: "${POSTGRES_HOST}"
+        - name: POSTGRES_PORT
+          value: "${POSTGRES_PORT}"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_USERNAME
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_PASSWORD
+        - name: POSTGRES_DB
+          valueFrom:
+            secretKeyRef:
+              name: browseterm-db-credentials
+              key: DB_DATABASE
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          capabilities:
+            drop:
+            - ALL
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: browseterm-control-grpc-service
+  namespace: ${NAMESPACE}
+  labels:
+    app: browseterm-control-grpc
+spec:
+  type: ClusterIP
+  selector:
+    app: browseterm-control-grpc
+  ports:
+  - name: grpc
+    protocol: TCP
+    port: 50060
+    targetPort: grpc
+    # gRPC needs cleartext HTTP/2 to this backend (TLS already terminated at the edge by the
+    # IngressRoute below) - Traefik's Kubernetes provider reads this standard field to pick the
+    # right transport itself, without needing a Traefik-specific annotation for the common case.
+    appProtocol: h2c
+---
+# Ingress only from Traefik (kube-system), same pattern as app-allow-ingress-only above.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: control-grpc-allow-ingress-only
+  namespace: ${NAMESPACE}
+spec:
+  podSelector:
+    matchLabels:
+      app: browseterm-control-grpc
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: grpc
+          protocol: TCP
+---
+# A plain networking.k8s.io/v1 Ingress cannot reliably proxy this: Traefik 2.x's generic Ingress
+# provider can route to and dial an h2c backend, but its reverse-proxy times out reading the
+# actual streaming gRPC response (confirmed live: `ReverseProxy read error during body copy: i/o
+# timeout` in Traefik's own logs, even with appProtocol: h2c set on the Service above) - a known
+# limitation for streaming gRPC specifically. Traefik's own IngressRoute CRD, which this is,
+# handles it correctly. Matched by path, not a separate host, since the migration doc's own Part
+# 20 plan is "gRPC service paths to control service" on the SAME app.browseterm.puhtaeto.com
+# hostname the REST Ingress above already owns - not a second (sub)domain.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: browseterm-control-grpc-route
+  namespace: ${NAMESPACE}
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`${CLOUD_INGRESS_HOST}`) && PathPrefix(`/browseterm.device.control.v1.DeviceControl`)
+      services:
+        - name: browseterm-control-grpc-service
+          port: 50060
+          scheme: h2c
+  tls:
+    secretName: browseterm-cloud-tls
