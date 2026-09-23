@@ -81,6 +81,16 @@ class TestCreateContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 202)
         mock_command_ops_cls.return_value.reserve_quota_and_create_command.assert_called_once()
+        # Regression test for a real production bug: container_config_json used to be patched in
+        # via a separate command_ops.update() call AFTER the command row was already inserted -
+        # CommandBroadcaster (Postgres LISTEN/NOTIFY) can dispatch the command to Device Agent in
+        # that exact gap, delivering an ExecuteCommand with an empty container_config_json, which
+        # Device Agent instantly rejects ("container_config_json was missing or not valid JSON").
+        # Nothing this depends on (image name, container name, network name) is unknown before
+        # the command is created, so it must be included in the same call, not patched in after.
+        _, kwargs = mock_command_ops_cls.return_value.reserve_quota_and_create_command.call_args
+        self.assertIsNotNone(kwargs.get("container_config_json"))
+        mock_command_ops_cls.return_value.update.assert_not_called()
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DEVICE_COMMAND_CREATE_ENABLED", True)
@@ -180,6 +190,11 @@ class TestResumeContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response.status_code, 202)
         mock_command_ops_cls.return_value.reserve_quota_and_create_command.assert_called_once()
+        # Regression test - see the matching CREATE test's comment for the production bug this
+        # guards against (container_config_json must be in the same insert, not patched in later).
+        _, kwargs = mock_command_ops_cls.return_value.reserve_quota_and_create_command.call_args
+        self.assertIsNotNone(kwargs.get("container_config_json"))
+        mock_command_ops_cls.return_value.update.assert_not_called()
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DEVICE_COMMAND_RESUME_ENABLED", True)

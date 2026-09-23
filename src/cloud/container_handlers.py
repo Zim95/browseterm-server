@@ -292,20 +292,25 @@ async def _create_container_via_device_command(
         return JSONResponse(content={"error": "Error creating container"}, status_code=500)
     container = insert_result.data
 
+    # Built before the command is inserted, not patched in afterward with a separate UPDATE - a
+    # real bug caught live in production: CommandBroadcaster (Postgres LISTEN/NOTIFY) can dispatch
+    # the freshly-inserted command to Device Agent before that follow-up UPDATE ever commits, so
+    # Device Agent receives an ExecuteCommand with an empty container_config_json and fails
+    # instantly with "container_config_json was missing or not valid JSON" - nothing about the
+    # image/container/network name is unknown at this point, so there's no reason to insert first.
+    config_json = build_create_config_json(container, image_name)
     command_ops = DeviceCommandOps(DB_CONFIG)
     reserve_result = await asyncio.to_thread(
         command_ops.reserve_quota_and_create_command,
         user_id, device_id, container["id"], CommandOperation.CREATE,
         requested_cpu, requested_memory, requested_storage,
         expected_container_state=None, request_id=request_id_var.get(),
+        container_config_json=config_json,
     )
     if not reserve_result.success:
         logger.error("quota reservation/command creation failed", extra={"error": reserve_result.error, "container_id": container["id"]})
         await asyncio.to_thread(ops.delete, {"id": container["id"], "user_id": user_id})
         return JSONResponse(content={"error": reserve_result.error or "Error reserving device quota"}, status_code=500)
-
-    config_json = build_create_config_json(container, image_name)
-    await asyncio.to_thread(command_ops.update, {"id": reserve_result.data["id"]}, {"container_config_json": config_json})
 
     return JSONResponse(content={"container": container, "command": reserve_result.data}, status_code=202)
 
@@ -460,18 +465,22 @@ async def _resume_container_via_device_command(
     if not container.get("saved_image"):
         return JSONResponse(content={"error": "Container has no saved_image to resume from"}, status_code=409)
 
+    # Built before the command is inserted, not patched in afterward - see the matching comment
+    # in _create_container_via_device_command for the race this avoids (CommandBroadcaster can
+    # dispatch the command before a follow-up UPDATE commits, delivering Device Agent an empty
+    # container_config_json). container["saved_image"] is already known at this point, so there's
+    # nothing this needs to wait for.
+    config_json = build_resume_config_json(container)
     command_ops = DeviceCommandOps(DB_CONFIG)
     reserve_result = await asyncio.to_thread(
         command_ops.reserve_quota_and_create_command,
         user_id, device_id, container["id"], CommandOperation.RESUME,
         requested_cpu, requested_memory, requested_storage,
         expected_container_state=ContainerStatus.HIBERNATED.value, request_id=request_id_var.get(),
+        container_config_json=config_json,
     )
     if not reserve_result.success:
         return JSONResponse(content={"error": reserve_result.error or "Error reserving device quota"}, status_code=409)
-
-    config_json = build_resume_config_json(container)
-    await asyncio.to_thread(command_ops.update, {"id": reserve_result.data["id"]}, {"container_config_json": config_json})
 
     ops = ContainerOps(DB_CONFIG)
     await asyncio.to_thread(ops.update, {"id": container["id"], "user_id": user_id}, {"status": ContainerStatus.RESUMING})
