@@ -115,7 +115,10 @@ async def list_containers(request: Request) -> JSONResponse:
     if not user_id:
         return _unauthorized()
     ops = ContainerOps(DB_CONFIG)
-    result = await asyncio.to_thread(ops.find, {"user_id": user_id})
+    # exclude_deleted: a container mid-DELETE is soft-deleted immediately (deleted_at stamped)
+    # so it disappears from the user's list right away, while the real Kubernetes teardown - and
+    # the row's eventual hard delete - continue asynchronously in the background.
+    result = await asyncio.to_thread(ops.find, {"user_id": user_id}, exclude_deleted=True)
     if not result.success:
         logger.error("list containers failed", extra={"error": result.error})
         return JSONResponse(content={"error": "Error listing containers"}, status_code=500)

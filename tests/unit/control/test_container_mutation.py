@@ -76,6 +76,31 @@ class TestApplyDelete(IsolatedAsyncioTestCase):
         mock_container_ops_cls.return_value.delete.assert_not_called()
 
     @patch("src.control.container_mutation.ContainerOps")
+    async def test_failed_delete_reverts_the_immediate_soft_delete(self, mock_container_ops_cls) -> None:
+        '''
+        Regression test: delete_container now soft-deletes (deleted_at stamped) the instant it's
+        requested, before Device Agent has confirmed anything, so the container disappears from
+        the user's list and frees its name right away. A confirmed FAILURE here must undo that -
+        otherwise a container whose teardown genuinely failed would vanish from the user's view
+        forever with a real, orphaned pod still running and no way to see or retry it.
+        '''
+        mock_container_ops_cls.return_value.update.return_value = OperationResult(success=True)
+        await apply_command_result(_command(operation="Delete", container_id="c1", user_id="u1"), "failed", None, "connection refused")
+        mock_container_ops_cls.return_value.update.assert_called_once_with(
+            {"id": "c1", "user_id": "u1"}, {"deleted_at": None},
+        )
+
+    @patch("src.control.container_mutation.ContainerOps")
+    async def test_failed_delete_revert_logs_but_does_not_raise_on_name_collision(self, mock_container_ops_cls) -> None:
+        '''If a new container has since claimed this name (possible now that the name frees up
+        immediately), the partial unique index rejects the revert - ContainerOps.update already
+        catches that as a clean OperationResult(success=False), so this must not raise, and must
+        leave the container soft-deleted rather than attempt anything more elaborate.'''
+        mock_container_ops_cls.return_value.update.return_value = OperationResult(success=False, error="duplicate key")
+        await apply_command_result(_command(operation="Delete"), "failed", None, "connection refused")  # must not raise
+        mock_container_ops_cls.return_value.delete.assert_not_called()
+
+    @patch("src.control.container_mutation.ContainerOps")
     async def test_delete_for_already_gone_container_is_a_no_op(self, mock_container_ops_cls) -> None:
         mock_container_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=None)
         await apply_command_result(_command(operation="Delete"), "succeeded", None, None)

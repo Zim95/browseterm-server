@@ -70,9 +70,26 @@ async def _apply_create_or_resume(command: dict, status: str, result: dict) -> N
 async def _apply_delete(command: dict, status: str) -> None:
     if status != "succeeded":
         # "Missing pod/service is success" already makes delete.py's handler report SUCCEEDED
-        # for an already-gone pod - a real FAILED here means something else went wrong. Leave the
-        # row as-is (still whatever status it was) rather than guessing a new one; Part 22's
-        # reconciliation loop is the backstop for anything this leaves inconsistent.
+        # for an already-gone pod - a real FAILED here means something else went wrong.
+        #
+        # The container row was soft-deleted (deleted_at stamped) the instant DELETE was
+        # requested, so it's already invisible to the user and its name already free for reuse -
+        # a real failure here must undo that, or a container whose teardown genuinely failed
+        # would vanish from the user's view forever with a real, orphaned pod still running and
+        # no way for anyone to see or retry it. Reverting is best-effort: if a *different*
+        # container has since claimed this name (a real possibility now that the name frees up
+        # immediately), the partial unique index on (user_id, name) rejects the revert and this
+        # container stays soft-deleted, permanently invisible - a genuine, rare edge case, not
+        # silently corrected here; Part 22's reconciliation loop is the intended backstop for it.
+        container_ops = ContainerOps(DB_CONFIG)
+        revert_result = await asyncio.to_thread(
+            container_ops.update, {"id": command["container_id"], "user_id": command["user_id"]}, {"deleted_at": None},
+        )
+        if not revert_result.success:
+            logger.error(
+                "could not un-soft-delete container after failed device delete - name likely reused already",
+                extra={"command_id": command["id"], "container_id": command["container_id"], "error": revert_result.error},
+            )
         return
 
     container_ops = ContainerOps(DB_CONFIG)

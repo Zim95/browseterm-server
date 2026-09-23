@@ -123,9 +123,35 @@ class TestDeleteContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
         response = await container_handlers.delete_container(request)
 
         self.assertEqual(response.status_code, 202)
-        mock_container_ops_cls.return_value.delete.assert_not_called()  # row must NOT be deleted eagerly
+        mock_container_ops_cls.return_value.delete.assert_not_called()  # row must NOT be hard-deleted eagerly
         update_call = mock_container_ops_cls.return_value.update.call_args[0]
         self.assertEqual(update_call[1]["status"].value, "Deleting")
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DEVICE_COMMAND_DELETE_ENABLED", True)
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    async def test_soft_deletes_immediately_without_waiting_for_device_confirmation(
+        self, mock_container_ops_cls, mock_command_ops_cls,
+    ) -> None:
+        '''
+        Regression test: restores the old browseterm-server-local system's two-phase delete split
+        (instant DB removal vs. slow K8s cleanup) that the Cloud Control Plane migration's
+        single-call redesign had silently dropped - the container row is only ever HARD-deleted
+        once Device Agent confirms (still true, see the sibling test above), but it must be
+        SOFT-deleted (deleted_at stamped) right here, synchronously with this request, so it
+        disappears from the user's list and frees its name for reuse immediately instead of only
+        after the async teardown fully completes.
+        '''
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_container_row(status="Running"))
+        mock_command_ops_cls.return_value.insert.return_value = OperationResult(success=True, data={"id": "cmd-1"})
+        mock_container_ops_cls.return_value.update.return_value = OperationResult(success=True)
+
+        request = _mock_request({"user_id": USER_A}, {"container_id": CONTAINER_A})
+        await container_handlers.delete_container(request)
+
+        update_call = mock_container_ops_cls.return_value.update.call_args[0]
+        self.assertIsNotNone(update_call[1]["deleted_at"])
 
 
 class TestHibernateContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):

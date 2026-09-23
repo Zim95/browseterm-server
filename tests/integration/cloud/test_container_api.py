@@ -119,6 +119,24 @@ class TestCreateContainer(unittest.TestCase):
         mock_ops.insert.assert_not_called()
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_name_uniqueness_check_excludes_soft_deleted_containers(self, mock_ops_cls):
+        '''
+        Regression test: a container whose DELETE was requested but hasn't been confirmed by
+        Device Agent yet is soft-deleted (deleted_at stamped) immediately, specifically so its
+        name frees up right away rather than staying blocked until the async teardown completes.
+        The uniqueness check must ask ContainerOps to exclude those rows, not just check for any
+        row with the name.
+        '''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_ops_cls.return_value = mock_ops
+        request = _mock_request(_create_body())
+        asyncio.run(container_handlers.create_container(request))
+        _, kwargs = mock_ops.find_one.call_args
+        self.assertTrue(kwargs.get("exclude_deleted"))
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_missing_fields_rejected(self):
         request = _mock_request({"name": "my-workspace"})
         result = asyncio.run(container_handlers.create_container(request))

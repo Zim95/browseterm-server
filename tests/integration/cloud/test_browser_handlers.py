@@ -220,7 +220,7 @@ class TestHappyPaths(unittest.TestCase):
         with _patch_session_ok(USER_A):
             result = asyncio.run(browser_handlers.list_containers(request))
         self.assertEqual(result.status_code, 200)
-        mock_ops_cls.return_value.find.assert_called_once_with({"user_id": USER_A})
+        mock_ops_cls.return_value.find.assert_called_once_with({"user_id": USER_A}, exclude_deleted=True)
 
     @patch("src.cloud.browser_handlers._hibernate_container_via_device_command", new_callable=AsyncMock)
     @patch("src.cloud.browser_handlers.ContainerOps")

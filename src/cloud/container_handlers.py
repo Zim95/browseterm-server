@@ -175,7 +175,10 @@ async def create_container(request: Request) -> JSONResponse:
             return JSONResponse(content={"error": str(e)}, status_code=400)
 
         ops = ContainerOps(DB_CONFIG)
-        existing = await asyncio.to_thread(ops.find_one, {"name": name, "user_id": user_id})
+        # exclude_deleted: a soft-deleted row (an in-flight DELETE that hasn't been confirmed by
+        # Device Agent yet) must not block reusing its name - see uq_container_user_name's own
+        # partial-index migration for why the DB itself allows this too.
+        existing = await asyncio.to_thread(ops.find_one, {"name": name, "user_id": user_id}, exclude_deleted=True)
         if existing.data:
             return JSONResponse(
                 content={"error": f"Container with name '{name}' already exists for this user."},
@@ -517,10 +520,14 @@ async def list_containers(request: Request) -> JSONResponse:
         limit = request.query_params.get("limit")
         offset = request.query_params.get("offset")
         ops = ContainerOps(DB_CONFIG)
-        result = await asyncio.to_thread(ops.find, 
+        # exclude_deleted: same reasoning as the browser-facing list at /app/containers - a
+        # container mid-DELETE is soft-deleted immediately and shouldn't appear as active here
+        # either, regardless of caller.
+        result = await asyncio.to_thread(ops.find,
             {"user_id": user_id},
             limit=int(limit) if limit else None,
             offset=int(offset) if offset else None,
+            exclude_deleted=True,
         )
         if not result.success:
             logger.error("list containers failed", extra={"error": result.error})
@@ -609,10 +616,23 @@ async def delete_container(request: Request) -> JSONResponse:
 async def _delete_container_via_device_command(container: dict, user_id: str) -> JSONResponse:
     '''Migration Part 9 path: DELETE never reserves quota (only CREATE/RESUME do - Part 1), so
     this goes through the plain command_ops.insert(), not reserve_quota_and_create_command. The
-    container row itself is only actually removed once Device Agent's CommandResult confirms the
-    delete succeeded (src/control/container_mutation.py) - never deleted eagerly here, or a
+    container row itself is only HARD-deleted once Device Agent's CommandResult confirms the
+    delete succeeded (src/control/container_mutation.py) - never removed eagerly here, or a
     result arriving afterward would have no row/command left to apply to (CASCADE on
-    device_commands.container_id).'''
+    device_commands.container_id).
+
+    But it IS soft-deleted (deleted_at stamped) right here, immediately - restoring the two-phase
+    split the old browseterm-server-local system had (delete_container_in_db, instant, vs.
+    delete_container_in_k8s, slow) that this migration's single-call redesign had silently
+    dropped: the container disappeared from list_containers and freed its name for reuse only
+    once the async Kubernetes teardown fully confirmed, which could take a while (or get stuck) -
+    not "immediately remove it from the UI, clean it up in the background" as originally intended.
+    containers.uq_container_user_name is now a partial unique index scoped to `deleted_at IS
+    NULL` specifically so a soft-deleted row here never blocks a new container reusing its name
+    while the real teardown is still in flight - see browseterm-db's matching migration. On a
+    confirmed FAILURE, container_mutation.py's _apply_delete reverts this (deleted_at back to
+    NULL) so the container becomes visible/manageable again, unless a new container has since
+    claimed the name.'''
     command_ops = DeviceCommandOps(DB_CONFIG)
     config_json = build_delete_config_json(container)
     insert_result = await asyncio.to_thread(command_ops.insert, {
@@ -625,7 +645,10 @@ async def _delete_container_via_device_command(container: dict, user_id: str) ->
         return JSONResponse(content={"error": insert_result.error or "Error creating delete command"}, status_code=500)
 
     ops = ContainerOps(DB_CONFIG)
-    await asyncio.to_thread(ops.update, {"id": container["id"], "user_id": user_id}, {"status": ContainerStatus.DELETING})
+    await asyncio.to_thread(
+        ops.update, {"id": container["id"], "user_id": user_id},
+        {"status": ContainerStatus.DELETING, "deleted_at": datetime.now(timezone.utc)},
+    )
     return JSONResponse(content={"command": insert_result.data}, status_code=202)
 
 
