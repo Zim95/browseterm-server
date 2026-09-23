@@ -81,6 +81,7 @@ async def _apply_delete(command: dict, status: str) -> None:
     if not existing.data:
         return  # already gone (e.g. a duplicate result for an already-processed delete)
 
+    await _release_unreleased_command_quota(command["container_id"])
     delete_result = await asyncio.to_thread(container_ops.delete, {"id": command["container_id"], "user_id": command["user_id"]})
     if not delete_result.success:
         logger.error("container row delete failed after successful device delete", extra={"command_id": command["id"]})
@@ -123,6 +124,22 @@ async def _apply_save(command: dict, status: str, result: dict) -> None:
         command["container_id"], command["device_id"], command["placement_generation"],
         {"saved_image": result.get("saved_image")},
     )
+
+
+async def _release_unreleased_command_quota(container_id: str) -> None:
+    '''Mirrors container_handlers.py's own _release_unreleased_command_quota - duplicated rather
+    than imported to avoid a control -> cloud module dependency, same as _release_used_resources
+    below. See that copy's docstring for why this must run before a container row is deleted: a
+    CREATE/RESUME command's reserved quota is only ever released by a terminal CommandResult, and
+    ON DELETE CASCADE would otherwise remove the only row it could ever be released against,
+    stranding devices.reserved_* permanently.'''
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    existing_commands = await asyncio.to_thread(command_ops.find, {"container_id": container_id})
+    if not existing_commands.success:
+        return
+    for command in existing_commands.data or []:
+        if command.get("quota_reserved_cpu") is not None and command.get("quota_released_at") is None:
+            await asyncio.to_thread(command_ops.release_quota_for_command, command["id"])
 
 
 async def _release_used_resources(container: dict, device_ops: DeviceOps) -> None:

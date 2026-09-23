@@ -106,6 +106,27 @@ async def _release_device_resources(container: dict) -> None:
         logger.error("device resource release failed", extra={"error": release_result.error, "device_id": device_id})
 
 
+async def _release_unreleased_command_quota(container_id: str) -> None:
+    '''
+    A CREATE/RESUME command reserves quota into devices.reserved_* immediately
+    (reserve_quota_and_create_command) and only releases it once a terminal CommandResult arrives
+    over the gRPC stream (servicer.py's release_quota_for_command). If a container is deleted
+    while such a command is still sitting on an unreleased reservation - its result was lost
+    before ever reaching Cloud, or its status was corrected by hand without going through
+    release_quota_for_command - device_commands.container_id's ON DELETE CASCADE removes the only
+    row that reservation could ever be released against, and devices.reserved_* stays stuck at
+    that value forever, silently blocking every future create/resume on the device with
+    "Insufficient device quota". Must run before the container row is deleted.
+    '''
+    command_ops = DeviceCommandOps(DB_CONFIG)
+    existing_commands = await asyncio.to_thread(command_ops.find, {"container_id": container_id})
+    if not existing_commands.success:
+        return
+    for command in existing_commands.data or []:
+        if command.get("quota_reserved_cpu") is not None and command.get("quota_released_at") is None:
+            await asyncio.to_thread(command_ops.release_quota_for_command, command["id"])
+
+
 async def create_container(request: Request) -> JSONResponse:
     '''
     POST /containers - body must include user_id (Local-trusted, not client-trusted). device_id is
@@ -563,6 +584,7 @@ async def delete_container(request: Request) -> JSONResponse:
         if DEVICE_COMMAND_DELETE_ENABLED and existing.data.get("device_id"):
             return await _delete_container_via_device_command(existing.data, user_id)
 
+        await _release_unreleased_command_quota(container_id)
         result = await asyncio.to_thread(ops.delete, {"id": container_id, "user_id": user_id})
         if not result.success:
             logger.error("container delete failed", extra={"error": result.error})

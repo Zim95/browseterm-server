@@ -522,6 +522,50 @@ class TestDeleteContainer(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         mock_device_ops_cls.return_value.find_one.assert_not_called()
 
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_delete_releases_unreleased_command_quota_before_row_is_gone(
+        self, mock_container_ops_cls, mock_device_ops_cls, mock_command_ops_cls,
+    ):
+        '''
+        Regression test: a CREATE/RESUME command reserves quota into devices.reserved_* and only
+        releases it once a terminal CommandResult arrives over gRPC. If that never happened (lost
+        connection, or a command row corrected by hand) and the container is then deleted here,
+        device_commands.container_id's ON DELETE CASCADE would remove the only row the
+        reservation could ever be released against - stranding devices.reserved_* forever and
+        making every future create/resume fail with "Insufficient device quota" even though
+        nothing is actually in use. delete_container must release any such stray reservation
+        before the container row (and its cascade-linked commands) disappear.
+        '''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(device_id=None))
+        mock_ops.delete.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        mock_command_ops = MagicMock()
+        mock_command_ops.find.return_value = OperationResult(success=True, data=[
+            {"id": "cmd-stuck", "quota_reserved_cpu": 2, "quota_released_at": None},
+            {"id": "cmd-already-released", "quota_reserved_cpu": 1, "quota_released_at": "2026-09-01T00:00:00Z"},
+            {"id": "cmd-delete", "quota_reserved_cpu": None, "quota_released_at": None},
+        ])
+        mock_command_ops.release_quota_for_command.return_value = OperationResult(success=True)
+        mock_command_ops_cls.return_value = mock_command_ops
+
+        # Track call order across both mocks to prove the reservation is released before the
+        # row (and its cascade-linked command) is deleted, not after.
+        call_order = []
+        mock_command_ops.release_quota_for_command.side_effect = lambda *a, **k: call_order.append("release") or OperationResult(success=True)
+        mock_ops.delete.side_effect = lambda *a, **k: call_order.append("delete") or OperationResult(success=True)
+
+        request = _mock_request({"user_id": USER_A}, path_params={"container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.delete_container(request))
+
+        self.assertEqual(result.status_code, 200)
+        mock_command_ops.release_quota_for_command.assert_called_once_with("cmd-stuck")
+        self.assertEqual(call_order, ["release", "delete"])
+
 
 class TestCatalog(unittest.TestCase):
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)

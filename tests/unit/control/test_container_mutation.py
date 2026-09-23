@@ -81,6 +81,39 @@ class TestApplyDelete(IsolatedAsyncioTestCase):
         await apply_command_result(_command(operation="Delete"), "succeeded", None, None)
         mock_container_ops_cls.return_value.delete.assert_not_called()
 
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    async def test_delete_releases_unreleased_command_quota_before_row_is_gone(
+        self, mock_container_ops_cls, mock_device_ops_cls, mock_command_ops_cls,
+    ) -> None:
+        '''
+        Regression test: an earlier CREATE/RESUME command may still hold an unreleased quota
+        reservation (its terminal CommandResult never reached Cloud, or its status was corrected
+        by hand without going through release_quota_for_command). Deleting the container here
+        must release that reservation first - device_commands.container_id's ON DELETE CASCADE
+        would otherwise remove the only row it could ever be released against, permanently
+        stranding devices.reserved_* and blocking every future create/resume with "Insufficient
+        device quota" even though nothing is actually in use.
+        '''
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "c1", "user_id": "u1", "device_id": None, "cpu_limit": "1", "memory_limit": "1Gi", "storage_limit": "2Gi"},
+        )
+        mock_container_ops_cls.return_value.delete.return_value = OperationResult(success=True)
+        mock_command_ops_cls.return_value.find.return_value = OperationResult(success=True, data=[
+            {"id": "cmd-stuck", "quota_reserved_cpu": 2, "quota_released_at": None},
+            {"id": "cmd-already-released", "quota_reserved_cpu": 1, "quota_released_at": "2026-09-01T00:00:00Z"},
+        ])
+
+        call_order = []
+        mock_command_ops_cls.return_value.release_quota_for_command.side_effect = lambda *a, **k: call_order.append("release") or OperationResult(success=True)
+        mock_container_ops_cls.return_value.delete.side_effect = lambda *a, **k: call_order.append("delete") or OperationResult(success=True)
+
+        await apply_command_result(_command(operation="Delete", container_id="c1"), "succeeded", None, None)
+
+        mock_command_ops_cls.return_value.release_quota_for_command.assert_called_once_with("cmd-stuck")
+        self.assertEqual(call_order, ["release", "delete"])
+
 
 class TestApplyHibernate(IsolatedAsyncioTestCase):
     @patch("src.control.container_mutation.DeviceOps")
