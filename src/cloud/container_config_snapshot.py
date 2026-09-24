@@ -33,7 +33,17 @@ def _build(container: dict, image_name: Optional[str] = None, saved_image: Optio
         "network_name": f"{container['user_id']}-namespace",
         "exposure_level": 0,
         "publish_information": container.get("port_mappings") or _DEFAULT_PUBLISH_INFORMATION,
-        "environment_variables": container.get("environment_vars") or {},
+        # CONTAINER_ID rides in environment_variables (not a dedicated field) so container-maker's
+        # pod_manager.py can stamp it as the browseterm/container-id pod label with no protocol
+        # change - matches browseterm-server-local's old resume_container, which explicitly added
+        # this on top of the container's own stored env vars. Dropped by this migration's rewrite
+        # (this function just passed environment_vars through verbatim) - a real, high-impact bug:
+        # status_monitor's resource_reconciler.py reads that exact label to know which DB
+        # container_id a live pod belongs to (running_container_ids()). Without it, every
+        # genuinely-running pod looked invisible to the reconciler, which then called
+        # mark_lost_if_running on every one of them on its next 5-minute pass - silently flipping
+        # healthy, running containers to HIBERNATED with no device_commands row to explain why.
+        "environment_variables": {**(container.get("environment_vars") or {}), "CONTAINER_ID": container["id"]},
         "cpu_request": derive_cpu_request_string(container["cpu_limit"], RESOURCE_CPU_REQUEST_RATIO),
         "cpu_limit": container["cpu_limit"],
         "memory_request": derive_memory_request_string(container["memory_limit"], RESOURCE_MEMORY_REQUEST_RATIO),
