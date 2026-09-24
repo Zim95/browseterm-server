@@ -113,6 +113,11 @@
     color: #721c24;
 }
 
+.terminal-status.failed {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
 /* Dormant: saved to a snapshot and torn down to free resources. */
 .terminal-status.hibernated {
     background-color: #e6e4f5;
@@ -566,6 +571,11 @@ body.dark-mode .terminal-status.running {
 }
 
 body.dark-mode .terminal-status.stopped {
+    background: #cd3131;
+    color: #ffffff;
+}
+
+body.dark-mode .terminal-status.failed {
     background: #cd3131;
     color: #ffffff;
 }

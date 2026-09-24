@@ -61,6 +61,31 @@ class TerminalsUtilities {
         return status.charAt(0).toUpperCase() + status.slice(1);
     }
 
+    /**
+     * Maps the backend's full ContainerStatus enum (Pending/Running/Succeeded/Failed/Unknown/
+     * Hibernated/Resuming/Queued/Creating/Hibernating/Deleting/DeviceOffline/Stranded) onto the
+     * five states this UI actually has real coloring/highlighting for: pending, running, failed,
+     * hibernated, resuming. Transitional/in-flight statuses (Queued, Creating, Hibernating,
+     * Deleting) read as "still working" to a user regardless of which specific step they're on,
+     * so they collapse into `pending` (the existing loading/spinner treatment) rather than each
+     * showing its own raw, unstyled label. Genuine problem states (Failed, DeviceOffline,
+     * Stranded) collapse into `failed`. This is the single source of truth for both the status
+     * badge's CSS class/text and which controls getControlsHTML shows - never branch on the raw
+     * status directly elsewhere.
+     */
+    static mapStatusToDisplay(status) {
+        const key = (status || 'pending').toLowerCase();
+        const displayMap = {
+            pending: 'pending', queued: 'pending', creating: 'pending', deleting: 'pending',
+            hibernating: 'pending', unknown: 'pending',
+            running: 'running', succeeded: 'running',
+            failed: 'failed', deviceoffline: 'failed', stranded: 'failed',
+            hibernated: 'hibernated',
+            resuming: 'resuming',
+        };
+        return displayMap[key] || 'pending';
+    }
+
     static adjustNumber(input, change) {
         const min = parseInt(input.min, 10) || 1;
         const max = parseInt(input.max, 10);
@@ -258,16 +283,13 @@ class TerminalsHandler {
                     <span class="loading-text">Hibernating...</span>
                 </div>`;
         }
+        // Keyed by TerminalsUtilities.mapStatusToDisplay's output (the 5 states this UI shows),
+        // not the raw backend status - callers must map before calling this.
         const controlsConfig = {
             running: { showPlay: true, showInfo: true, showHibernate: true, showDelete: true, showLoading: false },
             failed: { showPlay: false, showInfo: true, showDelete: true, showLoading: false },
-            queued: { showPlay: false, showDelete: false, showLoading: true },
             pending: { showPlay: false, showDelete: false, showLoading: true },
-            creating: { showPlay: false, showDelete: false, showLoading: true },
-            succeeded: { showPlay: false, showDelete: false, showLoading: true },
-            unknown: { showPlay: false, showDelete: false, showLoading: true },
             hibernated: { showResume: true, showInfo: true, showDelete: true, showLoading: false },
-            hibernating: { showLoading: true },
             resuming: { showLoading: true },
         };
 
@@ -326,7 +348,16 @@ class TerminalsHandler {
     renderTerminalItem(terminal) {
         const statusLower = (terminal.status || 'Pending').toLowerCase();
         const statusText = terminal.status || 'Pending';
-        const controlsHTML = this.getControlsHTML(terminal.id, statusLower);
+        // The badge's CSS class and which controls are shown are both driven by the mapped
+        // display status (pending/running/failed/hibernated/resuming - the only states this UI
+        // has real coloring/highlighting for), not the raw backend status - a raw value like
+        // "Queued" or "Deleting" has no styling of its own and would render as an unstyled,
+        // default-colored badge. The label text itself still shows the raw status verbatim
+        // (accurate wording), and the icon map below still keys off it too (so e.g. a
+        // "Hibernating" row still gets its own spin icon even though it shares the "pending"
+        // bucket's coloring with other in-flight states).
+        const displayStatus = TerminalsUtilities.mapStatusToDisplay(statusLower);
+        const controlsHTML = this.getControlsHTML(terminal.id, displayStatus);
 
         const statusIconMap = {
             hibernated: '<i class="fas fa-moon"></i> ',
@@ -343,7 +374,7 @@ class TerminalsHandler {
                         <div class="ip-address">${terminal.ipAddress || 'Pending...'}</div>
                         <div class="port">${terminal.port || '-'}</div>
                     </div>
-                    <div class="terminal-status ${statusLower}">${statusIcon}${statusText}</div>
+                    <div class="terminal-status ${displayStatus}">${statusIcon}${statusText}</div>
                 </div>
                 <div class="terminal-controls">
                     ${controlsHTML}
@@ -476,8 +507,15 @@ class TerminalsHandler {
         const terminalIndex = this.terminals.findIndex(t => t.id === container_id);
         if (terminalIndex === -1) return;
 
-        this.terminals[terminalIndex].status = new_status;
-        this.renderTerminalsList();
+        // The status_change SSE message only ever carries old_status/new_status - never
+        // ip_address, port_mappings, or anything else that can change alongside a status
+        // transition (a real bug caught live: CREATE succeeding genuinely sets a real IP the
+        // instant the container goes Running, but the list item kept showing "Pending..." next
+        // to the name until the page was manually refreshed, because this handler only ever
+        // patched the cached `.status` field locally instead of re-fetching). Pulling the full,
+        // current row from the server on every status change is simpler and more robust than
+        // trying to track which other fields a given transition might also have changed.
+        await this.loadTerminals();
 
         if (new_status === 'Running') {
             this.pendingContainers.delete(container_id);
