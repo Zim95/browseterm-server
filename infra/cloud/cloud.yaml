@@ -155,6 +155,18 @@ spec:
         # literal), same as AUTH_REDIRECT_BASE_URI above.
         - name: SNAPSHOT_REGISTRY_REPO_PREFIX
           value: "${SNAPSHOT_REGISTRY_REPO_PREFIX}"
+        # See cloud-vps.yaml's matching block for why these are tracked here now instead of only
+        # ever being set live via kubectl.
+        - name: DEVICE_COMMAND_CREATE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_DELETE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_HIBERNATE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_RESUME_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_SAVE_ENABLED
+          value: "false"
         livenessProbe:
           httpGet:
             path: /healthz

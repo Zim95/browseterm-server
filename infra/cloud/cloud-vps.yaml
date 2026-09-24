@@ -128,6 +128,23 @@ spec:
               optional: true
         - name: SNAPSHOT_REGISTRY_REPO_PREFIX
           value: "${SNAPSHOT_REGISTRY_REPO_PREFIX}"
+        # Device-command migration rollout flags (src/cloud/config.py) - previously only ever
+        # set live via kubectl, never tracked here, so a fresh deploy from this file alone would
+        # silently leave every one of them at its "false" default. CREATE/DELETE/RESUME/HIBERNATE
+        # have all been verified end-to-end against a real device (placement_generation,
+        # container_config_json atomicity, quota release, and pod-lookup fixes all landed
+        # 2026-09-23/24 specifically to make this safe) - SAVE stays off pending its own
+        # end-to-end verification.
+        - name: DEVICE_COMMAND_CREATE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_DELETE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_HIBERNATE_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_RESUME_ENABLED
+          value: "true"
+        - name: DEVICE_COMMAND_SAVE_ENABLED
+          value: "false"
         livenessProbe:
           httpGet:
             path: /healthz
