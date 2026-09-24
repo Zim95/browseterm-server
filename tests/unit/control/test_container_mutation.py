@@ -31,6 +31,37 @@ class TestApplyCreateOrResume(IsolatedAsyncioTestCase):
         self.assertEqual(generation, 2)
         self.assertEqual(update_data["kubernetes_id"], "pod-1")
 
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_create_success_immediately_applies_used_resources(
+        self, mock_command_ops_cls, mock_container_ops_cls, mock_device_ops_cls,
+    ) -> None:
+        '''
+        Regression test for a real production bug: devices.used_* only ever changed via
+        status_monitor's resource_reconciler.py, a drift-repair poller with a 300s default
+        interval - a container's pod could be genuinely Running and consuming real capacity for
+        up to 5 minutes while the device's own used_cpu/used_memory_bytes/used_storage_bytes
+        stayed at their pre-create values, so a second create request saw stale "available"
+        capacity. A successful CREATE/RESUME result must apply the container's own resource
+        limits to used_* immediately, not wait for the next reconcile pass.
+        '''
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "c1", "user_id": "u1", "device_id": "d1", "cpu_limit": "1", "memory_limit": "1Gi", "storage_limit": "2Gi"},
+        )
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "d1", "used_cpu": 0, "used_memory_bytes": 0, "used_storage_bytes": 0},
+        )
+        result_json = json.dumps({"kubernetes_id": "pod-1", "ip_address": "10.0.0.1", "associated_resources": {}})
+
+        await apply_command_result(_command(container_id="c1", user_id="u1"), "succeeded", result_json, None)
+
+        mock_device_ops_cls.return_value.update.assert_called_once_with(
+            {"id": "d1", "user_id": "u1"},
+            {"used_cpu": 1, "used_memory_bytes": 1024 ** 3, "used_storage_bytes": 2 * 1024 ** 3},
+        )
+
     @patch("src.control.container_mutation.DeviceCommandOps")
     async def test_create_failure_sets_failed_status(self, mock_ops_cls) -> None:
         mock_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})

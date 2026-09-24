@@ -464,16 +464,31 @@ async def _resume_container_via_device_command(
     containers.status the way the old synchronous path did; conditional_container_update (applied
     from container_mutation.py once the RESUME command's result arrives) is what actually flips
     status to RUNNING, gated on the SAME placement_generation this call establishes.
+
+    Falls back to the container's own base image when it has no saved_image yet, matching the old
+    browseterm-server-local system's resume_container exactly ("recreate its pod from the saved
+    snapshot image (falls back to the base image if it was never saved)") - a real regression the
+    Cloud Control Plane migration introduced by hard-rejecting resume with 409 whenever
+    saved_image was empty, which is the normal case for any container that was hibernated before
+    ever actually being snapshotted (e.g. HIBERNATE running with DEVICE_COMMAND_HIBERNATE_ENABLED
+    off, as it did in prod until 2026-09-24 - see that fix's own commit for the full story).
     '''
-    if not container.get("saved_image"):
-        return JSONResponse(content={"error": "Container has no saved_image to resume from"}, status_code=409)
+    effective_saved_image = container.get("saved_image")
+    if not effective_saved_image:
+        if not container.get("image_id"):
+            return JSONResponse(content={"error": "Container has no saved_image or base image to resume from"}, status_code=409)
+        image_ops = ImageOps(DB_CONFIG)
+        image_result = await asyncio.to_thread(image_ops.find_one, {"id": container["image_id"]})
+        if not image_result.data:
+            return JSONResponse(content={"error": "Container has no saved_image and its base image no longer exists"}, status_code=409)
+        effective_saved_image = image_result.data["image"]
 
     # Built before the command is inserted, not patched in afterward - see the matching comment
     # in _create_container_via_device_command for the race this avoids (CommandBroadcaster can
     # dispatch the command before a follow-up UPDATE commits, delivering Device Agent an empty
-    # container_config_json). container["saved_image"] is already known at this point, so there's
+    # container_config_json). The effective image is already known at this point, so there's
     # nothing this needs to wait for.
-    config_json = build_resume_config_json(container)
+    config_json = build_resume_config_json({**container, "saved_image": effective_saved_image})
     command_ops = DeviceCommandOps(DB_CONFIG)
     reserve_result = await asyncio.to_thread(
         command_ops.reserve_quota_and_create_command,

@@ -226,9 +226,60 @@ class TestResumeContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
     @patch("src.cloud.container_handlers.DEVICE_COMMAND_RESUME_ENABLED", True)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
-    async def test_missing_saved_image_is_rejected(self, mock_container_ops_cls, mock_device_ops_cls) -> None:
+    async def test_missing_saved_image_and_no_base_image_is_rejected(self, mock_container_ops_cls, mock_device_ops_cls) -> None:
         mock_container_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_container_row(saved_image=None))
         mock_device_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_device_row())
+
+        request = _mock_request({"user_id": USER_A, "device_id": DEVICE_A}, {"container_id": CONTAINER_A})
+        response = await container_handlers.resume_container(request)
+        self.assertEqual(response.status_code, 409)
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DEVICE_COMMAND_RESUME_ENABLED", True)
+    @patch("src.cloud.container_handlers.DeviceCommandOps")
+    @patch("src.cloud.container_handlers.ImageOps")
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    async def test_no_saved_image_falls_back_to_base_image(
+        self, mock_container_ops_cls, mock_device_ops_cls, mock_image_ops_cls, mock_command_ops_cls,
+    ) -> None:
+        '''
+        Regression test for a real production bug: the old browseterm-server-local system's
+        resume_container explicitly fell back to the container's base image when it had never
+        been saved ("recreate its pod from the saved snapshot image (falls back to the base
+        image if it was never saved)") - the Cloud Control Plane migration dropped this and
+        hard-rejected with 409 instead, which is the NORMAL case for any container hibernated
+        before ever actually being snapshotted.
+        '''
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data=_container_row(saved_image=None, image_id="img-1"),
+        )
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_image_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data={"id": "img-1", "image": "browseterm/base:latest"})
+        mock_command_ops_cls.return_value.reserve_quota_and_create_command.return_value = OperationResult(
+            success=True, data={"id": "cmd-1", "placement_generation": 2},
+        )
+
+        request = _mock_request({"user_id": USER_A, "device_id": DEVICE_A}, {"container_id": CONTAINER_A})
+        response = await container_handlers.resume_container(request)
+
+        self.assertEqual(response.status_code, 202)
+        _, kwargs = mock_command_ops_cls.return_value.reserve_quota_and_create_command.call_args
+        self.assertIn('"saved_image": "browseterm/base:latest"', kwargs["container_config_json"])
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DEVICE_COMMAND_RESUME_ENABLED", True)
+    @patch("src.cloud.container_handlers.ImageOps")
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    async def test_no_saved_image_and_deleted_base_image_is_rejected(
+        self, mock_container_ops_cls, mock_device_ops_cls, mock_image_ops_cls,
+    ) -> None:
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data=_container_row(saved_image=None, image_id="img-1"),
+        )
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_device_row())
+        mock_image_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=None)
 
         request = _mock_request({"user_id": USER_A, "device_id": DEVICE_A}, {"container_id": CONTAINER_A})
         response = await container_handlers.resume_container(request)

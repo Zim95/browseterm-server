@@ -65,6 +65,51 @@ async def _apply_create_or_resume(command: dict, status: str, result: dict) -> N
     )
     if not matched.success or matched.data.get("matched", 0) == 0:
         logger.info("container mutation skipped (stale placement)", extra={"command_id": command["id"], "operation": command["operation"]})
+        return
+
+    if status == "succeeded":
+        # Move this container's resources from reserved_* (already released above, via
+        # release_quota_for_command in servicer.py) into used_* - confirmed-running capacity now
+        # genuinely reflects a real pod. Without this, used_* only ever changes via
+        # status_monitor's resource_reconciler.py, which runs on a slow, drift-repair-only cadence
+        # (RECONCILE_INTERVAL_SECONDS, 300s by default) - a real bug caught live: a container's
+        # pod was genuinely up and consuming real device capacity, but the device's own used_cpu/
+        # used_memory_bytes/used_storage_bytes stayed at their pre-create values for up to 5
+        # minutes, so a second create request saw stale "available" capacity as if the first
+        # container didn't exist yet.
+        container_ops = ContainerOps(DB_CONFIG)
+        existing = await asyncio.to_thread(container_ops.find_one, {"id": command["container_id"], "user_id": command["user_id"]})
+        if existing.data:
+            await _apply_used_resources(existing.data, DeviceOps(DB_CONFIG))
+
+
+async def _apply_used_resources(container: dict, device_ops: DeviceOps) -> None:
+    '''The increment counterpart to _release_used_resources below - moves a container's own
+    resource limits into devices.used_* once its pod is confirmed Running.'''
+    device_id = container.get("device_id")
+    if not device_id:
+        return
+    try:
+        cpu = parse_cpu_cores(container["cpu_limit"])
+        memory = parse_memory_bytes(container["memory_limit"])
+        storage = parse_memory_bytes(container["storage_limit"])
+    except (InvalidQuantityError, KeyError, TypeError):
+        logger.error("could not parse container resource limits to apply used capacity", extra={"container_id": container.get("id")})
+        return
+
+    device_result = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": container.get("user_id")})
+    if not device_result.data:
+        return
+    device = device_result.data
+    await asyncio.to_thread(
+        device_ops.update,
+        {"id": device_id, "user_id": container.get("user_id")},
+        {
+            "used_cpu": device["used_cpu"] + cpu,
+            "used_memory_bytes": device["used_memory_bytes"] + memory,
+            "used_storage_bytes": device["used_storage_bytes"] + storage,
+        },
+    )
 
 
 async def _apply_delete(command: dict, status: str) -> None:
