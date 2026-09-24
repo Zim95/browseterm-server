@@ -360,7 +360,7 @@ class TerminalPageHandler {
             authenticating: '\x1b[1;36m✓ Connected - authenticating...\x1b[0m',
             connected: '\x1b[1;32m✓ Server ready\x1b[0m',
             reconnecting: `\x1b[1;33mConnection lost - reconnecting (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...\x1b[0m`,
-            'device-offline': '\x1b[1;31m✗ Your machine appears to be offline. Make sure BrowseTerm is running on it, then reload this page.\x1b[0m',
+            'device-offline': '\x1b[1;33mYour machine is reconnecting - retrying automatically...\x1b[0m',
             'session-expired': '\x1b[1;33mTerminal session expired - requesting a new one...\x1b[0m',
             'authorization-failed': '\x1b[1;31m✗ You are not authorized to access this terminal.\x1b[0m',
             error: '\x1b[1;31m✗ Could not connect to the terminal. Please reload the page.\x1b[0m',
@@ -393,7 +393,12 @@ class TerminalPageHandler {
                 if (resp.status === 404) {
                     this.setConnectionState('authorization-failed');
                 } else if (resp.status === 409) {
+                    // The device's tunnel heartbeat can be transiently stale (a background
+                    // reconnect cycle, not a real outage) - retry through the same backoff loop
+                    // a mid-session WebSocket drop uses, instead of leaving the user stuck on a
+                    // static message with no way forward but a manual reload.
                     this.setConnectionState('device-offline', err.error);
+                    this.attemptReconnect();
                 } else {
                     this.setConnectionState('error', err.error);
                 }

@@ -150,6 +150,7 @@ class TerminalsHandler {
         await this.loadOperatingSystems();
         this.setupEventListeners();
         this.setupStatusStream();
+        this.setupDeviceStatusPolling();
     }
 
     cacheElements() {
@@ -312,7 +313,7 @@ class TerminalsHandler {
                     <i class="fas fa-play"></i>
                 </button>`
                 : `
-                <span class="play-btn-wrapper" title="Your machine is offline - start BrowseTerm on it to open this terminal">
+                <span class="play-btn-wrapper" title="Reconnecting to your machine - this usually resolves within a minute">
                     <button class="control-btn play-btn" data-terminal-id="${terminalId}" disabled>
                         <i class="fas fa-play"></i>
                     </button>
@@ -498,6 +499,23 @@ class TerminalsHandler {
         };
 
         this.eventSource = eventSource;
+    }
+
+    /**
+     * The Play button's disabled state (TerminalsUtilities.isActiveDeviceTunnelOnline) reads
+     * `window.activeDevice`, which is otherwise only refreshed opportunistically (opening the
+     * create-terminal modal, or a container status_change SSE event). A device reconnecting in
+     * the background is neither of those - it's a heartbeat timestamp aging back under the 90s
+     * threshold with no discrete event to react to - so without this, a stale-offline button
+     * could stay disabled for minutes after the device is actually reachable again, until the
+     * user manually reloads. Polling is the right tool here (not a dedicated SSE event) precisely
+     * because "online" is a staleness check, not a state transition.
+     */
+    setupDeviceStatusPolling() {
+        this.deviceStatusPollInterval = setInterval(async () => {
+            await this.refreshDeviceQuota();
+            this.renderTerminalsList();
+        }, 20000);
     }
 
     async handleStatusChange(data) {
