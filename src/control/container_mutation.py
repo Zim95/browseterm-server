@@ -155,7 +155,27 @@ async def _apply_delete(command: dict, status: str) -> None:
 async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
     command_ops = DeviceCommandOps(DB_CONFIG)
     if status != "succeeded":
-        return  # pod is still running (see hibernate.py's own POD_DELETE_FAILED_AFTER_SAVE note) - leave status as RUNNING, unchanged
+        # The pod is genuinely still running (see hibernate.py's own POD_DELETE_FAILED_AFTER_SAVE
+        # note - a real failure here never deletes the pod), but the container's own status was
+        # already optimistically flipped to HIBERNATING the instant this command was created
+        # (_hibernate_container_via_device_command) - nothing reverts that on failure, so the
+        # container got stuck in HIBERNATING forever (an endless loading spinner in the UI, no
+        # controls, no way to retry) even though the real pod was fine the whole time. Caught
+        # live in production the same day HIBERNATE was first enabled: a real snapshot failure
+        # (container-maker's REPO_NAME/REPO_PASSWORD not configured) left a container stranded
+        # exactly this way. Revert to RUNNING, the same "undo the optimistic transition on a
+        # confirmed failure" pattern _apply_delete already uses for its own soft-delete.
+        reverted = await asyncio.to_thread(
+            command_ops.conditional_container_update,
+            command["container_id"], command["device_id"], command["placement_generation"],
+            {"status": ContainerStatus.RUNNING},
+        )
+        if not reverted.success or reverted.data.get("matched", 0) == 0:
+            logger.info(
+                "hibernate failure revert skipped (stale placement or already moved on)",
+                extra={"command_id": command["id"], "container_id": command["container_id"]},
+            )
+        return
 
     container_ops = ContainerOps(DB_CONFIG)
     existing = await asyncio.to_thread(container_ops.find_one, {"id": command["container_id"], "user_id": command["user_id"]})

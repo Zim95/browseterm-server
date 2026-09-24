@@ -2,6 +2,7 @@ import json
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import patch
 
+from browseterm_db.models.containers import ContainerStatus
 from browseterm_db.operations import OperationResult
 
 from src.control.container_mutation import apply_command_result
@@ -194,11 +195,23 @@ class TestApplyHibernate(IsolatedAsyncioTestCase):
         mock_device_ops_cls.return_value.update.assert_called_once()
 
     @patch("src.control.container_mutation.DeviceCommandOps")
-    async def test_failed_hibernate_does_not_mutate_container(self, mock_command_ops_cls) -> None:
-        '''"Pod delete failure does not release quota prematurely" - and the container stays
-        exactly as it was (still RUNNING, pod still there) rather than being marked HIBERNATED.'''
+    async def test_failed_hibernate_reverts_the_optimistic_hibernating_status(self, mock_command_ops_cls) -> None:
+        '''
+        Regression test for a real production bug: _hibernate_container_via_device_command
+        optimistically sets status=HIBERNATING the instant the command is created, but nothing
+        ever reverted that on a confirmed failure - the container got stuck in HIBERNATING
+        forever (an endless loading spinner, no controls, no way to retry) even though the real
+        pod was never touched and was fine the whole time. Caught live: a genuine snapshot
+        failure (container-maker's REPO_NAME/REPO_PASSWORD not configured) left a container
+        stranded exactly this way the same day HIBERNATE_ENABLED was first flipped on. Must
+        revert to RUNNING, mirroring how _apply_delete already undoes its own optimistic
+        soft-delete on a confirmed failure.
+        '''
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
         await apply_command_result(_command(operation="Hibernate"), "failed", json.dumps({"saved_image": "registry/img:2"}), "delete failed")
-        mock_command_ops_cls.return_value.conditional_container_update.assert_not_called()
+        mock_command_ops_cls.return_value.conditional_container_update.assert_called_once_with(
+            "c1", "d1", 2, {"status": ContainerStatus.RUNNING},
+        )
 
     @patch("src.control.container_mutation.DeviceOps")
     @patch("src.control.container_mutation.ContainerOps")
