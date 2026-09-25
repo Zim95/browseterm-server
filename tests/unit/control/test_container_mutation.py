@@ -244,6 +244,32 @@ class TestApplyHibernate(IsolatedAsyncioTestCase):
 
         mock_command_ops_cls.return_value.release_quota_for_command.assert_called_once_with("cmd-stuck")
 
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_skip_save_hibernate_does_not_clobber_existing_saved_image(
+        self, mock_command_ops_cls, mock_container_ops_cls, mock_device_ops_cls,
+    ) -> None:
+        '''qa.md item 3: a manual/UI hibernate skips the save step entirely, so Device Agent's
+        result carries no saved_image at all. That must NOT overwrite a saved_image the container
+        already had (e.g. from an earlier explicit Save) with None - only a result that actually
+        contains a saved_image may update the field.'''
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "c1", "user_id": "u1", "device_id": "d1", "cpu_limit": "1", "memory_limit": "1Gi", "storage_limit": "2Gi"},
+        )
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "d1", "used_cpu": 1, "used_memory_bytes": 1_000_000_000, "used_storage_bytes": 2_000_000_000},
+        )
+        mock_device_ops_cls.return_value.update.return_value = OperationResult(success=True)
+        mock_command_ops_cls.return_value.find.return_value = OperationResult(success=True, data=[])
+
+        await apply_command_result(_command(operation="Hibernate", container_id="c1"), "succeeded", json.dumps({}), None)
+
+        _, _, _, update_data = mock_command_ops_cls.return_value.conditional_container_update.call_args[0]
+        self.assertNotIn("saved_image", update_data)
+        self.assertEqual(update_data["status"].value, "Hibernated")
+
 
 class TestApplySave(IsolatedAsyncioTestCase):
     '''Unlike Hibernate, a successful Save only ever touches saved_image - never status/device_id

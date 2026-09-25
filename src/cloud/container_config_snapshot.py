@@ -63,8 +63,14 @@ def build_delete_config_json(container: dict) -> str:
     return json.dumps({"network_name": f"{container['user_id']}-namespace"})
 
 
-def build_hibernate_config_json(container: dict) -> str:
-    return json.dumps({"network_name": f"{container['user_id']}-namespace"})
+def build_hibernate_config_json(container: dict, skip_save: bool = False) -> str:
+    '''skip_save (qa.md items 3/4): true only for the browser-initiated manual hibernate route -
+    that path must free the resource fast with no automatic save. Reaper's idle-timeout hibernate
+    leaves this false, so Device Agent still saves before deleting the pod.'''
+    cfg = {"network_name": f"{container['user_id']}-namespace"}
+    if skip_save:
+        cfg["skip_save"] = True
+    return json.dumps(cfg)
 
 
 def build_save_config_json(container: dict) -> str:

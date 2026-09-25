@@ -61,10 +61,18 @@ def _not_found() -> JSONResponse:
 
 
 def _device_available(device: dict) -> tuple[int, int, int]:
+    '''allocated - reserved - used, matching reserve_quota_and_create_command's own authoritative
+    check (device_command_ops.py) exactly. reserved_* holds an in-flight CREATE/RESUME's quota
+    from the instant it's requested until a terminal CommandResult confirms/fails the pod - a
+    version of this that only subtracted used_* (qa.md item 1) let a second create request in
+    that window see stale "available" capacity as if the first container's reservation didn't
+    exist, so the friendly pre-check here (and the /app/device-quota widget feeding the UI's own
+    client-side check) both passed a request the atomic DB-level check then had to reject anyway,
+    surfacing as a raw 500 instead of a clean "insufficient capacity" 400.'''
     return (
-        device["allocated_cpu"] - device["used_cpu"],
-        device["allocated_memory_bytes"] - device["used_memory_bytes"],
-        device["allocated_storage_bytes"] - device["used_storage_bytes"],
+        device["allocated_cpu"] - device.get("reserved_cpu", 0) - device["used_cpu"],
+        device["allocated_memory_bytes"] - device.get("reserved_memory_bytes", 0) - device["used_memory_bytes"],
+        device["allocated_storage_bytes"] - device.get("reserved_storage_bytes", 0) - device["used_storage_bytes"],
     )
 
 
@@ -833,7 +841,7 @@ async def request_hibernate_command(request: Request) -> JSONResponse:
     return await _hibernate_container_via_device_command(existing.data)
 
 
-async def _hibernate_container_via_device_command(container: dict) -> JSONResponse:
+async def _hibernate_container_via_device_command(container: dict, skip_save: bool = False) -> JSONResponse:
     '''
     Migration Part 10 path. Caller-contract change from the old flow: the OLD `hibernate_container`
     assumed the caller (reaper, or Local's own manual-hibernate orchestration) had ALREADY
@@ -843,9 +851,15 @@ async def _hibernate_container_via_device_command(container: dict) -> JSONRespon
     nothing more. Part 12 must update reaper's caller code to match (stop polling save_status
     itself, just request this and wait for the SSE/status transition instead) - not done here,
     flagged as required follow-up work for that part.
+
+    skip_save (qa.md items 3/4): forwarded into the HIBERNATE command's own config so Device
+    Agent's hibernate.py knows whether to save first - true only for the browser's manual
+    hibernate route (browser_handlers.hibernate_container); every other caller (Reaper's
+    request_hibernate_command, this module's own legacy internal route) keeps the default save-
+    then-delete behavior.
     '''
     command_ops = DeviceCommandOps(DB_CONFIG)
-    config_json = build_hibernate_config_json(container)
+    config_json = build_hibernate_config_json(container, skip_save=skip_save)
     insert_result = await asyncio.to_thread(command_ops.insert, {
         "user_id": container["user_id"], "device_id": container["device_id"], "container_id": container["id"],
         "operation": CommandOperation.HIBERNATE, "placement_generation": container["placement_generation"],

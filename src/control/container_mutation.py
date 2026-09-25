@@ -180,10 +180,17 @@ async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
     container_ops = ContainerOps(DB_CONFIG)
     existing = await asyncio.to_thread(container_ops.find_one, {"id": command["container_id"], "user_id": command["user_id"]})
 
+    # qa.md item 3: a skip_save (manual/UI) hibernate reports no saved_image at all - must NOT
+    # overwrite whatever saved_image the container already had (e.g. from an earlier explicit
+    # Save) with None. Only Reaper's save-then-delete path (or manual Save beforehand) ever sets
+    # this field.
+    update_data = {"status": ContainerStatus.HIBERNATED, "device_id": None}
+    if result.get("saved_image"):
+        update_data["saved_image"] = result["saved_image"]
     matched = await asyncio.to_thread(
         command_ops.conditional_container_update,
         command["container_id"], command["device_id"], command["placement_generation"],
-        {"status": ContainerStatus.HIBERNATED, "device_id": None, "saved_image": result.get("saved_image")},
+        update_data,
     )
     if matched.success and matched.data.get("matched", 0) > 0 and existing.data:
         await _release_used_resources(existing.data, DeviceOps(DB_CONFIG))

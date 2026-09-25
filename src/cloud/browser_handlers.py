@@ -181,6 +181,11 @@ async def hibernate_container(request: Request) -> JSONResponse:
     own local-API caller) does, just ownership-scoped by the browser session instead of a device
     Bearer token. Only a RUNNING container with an assigned device can be hibernated this way -
     same preconditions request_hibernate_command already enforces.
+
+    qa.md item 3: manual/UI hibernate must NOT save on its own - skip_save=True makes this fast
+    (free the resource, delete the pod immediately); the user hits Save separately beforehand if
+    they want a snapshot. Reaper's own idle-timeout hibernate (request_hibernate_command below)
+    does not set this, so it still saves before deleting (qa.md item 4).
     '''
     user_id = await _require_session(request)
     if not user_id:
@@ -198,7 +203,7 @@ async def hibernate_container(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Container has no assigned device"}, status_code=409)
     if not DEVICE_COMMAND_HIBERNATE_ENABLED:
         return JSONResponse(content={"error": "Hibernate is not currently enabled"}, status_code=503)
-    return await _hibernate_container_via_device_command(existing.data)
+    return await _hibernate_container_via_device_command(existing.data, skip_save=True)
 
 
 async def save_container(request: Request) -> JSONResponse:
