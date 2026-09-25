@@ -542,6 +542,23 @@ class TerminalsHandler {
         } else if (new_status === 'Failed') {
             TerminalsUtilities.showNotification('error', 'Terminal Failed', `Terminal "${name}" failed.`, 5000);
             this.pendingContainers.delete(container_id);
+        } else if (new_status === 'Hibernated' || new_status === 'Deleting') {
+            // Quota-widget staleness (2026-09-25): only CREATE's own success path and a
+            // transition into Running ever refreshed the device-quota widget - Hibernate/Delete
+            // free real capacity server-side (confirmed correct in the DB: used_cpu goes back
+            // down immediately) but the browser never re-fetched it, so the number on screen
+            // looked stuck until the unrelated 20s device-status poll happened to catch up, or
+            // the user reopened the create-terminal modal.
+            //
+            // 'Hibernated' fires exactly when the real release happens (container_mutation.py's
+            // _apply_hibernate updates status AND releases quota in the same step) - this catches
+            // it instantly. 'Deleting' only ever fires at REQUEST time (the soft-delete stamp) -
+            // the container row is later hard-DELETEd, not UPDATEd, when quota is actually
+            // released, and a SQL DELETE never fires this UPDATE-only trigger at all - so a
+            // delete's own quota release still only becomes visible via the 20s poll. Refreshing
+            // here anyway is still a real improvement (catches everything BUT delete's final
+            // number instantly) and is harmless even where it's a moment too early.
+            this.refreshDeviceQuota();
         }
     }
 
@@ -629,6 +646,9 @@ class TerminalsHandler {
         } finally {
             this.hibernatingIds.delete(terminalId);
             await this.loadTerminals();
+            // Don't wait on the status_change SSE round-trip for this tab's own quota widget -
+            // see handleStatusChange's own Hibernated/Deleting branch for the general fix.
+            this.refreshDeviceQuota();
         }
     }
 
@@ -671,6 +691,9 @@ class TerminalsHandler {
                 throw new Error(result.error || `HTTP ${resp.status}`);
             }
             await this.loadTerminals();
+            // Don't wait on the status_change SSE round-trip for this tab's own quota widget -
+            // see handleStatusChange's own Hibernated/Deleting branch for the general fix.
+            this.refreshDeviceQuota();
             TerminalsUtilities.showNotification('info', 'Terminal Deleted', `Terminal "${terminalName}" has been deleted.`, 4000);
         } catch (error) {
             console.error('Error deleting terminal:', error);
