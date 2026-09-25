@@ -1008,6 +1008,16 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
     running since the last reconcile (nothing in running_container_ids references it any more) is
     not reset to zero here, since nothing in the request identifies it as needing reconciliation -
     see p.md's P14 section for why this is a deliberate v1 scope decision, not an oversight.
+
+    Body may also include "running_pod_ips": {container_id: pod_ip} (2026-09-25) - repairs
+    containers.ip_address the same drift-repair way as used_cpu above, for the same reason:
+    ip_address is only ever written once, by _apply_create_or_resume on a successful CREATE/
+    RESUME, and nothing else ever re-syncs it if the pod is later recreated for any other reason
+    (a crash, a CNI hiccup, node churn) - the container looks perfectly healthy everywhere else
+    (status_monitor's own running-pod check, terminal status), so socket-ssh silently connects to
+    a stale/dead IP forever with no other visible symptom until an actual SSH attempt hangs.
+    Caught live: a real container's stored ip_address was in a subnet no pod in that cluster has
+    ever used.
     '''
     if not _internal_auth_ok(request):
         return _unauthorized()
@@ -1016,6 +1026,7 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
         running_container_ids = body.get("running_container_ids")
         if not isinstance(running_container_ids, list):
             return JSONResponse(content={"error": "running_container_ids must be a list"}, status_code=400)
+        running_pod_ips = body.get("running_pod_ips") or {}
 
         ops = ContainerOps(DB_CONFIG)
         device_totals: dict[str, dict[str, int]] = {}
@@ -1024,6 +1035,16 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
             container = result.data
             if not container or not container.get("device_id"):
                 continue
+            pod_ip = running_pod_ips.get(container_id)
+            if pod_ip and container.get("ip_address") != pod_ip:
+                ip_update = await asyncio.to_thread(ops.update, {"id": container_id}, {"ip_address": pod_ip})
+                if not ip_update.success:
+                    logger.error("ip_address drift repair failed", extra={"error": ip_update.error, "container_id": container_id})
+                else:
+                    logger.warning(
+                        "repaired stale containers.ip_address from live pod IP",
+                        extra={"container_id": container_id, "old_ip_address": container.get("ip_address"), "pod_ip": pod_ip},
+                    )
             try:
                 cpu = parse_cpu_cores(container["cpu_limit"])
                 memory = parse_memory_bytes(container["memory_limit"])

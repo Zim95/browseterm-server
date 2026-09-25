@@ -133,8 +133,9 @@ spec:
         # silently leave every one of them at its "false" default. CREATE/DELETE/RESUME/HIBERNATE
         # have all been verified end-to-end against a real device (placement_generation,
         # container_config_json atomicity, quota release, and pod-lookup fixes all landed
-        # 2026-09-23/24 specifically to make this safe) - SAVE stays off pending its own
-        # end-to-end verification.
+        # 2026-09-23/24 specifically to make this safe). SAVE enabled 2026-09-25 after its own
+        # end-to-end verification (see progress_made.md) - the deployed snapshot-job image had
+        # been stale for over a month, predating three migration parts' worth of rewrites to it.
         - name: DEVICE_COMMAND_CREATE_ENABLED
           value: "true"
         - name: DEVICE_COMMAND_DELETE_ENABLED
@@ -144,7 +145,7 @@ spec:
         - name: DEVICE_COMMAND_RESUME_ENABLED
           value: "true"
         - name: DEVICE_COMMAND_SAVE_ENABLED
-          value: "false"
+          value: "true"
         livenessProbe:
           httpGet:
             path: /healthz

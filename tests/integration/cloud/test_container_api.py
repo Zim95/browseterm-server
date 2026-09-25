@@ -746,6 +746,54 @@ class TestReconcileDeviceResources(unittest.TestCase):
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
+    def test_running_pod_ips_repairs_stale_ip_address(self, mock_container_ops_cls, mock_device_ops_cls):
+        '''Regression: containers.ip_address is only ever written once (on a successful
+        CREATE/RESUME) - nothing re-syncs it if the pod is later recreated for any other reason.
+        A real container hit this live: its stored ip_address was in a subnet no pod in that
+        cluster has ever used, and socket-ssh kept hanging trying to reach it. This call must
+        overwrite ip_address to the live pod_ip whenever they differ.'''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            device_id=DEVICE_A, cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+            ip_address="10.43.209.155",
+        ))
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _mock_request(body={
+            "running_container_ids": [CONTAINER_A], "running_pod_ips": {CONTAINER_A: "10.42.0.149"},
+        })
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"ip_address": "10.42.0.149"})
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_running_pod_ips_matching_current_ip_address_is_a_no_op(self, mock_container_ops_cls, mock_device_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            device_id=DEVICE_A, cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+            ip_address="10.42.0.149",
+        ))
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops.update.return_value = OperationResult(success=True)
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _mock_request(body={
+            "running_container_ids": [CONTAINER_A], "running_pod_ips": {CONTAINER_A: "10.42.0.149"},
+        })
+        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_not_called()
+
+    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
     def test_container_with_no_device_id_skipped(self, mock_container_ops_cls, mock_device_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(device_id=None))
