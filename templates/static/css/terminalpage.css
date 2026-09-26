@@ -298,6 +298,21 @@ body.dark-mode .terminal-warning {
     to { transform: rotate(360deg); }
 }
 
+/* Bug fixed 2026-09-26: #saveActionBtn (the real Save button in the terminal footer) never
+   carried the .save-btn class the rules above target - they were written for a differently
+   styled button that isn't actually used here, so clicking Save never visibly spun at all. This
+   targets the real button/icon directly with just the disabled-look + spin behavior, reusing the
+   same save-spin keyframe, without pulling in .save-btn's own unrelated base colors/padding. */
+#saveActionBtn.saving {
+    cursor: progress;
+    opacity: 0.75;
+    pointer-events: none;
+}
+
+#saveActionBtn.saving i {
+    animation: save-spin 0.8s linear infinite;
+}
+
 /* Ads Sidebar */
 .ads-sidebar {
     width: 320px;

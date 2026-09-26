@@ -245,10 +245,14 @@ class TerminalPageHandler {
         const btn = this.elements.saveActionBtn;
         if (!btn || btn.disabled) return;
 
-        btn.disabled = true;
-        const label = btn.querySelector('span');
-        const originalLabel = label ? label.textContent : null;
-        if (label) label.textContent = 'Saving...';
+        // Bug fixed 2026-09-26: the button used to revert itself as soon as this fetch's own
+        // response came back - but that response only means "a save command was queued", not
+        // that the save actually finished (which can take minutes: snapshot -> build -> push).
+        // So the button flashed "Saving..." for a fraction of a second and then looked exactly
+        // like nothing had happened. It now stays disabled/spinning until the real terminal
+        // outcome (Succeeded/Failed) arrives over SSE - see updateSaveButtonState(), driven by
+        // the same save_status_change stream the status widget below already uses.
+        this.updateSaveButtonState('Running');
 
         try {
             const resp = await fetch(`/app/containers/${this.terminalId}/save`, {
@@ -261,10 +265,35 @@ class TerminalPageHandler {
             }
             TerminalPageUtilities.showNotification('success', 'Saving', 'A snapshot of this terminal is being saved.', 4000);
         } catch (e) {
+            // The request itself never even queued a command - nothing async is coming, so
+            // restore the button immediately instead of waiting for an SSE event that will
+            // never arrive.
+            this.updateSaveButtonState(null);
             TerminalPageUtilities.showNotification('error', 'Save Failed', e.message, 6000);
-        } finally {
-            btn.disabled = false;
-            if (label && originalLabel) label.textContent = originalLabel;
+        }
+    }
+
+    /**
+     * Drives the Save button's disabled/spinner state from the real save lifecycle -
+     * 'Running' while a save is actually in progress (whether triggered by this button or by a
+     * Hibernate elsewhere), any other value (including null/'None') once it's done. Shared by
+     * the initial page-load render (loadTerminalInfo -> renderSaveStatusInfo, in case a save was
+     * already running when this page opened) and every subsequent SSE update, so the button
+     * always reflects the actual server-side state rather than just this button's own click.
+     */
+    updateSaveButtonState(saveStatus) {
+        const btn = this.elements.saveActionBtn;
+        if (!btn) return;
+        const label = btn.querySelector('span');
+        if (label && this._saveButtonOriginalLabel === undefined) {
+            this._saveButtonOriginalLabel = label.textContent;
+        }
+
+        const isRunning = saveStatus === 'Running';
+        btn.disabled = isRunning;
+        btn.classList.toggle('saving', isRunning);
+        if (label) {
+            label.textContent = isRunning ? 'Saving...' : (this._saveButtonOriginalLabel ?? label.textContent);
         }
     }
 
@@ -294,6 +323,8 @@ class TerminalPageHandler {
      * no save history at all.
      */
     renderSaveStatusInfo({ saveStatus, lastSavedAt, lastSaveAttemptedAt }) {
+        this.updateSaveButtonState(saveStatus);
+
         const box = this.elements.saveStatusInfo;
         if (!box) return;
 
