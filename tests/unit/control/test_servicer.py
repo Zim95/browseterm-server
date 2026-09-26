@@ -84,73 +84,32 @@ class TestPendingCommandsAsExecute(IsolatedAsyncioTestCase):
 
 
 class TestHandleCommandResult(IsolatedAsyncioTestCase):
+    '''The actual apply/dedup/staleness logic moved to src/control/command_result_ops.py (added
+    2026-09-26, shared with the new HTTP result-reporting path - see that module's own docstring)
+    and is tested directly in tests/unit/control/test_command_result_ops.py. This class only
+    verifies servicer.py's own remaining job: translating the wire CommandResult message into
+    that shared function's plain-argument call correctly.'''
 
     def _result(self, **overrides) -> CommandResult:
         fields = {"command_id": "cmd-1", "status": COMMAND_STATUS_SUCCEEDED, "placement_generation": 1}
         fields.update(overrides)
         return CommandResult(**fields)
 
-    @patch("src.control.servicer.DeviceCommandOps")
-    async def test_matching_generation_success_updates_and_releases_quota(self, mock_ops_cls) -> None:
-        mock_ops = mock_ops_cls.return_value
-        mock_ops.find_one.return_value = OperationResult(success=True, data=_command_row(placement_generation=1))
-        mock_ops.update.return_value = OperationResult(success=True)
-        mock_ops.release_quota_for_command.return_value = OperationResult(success=True)
-
+    @patch("src.control.servicer.apply_terminal_command_result")
+    async def test_translates_succeeded_wire_status_and_delegates(self, mock_apply) -> None:
         servicer = DeviceControlServicer()
         await servicer._handle_command_result("device-1", self._result())
 
-        mock_ops.update.assert_called_once()
-        mock_ops.release_quota_for_command.assert_called_once_with("cmd-1")
+        mock_apply.assert_called_once_with("device-1", "cmd-1", "succeeded", None, None, None, 1)
 
-    @patch("src.control.servicer.DeviceCommandOps")
-    async def test_stale_placement_generation_is_rejected(self, mock_ops_cls) -> None:
-        '''Doc-required: "stale device/generation result rejected."'''
-        mock_ops = mock_ops_cls.return_value
-        mock_ops.find_one.return_value = OperationResult(success=True, data=_command_row(placement_generation=2))
-
-        servicer = DeviceControlServicer()
-        await servicer._handle_command_result("device-1", self._result(placement_generation=1))
-
-        mock_ops.update.assert_not_called()
-        mock_ops.release_quota_for_command.assert_not_called()
-
-    @patch("src.control.servicer.DeviceCommandOps")
-    async def test_already_terminal_command_result_is_a_no_op(self, mock_ops_cls) -> None:
-        '''Doc-required: "duplicate delivery is expected and safe" - a second CommandResult for
-        an already-SUCCEEDED command must not double-release quota or re-write the row.'''
-        mock_ops = mock_ops_cls.return_value
-        mock_ops.find_one.return_value = OperationResult(success=True, data=_command_row(status="Succeeded", placement_generation=1))
-
-        servicer = DeviceControlServicer()
-        await servicer._handle_command_result("device-1", self._result())
-
-        mock_ops.update.assert_not_called()
-        mock_ops.release_quota_for_command.assert_not_called()
-
-    @patch("src.control.servicer.DeviceCommandOps")
-    async def test_result_for_unknown_command_is_ignored(self, mock_ops_cls) -> None:
-        mock_ops = mock_ops_cls.return_value
-        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
-
-        servicer = DeviceControlServicer()
-        await servicer._handle_command_result("device-1", self._result())
-
-        mock_ops.update.assert_not_called()
-
-    @patch("src.control.servicer.DeviceCommandOps")
-    async def test_failed_result_updates_error_fields(self, mock_ops_cls) -> None:
-        mock_ops = mock_ops_cls.return_value
-        mock_ops.find_one.return_value = OperationResult(success=True, data=_command_row(placement_generation=1))
-        mock_ops.update.return_value = OperationResult(success=True)
-        mock_ops.release_quota_for_command.return_value = OperationResult(success=True)
-
+    @patch("src.control.servicer.apply_terminal_command_result")
+    async def test_translates_failed_wire_status_and_forwards_error_fields(self, mock_apply) -> None:
         servicer = DeviceControlServicer()
         await servicer._handle_command_result(
             "device-1",
             self._result(status=COMMAND_STATUS_FAILED, error_code="POD_CREATE_FAILED", error_message="quota exceeded on node"),
         )
 
-        _, call_data = mock_ops.update.call_args[0]
-        self.assertEqual(call_data["error_code"], "POD_CREATE_FAILED")
-        self.assertEqual(call_data["error_message"], "quota exceeded on node")
+        mock_apply.assert_called_once_with(
+            "device-1", "cmd-1", "failed", None, "POD_CREATE_FAILED", "quota exceeded on node", 1,
+        )

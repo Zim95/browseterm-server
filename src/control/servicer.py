@@ -35,7 +35,7 @@ from src.cloud.config import DB_CONFIG
 from src.control.auth import authenticate_stream
 from src.control.config import MINIMUM_AGENT_PROTOCOL_VERSION, PING_INTERVAL_SECONDS
 from src.control.connection_registry import connection_registry, CHECK_PENDING_SENTINEL, ConnectionState
-from src.control.container_mutation import apply_command_result
+from src.control.command_result_ops import apply_terminal_command_result
 from src.common.logging_setup import get_logger
 
 logger = get_logger("device_control_servicer")
@@ -261,45 +261,19 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
         )
 
     async def _handle_command_result(self, device_id: str, result) -> None:
-        command_ops = DeviceCommandOps(DB_CONFIG)
+        # Added 2026-09-26: this stream-based path and the new HTTP path
+        # (src/cloud/device_command_result_handlers.py) share the exact same apply/dedup/
+        # staleness logic - see command_result_ops.py's own module docstring for why Device Agent
+        # now prefers the HTTP path (this stream is prone to dropping every ~30-90s in practice),
+        # while this stream-based path is kept working for compatibility/defense in depth.
         model_status = _WIRE_STATUS_TO_MODEL.get(result.status)
         if model_status is None:
             logger.error("command_result with non-terminal status ignored", extra={"command_id": result.command_id})
             return
-
-        existing = await asyncio.to_thread(command_ops.find_one, {"id": result.command_id, "device_id": device_id})
-        if not existing.data:
-            logger.info("command_result for unknown/foreign command ignored", extra={"command_id": result.command_id, "device_id": device_id})
-            return
-        if existing.data["placement_generation"] != result.placement_generation:
-            # "Old device result rejected" / "stale device/generation result rejected" - a result
-            # from a placement generation the container has since moved past.
-            logger.info(
-                "stale command_result rejected", extra={
-                    "command_id": result.command_id, "device_id": device_id,
-                    "result_generation": result.placement_generation,
-                    "current_generation": existing.data["placement_generation"],
-                },
-            )
-            return
-        if existing.data["status"] in (CommandStatus.SUCCEEDED.value, CommandStatus.FAILED.value, CommandStatus.CANCELLED.value):
-            return  # duplicate delivery is expected and safe - already terminal, no-op
-
-        await asyncio.to_thread(
-            command_ops.update,
-            {"id": result.command_id, "device_id": device_id},
-            {
-                "status": model_status,
-                "completed_at": datetime.now(timezone.utc),
-                "result": result.result_json or None,
-                "error_code": result.error_code or None,
-                "error_message": (result.error_message or "")[:1000] or None,
-            },
-        )
-        await asyncio.to_thread(command_ops.release_quota_for_command, result.command_id)
-        await apply_command_result(
-            existing.data, "succeeded" if model_status == CommandStatus.SUCCEEDED else "failed",
-            result.result_json or None, result.error_message or None,
+        status = "succeeded" if model_status == CommandStatus.SUCCEEDED else "failed"
+        await apply_terminal_command_result(
+            device_id, result.command_id, status, result.result_json or None,
+            result.error_code or None, result.error_message or None, result.placement_generation,
         )
 
     async def _handle_local_event(self, device_id: str, local_event) -> None:

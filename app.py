@@ -72,6 +72,7 @@ from src.cloud.container_handlers import (
     update_container_status,
 )
 from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result, get_save_status
+from src.cloud.device_command_result_handlers import report_command_result
 from src.cloud.sse_broadcaster import sse_broadcaster
 from src.cloud.sse_handlers import events_stream
 from src.cloud.terminal_handlers import consume_terminal_session, create_terminal_session
@@ -258,6 +259,13 @@ app.add_api_route(
 app.add_api_route(
     path="/devices/{device_id}/containers/{container_id}/save-status",
     endpoint=get_save_status, methods=["GET"],
+)
+# Added 2026-09-26 - see src/control/command_result_ops.py's own docstring: Device Agent reports a
+# finished command's result over this synchronous HTTP call, not solely the (occasionally flaky)
+# Device Control stream.
+app.add_api_route(
+    path="/devices/{device_id}/commands/{command_id}/result",
+    endpoint=report_command_result, methods=["POST"],
 )
 # container-maker's off-direct-Postgres migration (see p.md's writeup): self-heal of a drifted
 # kubernetes_id, and the save reconciler's stuck-save sweep/mark-failed. The literal
