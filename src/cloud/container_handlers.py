@@ -827,18 +827,30 @@ async def request_hibernate_command(request: Request) -> JSONResponse:
     collapse to one active hibernate command" is enforced by the partial unique index on
     device_commands (Part 1), not by anything here: a second call for an already-hibernating
     container fails cleanly via that constraint, surfaced as this route's own 409/500 path.
+
+    skip_save (added 2026-09-27): an optional `{"skip_save": true}` body, set by status_monitor's
+    pod_watcher (via Device Agent's RequestHibernate reason="pod_lost") for a container whose pod
+    already crashed or was externally removed - there is nothing left to snapshot, so this must
+    take the same skip_save path the browser's manual hibernate route already uses, not Reaper's
+    default save-then-delete. Body is optional/empty for every existing caller (Reaper, a Device
+    Agent that predates this field) - defaults to False exactly as before.
     '''
     device_id = request.path_params["device_id"]
     if device_id != request.state.device_id:
         return _not_found()
     container_id = request.path_params["container_id"]
+    try:
+        body = await request.json()
+    except ValueError:
+        body = {}
+    skip_save = bool(body.get("skip_save", False))
     ops = ContainerOps(DB_CONFIG)
     existing = await asyncio.to_thread(ops.find_one, {"id": container_id, "user_id": request.state.user_id, "device_id": device_id})
     if not existing.data:
         return _not_found()
     if existing.data["status"] != ContainerStatus.RUNNING.value:
         return JSONResponse(content={"error": "Only a running terminal can be hibernated"}, status_code=409)
-    return await _hibernate_container_via_device_command(existing.data)
+    return await _hibernate_container_via_device_command(existing.data, skip_save=skip_save)
 
 
 async def _hibernate_container_via_device_command(container: dict, skip_save: bool = False) -> JSONResponse:
@@ -852,11 +864,14 @@ async def _hibernate_container_via_device_command(container: dict, skip_save: bo
     itself, just request this and wait for the SSE/status transition instead) - not done here,
     flagged as required follow-up work for that part.
 
-    skip_save (qa.md items 3/4): forwarded into the HIBERNATE command's own config so Device
-    Agent's hibernate.py knows whether to save first - true only for the browser's manual
-    hibernate route (browser_handlers.hibernate_container); every other caller (Reaper's
-    request_hibernate_command, this module's own legacy internal route) keeps the default save-
-    then-delete behavior.
+    skip_save (qa.md items 3/4, extended 2026-09-27): forwarded into the HIBERNATE command's own
+    config so Device Agent's hibernate.py knows whether to save first - true for the browser's
+    manual hibernate route (browser_handlers.hibernate_container) and for status_monitor's
+    pod_watcher reporting a crashed/lost pod (via request_hibernate_command's own skip_save body
+    field) - both cases where either the user doesn't want a save, or the pod is already gone/
+    unusable and a save attempt would be doomed anyway. Every other caller (Reaper's own
+    idle-timeout request_hibernate_command call, this module's legacy internal route) keeps the
+    default save-then-delete behavior.
     '''
     command_ops = DeviceCommandOps(DB_CONFIG)
     config_json = build_hibernate_config_json(container, skip_save=skip_save)
