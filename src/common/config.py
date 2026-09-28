@@ -13,15 +13,6 @@ CONTAINER_MAKER_CERTS_SECRET_NAME: str = os.getenv(
     "container-maker-development-service-certs"
 )
 
-# Payment Gateway Config
-PAYMENT_GATEWAY_HOST: str = os.getenv("PAYMENT_GATEWAY_HOST", "payment-gateway-development-service")
-PAYMENT_GATEWAY_PORT: int = int(os.getenv("PAYMENT_GATEWAY_PORT", "50053"))
-
-# Kubernetes secret configuration for Payment Gateway certificates
-PAYMENT_GATEWAY_CERTS_SECRET_NAME: str = os.getenv(
-    "PAYMENT_GATEWAY_CERTS_SECRET_NAME",
-    "payment-gateway-development-service-certs"
-)
 # Kubernetes namespace for the application (used for cross-namespace service access)
 NAMESPACE: str = os.getenv("NAMESPACE")
 
