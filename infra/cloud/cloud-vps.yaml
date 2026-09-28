@@ -380,10 +380,15 @@ spec:
 # provider can route to and dial an h2c backend, but its reverse-proxy times out reading the
 # actual streaming gRPC response (confirmed live: `ReverseProxy read error during body copy: i/o
 # timeout` in Traefik's own logs, even with appProtocol: h2c set on the Service above) - a known
-# limitation for streaming gRPC specifically. Traefik's own IngressRoute CRD, which this is,
-# handles it correctly. Matched by path, not a separate host, since the migration doc's own Part
-# 20 plan is "gRPC service paths to control service" on the SAME app.browseterm.puhtaeto.com
-# hostname the REST Ingress above already owns - not a second (sub)domain.
+# limitation for streaming gRPC specifically. Traefik's own IngressRoute CRD, which this is, is
+# still required to route/dial an h2c backend at all, but on its own does NOT fully fix the
+# streaming-timeout problem either (confirmed live 2026-09-28: the exact same `i/o timeout` still
+# recurred every ~60-90s through this IngressRoute, cutting the control stream and forcing constant
+# reconnects) - the actual fix is the ServersTransport below, which the IngressRoute's service
+# references via `serversTransport`. Matched by path, not a separate host, since the migration
+# doc's own Part 20 plan is "gRPC service paths to control service" on the SAME
+# app.browseterm.puhtaeto.com hostname the REST Ingress above already owns - not a second
+# (sub)domain.
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
@@ -399,5 +404,28 @@ spec:
         - name: browseterm-control-grpc-service
           port: 50060
           scheme: h2c
+          serversTransport: control-grpc-transport
   tls:
     secretName: browseterm-cloud-tls
+---
+# Traefik's DEFAULT ServersTransport (used when no serversTransport is named) has
+# forwardingTimeouts.idleConnTimeout: 90s - meant for pooled keep-alive HTTP connections that sit
+# idle between separate requests, but Traefik's own HTTP/2-to-h2c-backend handling for a single
+# long-lived STREAMING response apparently still counts against it, cutting a perfectly healthy,
+# actively-pinged (every 20s - see PING_INTERVAL_SECONDS) stream at almost exactly that mark
+# regardless of activity. Setting it to 0 (disabled) here, scoped only to this one route, is what
+# actually fixed it - confirmed live: the control stream held 8+ minutes straight afterward, versus
+# a hard ~60-90s ceiling before. (A same-day earlier attempt at the entrypoint-level
+# `respondingTimeouts.readTimeout` - see the `traefik` HelmChartConfig in kube-system - had zero
+# effect, since that default was already 0/unlimited; left in place since it's a harmless explicit
+# no-op, not because it did anything.)
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: control-grpc-transport
+  namespace: ${NAMESPACE}
+spec:
+  forwardingTimeouts:
+    dialTimeout: "30s"
+    responseHeaderTimeout: "0s"
+    idleConnTimeout: "0s"
