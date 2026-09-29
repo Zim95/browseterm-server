@@ -274,5 +274,62 @@ class TestHappyPaths(unittest.TestCase):
         self.assertEqual(result.status_code, 503)
 
 
+class TestCheckDeviceConnection(unittest.TestCase):
+    '''The terminals page's "Connect" button (src/cloud/browser_handlers.py::check_device_connection) -
+    asks browseterm-control-grpc's live ConnectionRegistry via the CheckDeviceConnected RPC, not
+    just Postgres's own periodically-written tunnel heartbeat.'''
+
+    def test_requires_session(self):
+        with _patch_session_none():
+            result = asyncio.run(browser_handlers.check_device_connection(_mock_request()))
+        self.assertEqual(result.status_code, 401)
+
+    @patch("src.cloud.browser_handlers.DeviceOps")
+    def test_no_active_device_reports_not_connected(self, mock_ops_cls):
+        mock_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=None, error=None)
+        with _patch_session_ok(USER_A):
+            result = asyncio.run(browser_handlers.check_device_connection(_mock_request()))
+        self.assertEqual(result.status_code, 200)
+        self.assertIn(b'"connected":false', result.body)
+
+    @patch("src.cloud.browser_handlers.device_control_pb2_grpc")
+    @patch("src.cloud.browser_handlers.grpc")
+    @patch("src.cloud.browser_handlers.DeviceOps")
+    def test_relays_true_from_control_grpc(self, mock_ops_cls, mock_grpc, mock_pb2_grpc):
+        mock_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "device-1"}, error=None,
+        )
+        mock_channel = AsyncMock()
+        mock_channel.__aenter__.return_value = mock_channel
+        mock_grpc.aio.insecure_channel.return_value = mock_channel
+        mock_stub = MagicMock()
+        mock_stub.CheckDeviceConnected = AsyncMock(return_value=MagicMock(connected=True))
+        mock_pb2_grpc.DeviceControlStub.return_value = mock_stub
+
+        with _patch_session_ok(USER_A):
+            result = asyncio.run(browser_handlers.check_device_connection(_mock_request()))
+
+        self.assertEqual(result.status_code, 200)
+        self.assertIn(b'"connected":true', result.body)
+        mock_stub.CheckDeviceConnected.assert_called_once()
+
+    @patch("src.cloud.browser_handlers.device_control_pb2_grpc")
+    @patch("src.cloud.browser_handlers.grpc")
+    @patch("src.cloud.browser_handlers.DeviceOps")
+    def test_rpc_failure_reports_not_connected_instead_of_raising(self, mock_ops_cls, mock_grpc, mock_pb2_grpc):
+        '''A transient control-grpc blip must never surface as a 500 to the browser - "not
+        connected, try again" is the correct degraded answer.'''
+        mock_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "device-1"}, error=None,
+        )
+        mock_grpc.aio.insecure_channel.side_effect = RuntimeError("connection refused")
+
+        with _patch_session_ok(USER_A):
+            result = asyncio.run(browser_handlers.check_device_connection(_mock_request()))
+
+        self.assertEqual(result.status_code, 200)
+        self.assertIn(b'"connected":false', result.body)
+
+
 if __name__ == "__main__":
     unittest.main()

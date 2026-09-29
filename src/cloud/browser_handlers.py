@@ -18,8 +18,12 @@ scope: only state-changing requests are a forgery target).
 '''
 import asyncio
 
+import grpc
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response
+
+from device_control_spec import device_control_pb2_grpc
+from device_control_spec.device_control_pb2 import CheckDeviceConnectedRequest
 
 from browseterm_db.models.containers import ContainerStatus
 from browseterm_db.models.devices import DeviceStatus
@@ -27,6 +31,7 @@ from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, Ima
 
 from src.cloud.config import (
     DB_CONFIG, DEVICE_COMMAND_HIBERNATE_ENABLED, DEVICE_COMMAND_SAVE_ENABLED, CLOUD_INTERNAL_API_TOKEN,
+    CONTROL_GRPC_HOST, CONTROL_GRPC_PORT,
 )
 from src.cloud.container_handlers import (
     create_container as _internal_create_container,
@@ -249,6 +254,33 @@ async def device_quota(request: Request) -> JSONResponse:
     device = result.data
     available_cpu, available_memory, available_storage = _device_available(device)
     return JSONResponse(content={"device": {**device, "available_cpu": available_cpu, "available_memory_bytes": available_memory, "available_storage_bytes": available_storage}})
+
+
+async def check_device_connection(request: Request) -> JSONResponse:
+    '''POST /app/device-connection-check - the terminals page's "Connect" button (shown in place of
+    the terminal action buttons whenever the device looks offline). Asks
+    browseterm-control-grpc's own in-memory ConnectionRegistry, via the Cloud-internal
+    CheckDeviceConnected RPC, whether this session's active device's control stream is live right
+    now - a real-time answer, not the periodic tunnel-heartbeat write to Postgres the passive 20s
+    poll already relies on (see terminals.js's own setupDeviceStatusPolling docstring).'''
+    user_id = await _require_session(request)
+    if not user_id:
+        return _unauthorized()
+    device_ops = DeviceOps(DB_CONFIG)
+    result = await asyncio.to_thread(device_ops.find_one, {"user_id": user_id, "status": DeviceStatus.ACTIVE})
+    if not result.data:
+        return JSONResponse(content={"connected": False})
+    device_id = result.data["id"]
+    try:
+        async with grpc.aio.insecure_channel(f"{CONTROL_GRPC_HOST}:{CONTROL_GRPC_PORT}") as channel:
+            stub = device_control_pb2_grpc.DeviceControlStub(channel)
+            response = await asyncio.wait_for(
+                stub.CheckDeviceConnected(CheckDeviceConnectedRequest(device_id=device_id)), timeout=5.0,
+            )
+        return JSONResponse(content={"connected": response.connected})
+    except Exception:
+        logger.error("check_device_connection: RPC to control-grpc failed", exc_info=True)
+        return JSONResponse(content={"connected": False})
 
 
 async def terminal_session(request: Request) -> JSONResponse:

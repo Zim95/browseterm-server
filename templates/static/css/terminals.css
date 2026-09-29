@@ -213,6 +213,43 @@
     padding: 2rem;
 }
 
+/* Shown instead of the terminals list (and its per-row buttons) whenever the device looks
+   offline - e.g. right after opening the app while the laptop was asleep. Replaces relying
+   solely on the passive 20s status poll to eventually re-enable things. */
+.connect-prompt {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #666;
+}
+
+.connect-prompt p {
+    margin: 0 0 1.25rem;
+    font-size: 0.95rem;
+}
+
+.connect-btn {
+    background-color: #A8FBD3;
+    color: #333;
+    border: none;
+    border-radius: 6px;
+    padding: 12px 32px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.connect-btn:hover:not(:disabled) {
+    background-color: #8AE5B8;
+    transform: translateY(-2px);
+}
+
+.connect-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
 /* Modal Styles */
 .modal-overlay {
     position: fixed;

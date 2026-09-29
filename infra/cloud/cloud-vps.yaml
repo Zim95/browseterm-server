@@ -375,6 +375,16 @@ spec:
       ports:
         - port: grpc
           protocol: TCP
+    # browseterm-server-cloud calls CheckDeviceConnected (Cloud-internal only, see that RPC's own
+    # .proto docstring) directly against this Service, same-namespace pod-to-pod - the terminals
+    # page's "Connect" button.
+    - from:
+        - podSelector:
+            matchLabels:
+              app: browseterm-server-cloud
+      ports:
+        - port: grpc
+          protocol: TCP
 ---
 # A plain networking.k8s.io/v1 Ingress cannot reliably proxy this: Traefik 2.x's generic Ingress
 # provider can route to and dial an h2c backend, but its reverse-proxy times out reading the

@@ -34,6 +34,14 @@ from src.common.config import (
 # CLOUD_INTERNAL_API_TOKEN.
 CLOUD_INTERNAL_API_TOKEN: str = os.getenv("CLOUD_INTERNAL_API_TOKEN", "")
 
+# browseterm-control-grpc runs as its own Deployment/Service (Part 6/20) - this web pod calls it
+# for CheckDeviceConnected (the terminals page's "Connect" button), a Cloud-internal-only RPC on
+# the same DeviceControl service Device Agent's own stream uses. Short Service name, same
+# same-namespace-DNS convention as every other in-cluster host this codebase already reads from an
+# env var (e.g. src.common.config.CONTAINER_MAKER_HOST).
+CONTROL_GRPC_HOST: str = os.getenv("CONTROL_GRPC_HOST", "browseterm-control-grpc-service")
+CONTROL_GRPC_PORT: int = int(os.getenv("CONTROL_GRPC_PORT", "50060"))
+
 # remotetunelling.md: "offline threshold: 60-90 seconds" - a device/tunnel counts as online for
 # terminal-session purposes only if its last tunnel heartbeat is within this window. The
 # registrar's own default heartbeat interval is 20s (browseterm_workload/tunnel_registrar), so
@@ -81,6 +89,8 @@ __all__ = [
     "REDIS_DB",
     "CLOUD_INTERNAL_API_TOKEN",
     "SNAPSHOT_REGISTRY_REPO_PREFIX",
+    "CONTROL_GRPC_HOST",
+    "CONTROL_GRPC_PORT",
     "TUNNEL_OFFLINE_THRESHOLD_SECONDS",
     "LOST_CONTAINER_GRACE_SECONDS",
     "RESOURCE_CPU_REQUEST_RATIO",

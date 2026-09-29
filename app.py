@@ -158,6 +158,7 @@ app.add_api_route(path="/app/containers/{container_id}/hibernate", endpoint=brow
 app.add_api_route(path="/app/containers/{container_id}/save", endpoint=browser_handlers.save_container, methods=["POST"])
 app.add_api_route(path="/app/containers/{container_id}/activity", endpoint=browser_handlers.container_activity, methods=["POST"])
 app.add_api_route(path="/app/device-quota", endpoint=browser_handlers.device_quota, methods=["GET"])
+app.add_api_route(path="/app/device-connection-check", endpoint=browser_handlers.check_device_connection, methods=["POST"])
 app.add_api_route(path="/app/terminal-session", endpoint=browser_handlers.terminal_session, methods=["POST"])
 
 # Device Cloud API (P05, device-token auth as of P07 - see device_handlers.py). POST /devices

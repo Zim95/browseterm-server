@@ -24,7 +24,9 @@ from browseterm_db.models.device_commands import CommandStatus
 from browseterm_db.models.devices import TunnelStatus
 
 from device_control_spec import device_control_pb2_grpc
-from device_control_spec.device_control_pb2 import DeviceToCloud, CloudToDevice
+from device_control_spec.device_control_pb2 import (
+    DeviceToCloud, CloudToDevice, CheckDeviceConnectedRequest, CheckDeviceConnectedResponse,
+)
 from device_control_spec.device_control_types_pb2 import (
     HelloAccepted, ExecuteCommand, Ping, CommandStatus as WireCommandStatus,
     COMMAND_OPERATION_CREATE, COMMAND_OPERATION_DELETE, COMMAND_OPERATION_HIBERNATE,
@@ -33,7 +35,9 @@ from device_control_spec.device_control_types_pb2 import (
 
 from src.cloud.config import DB_CONFIG
 from src.control.auth import authenticate_stream
-from src.control.config import MINIMUM_AGENT_PROTOCOL_VERSION, PING_INTERVAL_SECONDS
+from src.control.config import (
+    MINIMUM_AGENT_PROTOCOL_VERSION, PING_INTERVAL_SECONDS, DEVICE_OFFLINE_THRESHOLD_SECONDS,
+)
 from src.control.connection_registry import connection_registry, CHECK_PENDING_SENTINEL, ConnectionState
 from src.control.command_result_ops import apply_terminal_command_result
 from src.common.logging_setup import get_logger
@@ -169,6 +173,16 @@ class DeviceControlServicer(device_control_pb2_grpc.DeviceControlServicer):
             pinger_task.cancel()
             connection_registry.unregister(device_id, state.generation)
             logger.info("device.disconnected", extra={"device_id": device_id, "generation": state.generation})
+
+    async def CheckDeviceConnected(
+        self, request: CheckDeviceConnectedRequest, context: grpc.aio.ServicerContext,
+    ) -> CheckDeviceConnectedResponse:
+        '''Cloud-internal only (see this RPC's own .proto docstring) - deliberately no
+        authenticate_stream() call, unlike Connect(): the caller is browseterm-server-cloud's own
+        web pod, not a customer device, and NetworkPolicy is what actually restricts who can reach
+        this port at all (see cloud-vps.yaml's control-grpc-allow-ingress-only).'''
+        connected = connection_registry.is_device_online(request.device_id, DEVICE_OFFLINE_THRESHOLD_SECONDS)
+        return CheckDeviceConnectedResponse(connected=connected)
 
     async def _pinger_loop(self, state: ConnectionState) -> None:
         try:

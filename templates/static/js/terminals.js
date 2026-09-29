@@ -139,6 +139,16 @@ class TerminalsHandler {
         // Container IDs whose creation is still pending confirmation - cleared up on Running/Failed.
         this.pendingContainers = new Set();
         this.hibernatingIds = new Set();
+        // Whether to show the terminal action buttons at all, vs. a single "Connect" button in
+        // their place (the owner's own design: don't show controls whose backing device might be
+        // asleep/unreachable - make the user explicitly confirm a live connection first). Seeded
+        // from the same heartbeat-staleness heuristic Play's own disabled state already used, so
+        // a device that's actually been online this whole time still shows buttons immediately on
+        // load - only ever upgraded to true from here (by the poll noticing a background
+        // reconnect, or a successful manual Connect click), never silently downgraded back to
+        // false while the page is open, so a manual Connect's result is never undone by Postgres's
+        // own heartbeat write lagging a few seconds behind the real-time check that approved it.
+        this.deviceConnected = TerminalsUtilities.isActiveDeviceTunnelOnline();
     }
 
     async init() {
@@ -266,6 +276,19 @@ class TerminalsHandler {
     }
 
     renderTerminalsList() {
+        if (this.elements.newTerminalBtn) {
+            this.elements.newTerminalBtn.style.display = this.deviceConnected ? '' : 'none';
+        }
+        if (!this.deviceConnected) {
+            this.elements.terminalsList.innerHTML = `
+                <div class="connect-prompt">
+                    <p>Your device looks offline - if it's asleep, wake it up, then reconnect.</p>
+                    <button class="connect-btn" id="connectBtn">Connect</button>
+                </div>`;
+            document.getElementById('connectBtn').addEventListener('click', () => this.handleConnect());
+            return;
+        }
+
         if (this.terminals.length === 0) {
             this.elements.terminalsList.innerHTML = '<div class="loading-message">No terminals found.</div>';
             return;
@@ -274,6 +297,44 @@ class TerminalsHandler {
         const terminalsHTML = this.terminals.map(terminal => this.renderTerminalItem(terminal)).join('');
         this.elements.terminalsList.innerHTML = terminalsHTML;
         this.attachTerminalControls();
+    }
+
+    /**
+     * The "Connect" button's click handler. Calls the real-time check (backed by
+     * browseterm-control-grpc's own in-memory ConnectionRegistry - see
+     * check_device_connection's own docstring), not just a re-read of the same
+     * periodically-written Postgres heartbeat the passive 20s poll already uses - that would just
+     * be the same staleness problem behind a button. On success, shows the real terminal controls
+     * immediately rather than waiting for that Postgres write to catch up.
+     */
+    async handleConnect() {
+        const btn = document.getElementById('connectBtn');
+        if (btn) {
+            btn.disabled = true;
+            btn.textContent = 'Connecting...';
+        }
+        try {
+            const response = await fetch('/app/device-connection-check', { method: 'POST' });
+            const data = await response.json();
+            if (data.connected) {
+                this.deviceConnected = true;
+                await this.refreshDeviceQuota();
+                await this.loadTerminals();
+                TerminalsUtilities.showNotification('success', 'Connected', 'Your device is online.', 3000);
+                return;
+            }
+            TerminalsUtilities.showNotification(
+                'error', 'Not Connected',
+                "Couldn't reach your device. Make sure it's awake and online, then try again.", 5000,
+            );
+        } catch (error) {
+            console.error('Error checking device connection:', error);
+            TerminalsUtilities.showNotification('error', 'Not Connected', 'Connection check failed. Try again.', 5000);
+        }
+        if (btn) {
+            btn.disabled = false;
+            btn.textContent = 'Connect';
+        }
     }
 
     getControlsHTML(terminalId, status) {
@@ -514,6 +575,12 @@ class TerminalsHandler {
     setupDeviceStatusPolling() {
         this.deviceStatusPollInterval = setInterval(async () => {
             await this.refreshDeviceQuota();
+            // Only ever upgrades false -> true (a background reconnect the owner never had to
+            // click Connect for) - never the reverse, so this passive check can't undo a manual
+            // Connect click just because Postgres's own heartbeat write hasn't caught up yet.
+            if (!this.deviceConnected && TerminalsUtilities.isActiveDeviceTunnelOnline()) {
+                this.deviceConnected = true;
+            }
             this.renderTerminalsList();
         }, 20000);
     }

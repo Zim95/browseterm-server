@@ -15,6 +15,7 @@ from src.control.servicer import DeviceControlServicer
 from device_control_spec.device_control_types_pb2 import (
     CommandResult, COMMAND_STATUS_SUCCEEDED, COMMAND_STATUS_FAILED, COMMAND_OPERATION_CREATE,
 )
+from device_control_spec.device_control_pb2 import CheckDeviceConnectedRequest
 
 
 def _command_row(**overrides) -> dict:
@@ -113,3 +114,30 @@ class TestHandleCommandResult(IsolatedAsyncioTestCase):
         mock_apply.assert_called_once_with(
             "device-1", "cmd-1", "failed", None, "POD_CREATE_FAILED", "quota exceeded on node", 1,
         )
+
+
+class TestCheckDeviceConnected(IsolatedAsyncioTestCase):
+
+    @patch("src.control.servicer.connection_registry")
+    async def test_returns_true_when_registry_reports_online(self, mock_registry) -> None:
+        mock_registry.is_device_online.return_value = True
+        servicer = DeviceControlServicer()
+
+        response = await servicer.CheckDeviceConnected(
+            CheckDeviceConnectedRequest(device_id="device-1"), MagicMock(),
+        )
+
+        self.assertTrue(response.connected)
+        mock_registry.is_device_online.assert_called_once()
+        self.assertEqual(mock_registry.is_device_online.call_args[0][0], "device-1")
+
+    @patch("src.control.servicer.connection_registry")
+    async def test_returns_false_when_registry_reports_offline(self, mock_registry) -> None:
+        mock_registry.is_device_online.return_value = False
+        servicer = DeviceControlServicer()
+
+        response = await servicer.CheckDeviceConnected(
+            CheckDeviceConnectedRequest(device_id="device-1"), MagicMock(),
+        )
+
+        self.assertFalse(response.connected)
