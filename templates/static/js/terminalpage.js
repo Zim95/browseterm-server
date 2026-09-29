@@ -79,6 +79,10 @@ class TerminalPageUtilities {
  * Handles terminal page functionality and xterm.js integration
  */
 class TerminalPageHandler {
+    // Generous - a real save is "snapshot -> build -> push" and can legitimately take minutes -
+    // this only exists to recover the button if the real outcome never reaches this tab at all.
+    static SAVE_WATCHDOG_MS = 3 * 60 * 1000;
+
     constructor() {
         console.log('TerminalPageHandler initialized');
         this.elements = {};
@@ -264,12 +268,35 @@ class TerminalPageHandler {
                 throw new Error(result.error || `HTTP ${resp.status}`);
             }
             TerminalPageUtilities.showNotification('success', 'Saving', 'A snapshot of this terminal is being saved.', 4000);
+            // Safety net: the command was genuinely queued, so we're now waiting on the SSE
+            // save_status_change event above to unstick the button. That event depends on
+            // something on the server actually reaching a terminal state and writing
+            // save_status - a real incident (2026-09-29) showed that isn't guaranteed (a SAVE
+            // that failed before any snapshot Job even existed left save_status untouched), and
+            // even with that fixed server-side, a dropped SSE connection could still leave this
+            // tab waiting forever with no way for the user to retry. If nothing real arrives
+            // within a generous window, stop trusting it and hand control back.
+            this._clearSaveWatchdog();
+            this._saveWatchdogTimer = setTimeout(() => {
+                this.updateSaveButtonState(null);
+                TerminalPageUtilities.showNotification(
+                    'error', 'Save Status Unknown',
+                    "Didn't hear back in time - check the save status below, or try again.", 8000,
+                );
+            }, TerminalPageHandler.SAVE_WATCHDOG_MS);
         } catch (e) {
             // The request itself never even queued a command - nothing async is coming, so
             // restore the button immediately instead of waiting for an SSE event that will
             // never arrive.
             this.updateSaveButtonState(null);
             TerminalPageUtilities.showNotification('error', 'Save Failed', e.message, 6000);
+        }
+    }
+
+    _clearSaveWatchdog() {
+        if (this._saveWatchdogTimer) {
+            clearTimeout(this._saveWatchdogTimer);
+            this._saveWatchdogTimer = null;
         }
     }
 
@@ -368,6 +395,7 @@ class TerminalPageHandler {
             if (data.type !== 'save_status_change') return;
             if (String(data.container_id) !== containerId) return;
 
+            this._clearSaveWatchdog();
             this.renderSaveStatusInfo({
                 saveStatus: data.save_status,
                 lastSavedAt: data.last_saved_at,

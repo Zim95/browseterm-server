@@ -285,11 +285,17 @@ class TestApplySave(IsolatedAsyncioTestCase):
         self.assertEqual(update_data, {"saved_image": "registry/img:3"})
 
     @patch("src.control.container_mutation.DeviceCommandOps")
-    async def test_failed_save_does_not_mutate_container(self, mock_command_ops_cls) -> None:
-        '''report_snapshot_result already left save_status/saved_image exactly as they should be
-        on failure - nothing further to apply here.'''
+    async def test_failed_save_marks_save_status_failed(self, mock_command_ops_cls) -> None:
+        '''A SAVE can fail before any snapshot Job exists at all (e.g. Container Maker's own RPC
+        erroring on pod resolution) - a case report_snapshot_result never runs for. Without this,
+        containers.save_status silently keeps its last-successful value, no save_status_change SSE
+        event fires, and the frontend Save button stays stuck on "Saving..." forever.'''
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+
         await apply_command_result(_command(operation="Save"), "failed", None, "snapshot failed")
-        mock_command_ops_cls.return_value.conditional_container_update.assert_not_called()
+
+        _, _, _, update_data = mock_command_ops_cls.return_value.conditional_container_update.call_args[0]
+        self.assertEqual(update_data, {"save_status": "Failed", "save_error": "snapshot failed"})
 
     @patch("src.control.container_mutation.DeviceOps")
     @patch("src.control.container_mutation.ContainerOps")

@@ -41,7 +41,7 @@ async def apply_command_result(command: dict, status: str, result_json: Optional
     elif operation == "Resume":
         await _apply_create_or_resume(command, status, result)
     elif operation == "Save":
-        await _apply_save(command, status, result)
+        await _apply_save(command, status, result, error_message)
     # Reconcile: Part 22, not mutating container fields here.
 
 
@@ -203,18 +203,30 @@ async def _apply_hibernate(command: dict, status: str, result: dict) -> None:
         await _release_unreleased_command_quota(command["container_id"])
 
 
-async def _apply_save(command: dict, status: str, result: dict) -> None:
+async def _apply_save(command: dict, status: str, result: dict, error_message: Optional[str]) -> None:
     '''SAVE never changes placement/device_id/status - the container stays RUNNING throughout,
-    unlike HIBERNATE. snapshot_handlers.py::report_snapshot_result already updates
-    saved_image/save_status directly as snapshot_job's own report arrives (the authoritative
-    completion signal); this is a redundant-but-harmless confirmation from Device Agent's own
-    terminal CommandResult, applied the same conditional (device_id + placement_generation
-    gated) way every other operation's result is, rather than skipped as a special case. On
-    failure/timeout, leave the container row exactly as report_snapshot_result already left it -
-    no separate "untouched" branch needed here, there is nothing new to apply.'''
-    if status != "succeeded":
-        return
+    unlike HIBERNATE. snapshot_handlers.py::report_snapshot_result is the authoritative
+    completion signal WHEN a snapshot Job actually got created - this is a redundant-but-harmless
+    confirmation of the same saved_image on a successful CommandResult.
+
+    But a SAVE can also fail before any Job exists at all - e.g. Container Maker's own RPC
+    throwing on pod resolution (a real incident: "Cannot uniquely resolve the pod ... N pods
+    share label") - a case report_snapshot_result never runs for, since there is no snapshot_job
+    to call it. Left unhandled, containers.save_status silently keeps whatever it was from the
+    container's last *successful* save, no save_status_change SSE event ever fires, and the
+    frontend's Save button - which only re-enables on that SSE event (terminalpage.js's own
+    updateSaveButtonState) - stays stuck on "Saving..." forever, with no way for the user to even
+    see that the attempt failed. So a failed/timed-out command result gets the same conditional
+    (device_id + placement_generation gated) treatment as success, just writing save_status/
+    save_error instead of saved_image.'''
     command_ops = DeviceCommandOps(DB_CONFIG)
+    if status != "succeeded":
+        await asyncio.to_thread(
+            command_ops.conditional_container_update,
+            command["container_id"], command["device_id"], command["placement_generation"],
+            {"save_status": "Failed", "save_error": (error_message or "")[:1000] or None},
+        )
+        return
     await asyncio.to_thread(
         command_ops.conditional_container_update,
         command["container_id"], command["device_id"], command["placement_generation"],
