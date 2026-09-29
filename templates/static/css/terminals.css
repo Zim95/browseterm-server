@@ -236,6 +236,14 @@
     z-index: 5;
 }
 
+/* Author styles always win over the browser's own [hidden]{display:none} UA rule regardless of
+   specificity (it's a cascade-origin thing, not a specificity fight) - so without this, setting
+   `.hidden = true` on the overlay in JS did nothing visually and it stayed on screen forever,
+   even once deviceConnected flipped true. */
+.connect-overlay[hidden] {
+    display: none;
+}
+
 .connect-overlay-content {
     text-align: center;
     padding: 1.5rem 2rem;
