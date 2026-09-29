@@ -213,18 +213,39 @@
     padding: 2rem;
 }
 
-/* Shown instead of the terminals list (and its per-row buttons) whenever the device looks
-   offline - e.g. right after opening the app while the laptop was asleep. Replaces relying
-   solely on the passive 20s status poll to eventually re-enable things. */
-.connect-prompt {
-    text-align: center;
-    padding: 3rem 1rem;
-    color: #666;
+/* Positioning context for .connect-overlay below - the real terminal list stays mounted and
+   visible underneath it, just non-interactive, whenever the device looks offline. */
+.terminals-list-wrapper {
+    position: relative;
 }
 
-.connect-prompt p {
+/* A semi-transparent layer OVER the terminals list (not a replacement for it) whenever the
+   device looks offline - e.g. right after opening the app while the laptop was asleep. Keeping
+   the real list visible (dimmed) underneath reads as "temporarily unreachable", not "gone", and
+   still gives a size/shape hint of what's there. Replaces relying solely on the passive 20s
+   status poll to eventually re-enable things. */
+.connect-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(1.5px);
+    border-radius: 8px;
+    z-index: 5;
+}
+
+.connect-overlay-content {
+    text-align: center;
+    padding: 1.5rem 2rem;
+}
+
+.connect-overlay-content p {
     margin: 0 0 1.25rem;
+    color: #444;
     font-size: 0.95rem;
+    max-width: 320px;
 }
 
 .connect-btn {
@@ -237,6 +258,7 @@
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 }
 
 .connect-btn:hover:not(:disabled) {
@@ -620,6 +642,14 @@ body.dark-mode .terminal-status.failed {
 body.dark-mode .terminal-status.pending {
     background: #e5e510;
     color: #1e1e1e;
+}
+
+body.dark-mode .connect-overlay {
+    background: rgba(30, 30, 30, 0.72);
+}
+
+body.dark-mode .connect-overlay-content p {
+    color: #ccc;
 }
 
 body.dark-mode .terminal-status.active {

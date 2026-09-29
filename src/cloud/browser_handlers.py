@@ -17,6 +17,7 @@ Read-only routes (list/get containers, device quota) do not need it (matches the
 scope: only state-changing requests are a forgery target).
 '''
 import asyncio
+from datetime import datetime, timezone
 
 import grpc
 from fastapi import Request
@@ -26,7 +27,7 @@ from device_control_spec import device_control_pb2_grpc
 from device_control_spec.device_control_pb2 import CheckDeviceConnectedRequest
 
 from browseterm_db.models.containers import ContainerStatus
-from browseterm_db.models.devices import DeviceStatus
+from browseterm_db.models.devices import DeviceStatus, TunnelStatus
 from browseterm_db.operations.all_operations import ContainerOps, DeviceOps, ImageOps
 
 from src.cloud.config import (
@@ -262,7 +263,14 @@ async def check_device_connection(request: Request) -> JSONResponse:
     browseterm-control-grpc's own in-memory ConnectionRegistry, via the Cloud-internal
     CheckDeviceConnected RPC, whether this session's active device's control stream is live right
     now - a real-time answer, not the periodic tunnel-heartbeat write to Postgres the passive 20s
-    poll already relies on (see terminals.js's own setupDeviceStatusPolling docstring).'''
+    poll already relies on (see terminals.js's own setupDeviceStatusPolling docstring).
+
+    On a confirmed-connected result, ALSO writes tunnel_status/tunnel_last_heartbeat_at to
+    Postgres, same fields/pattern as heartbeat_tunnel's own update - otherwise this RPC's real-time
+    "yes" never reaches the Play button's own separate check
+    (TerminalsUtilities.isActiveDeviceTunnelOnline, which only ever reads those two DB columns): a
+    real bug caught live, where Connect correctly revealed the terminal list but Play stayed
+    disabled because nothing had told Postgres the device was actually back.'''
     user_id = await _require_session(request)
     if not user_id:
         return _unauthorized()
@@ -276,6 +284,12 @@ async def check_device_connection(request: Request) -> JSONResponse:
             stub = device_control_pb2_grpc.DeviceControlStub(channel)
             response = await asyncio.wait_for(
                 stub.CheckDeviceConnected(CheckDeviceConnectedRequest(device_id=device_id)), timeout=5.0,
+            )
+        if response.connected:
+            await asyncio.to_thread(
+                device_ops.update,
+                {"id": device_id, "user_id": user_id},
+                {"tunnel_status": TunnelStatus.ONLINE.value, "tunnel_last_heartbeat_at": datetime.now(timezone.utc)},
             )
         return JSONResponse(content={"connected": response.connected})
     except Exception:

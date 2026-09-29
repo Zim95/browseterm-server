@@ -166,6 +166,8 @@ class TerminalsHandler {
     cacheElements() {
         this.elements = {
             terminalsList: document.getElementById('terminalsList'),
+            connectOverlay: document.getElementById('connectOverlay'),
+            connectBtn: document.getElementById('connectBtn'),
             newTerminalBtn: document.querySelector('.new-terminal-btn'),
             modalOverlay: document.getElementById('modalOverlay'),
             modalClose: document.getElementById('modalClose'),
@@ -279,14 +281,12 @@ class TerminalsHandler {
         if (this.elements.newTerminalBtn) {
             this.elements.newTerminalBtn.style.display = this.deviceConnected ? '' : 'none';
         }
-        if (!this.deviceConnected) {
-            this.elements.terminalsList.innerHTML = `
-                <div class="connect-prompt">
-                    <p>Your device looks offline - if it's asleep, wake it up, then reconnect.</p>
-                    <button class="connect-btn" id="connectBtn">Connect</button>
-                </div>`;
-            document.getElementById('connectBtn').addEventListener('click', () => this.handleConnect());
-            return;
+        // The overlay is a semi-transparent layer ON TOP of the real list (see terminals.html/css),
+        // not a replacement for it - the list underneath still renders normally either way, so it
+        // reads as "temporarily unreachable" rather than "gone", and covers/blocks clicks on the
+        // real controls while it's shown.
+        if (this.elements.connectOverlay) {
+            this.elements.connectOverlay.hidden = this.deviceConnected;
         }
 
         if (this.terminals.length === 0) {
@@ -308,7 +308,7 @@ class TerminalsHandler {
      * immediately rather than waiting for that Postgres write to catch up.
      */
     async handleConnect() {
-        const btn = document.getElementById('connectBtn');
+        const btn = this.elements.connectBtn;
         if (btn) {
             btn.disabled = true;
             btn.textContent = 'Connecting...';
@@ -448,6 +448,9 @@ class TerminalsHandler {
     setupEventListeners() {
         if (this.elements.newTerminalBtn) {
             this.elements.newTerminalBtn.addEventListener('click', () => this.openModal());
+        }
+        if (this.elements.connectBtn) {
+            this.elements.connectBtn.addEventListener('click', () => this.handleConnect());
         }
         if (this.elements.modalClose) {
             this.elements.modalClose.addEventListener('click', () => this.closeModal());

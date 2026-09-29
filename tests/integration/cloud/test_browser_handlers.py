@@ -312,6 +312,34 @@ class TestCheckDeviceConnection(unittest.TestCase):
         self.assertEqual(result.status_code, 200)
         self.assertIn(b'"connected":true', result.body)
         mock_stub.CheckDeviceConnected.assert_called_once()
+        # The real bug this covers: Connect revealing the terminal list while Play stayed disabled,
+        # because nothing told Postgres (which Play's own separate check reads) the device was back.
+        mock_ops_cls.return_value.update.assert_called_once()
+        call_filters, call_data = mock_ops_cls.return_value.update.call_args[0]
+        self.assertEqual(call_filters, {"id": "device-1", "user_id": USER_A})
+        self.assertEqual(call_data["tunnel_status"], "Online")
+        self.assertIn("tunnel_last_heartbeat_at", call_data)
+
+    @patch("src.cloud.browser_handlers.device_control_pb2_grpc")
+    @patch("src.cloud.browser_handlers.grpc")
+    @patch("src.cloud.browser_handlers.DeviceOps")
+    def test_does_not_write_heartbeat_when_not_connected(self, mock_ops_cls, mock_grpc, mock_pb2_grpc):
+        mock_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "device-1"}, error=None,
+        )
+        mock_channel = AsyncMock()
+        mock_channel.__aenter__.return_value = mock_channel
+        mock_grpc.aio.insecure_channel.return_value = mock_channel
+        mock_stub = MagicMock()
+        mock_stub.CheckDeviceConnected = AsyncMock(return_value=MagicMock(connected=False))
+        mock_pb2_grpc.DeviceControlStub.return_value = mock_stub
+
+        with _patch_session_ok(USER_A):
+            result = asyncio.run(browser_handlers.check_device_connection(_mock_request()))
+
+        self.assertEqual(result.status_code, 200)
+        self.assertIn(b'"connected":false', result.body)
+        mock_ops_cls.return_value.update.assert_not_called()
 
     @patch("src.cloud.browser_handlers.device_control_pb2_grpc")
     @patch("src.cloud.browser_handlers.grpc")

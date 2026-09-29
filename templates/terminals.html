@@ -15,9 +15,20 @@
         <p class="note">NOTE: For now, Terminals are immutable. Their properties cannot be changed once created. We will add it soon.</p>
     </div>
 
-    <div class="terminals-list" id="terminalsList">
-        <!-- Terminals will be loaded dynamically by JavaScript -->
-        <div class="loading-message">Loading terminals...</div>
+    <div class="terminals-list-wrapper" id="terminalsListWrapper">
+        <div class="terminals-list" id="terminalsList">
+            <!-- Terminals will be loaded dynamically by JavaScript -->
+            <div class="loading-message">Loading terminals...</div>
+        </div>
+        <!-- Shown as a semi-transparent layer OVER the list (not a replacement for it) whenever
+             the device looks offline - the real terminals stay visible underneath, just
+             non-interactive, so the "Connect" prompt reads as a temporary state, not a wipe. -->
+        <div class="connect-overlay" id="connectOverlay" hidden>
+            <div class="connect-overlay-content">
+                <p>Your device looks offline - if it's asleep, wake it up, then reconnect.</p>
+                <button class="connect-btn" id="connectBtn">Connect</button>
+            </div>
+        </div>
     </div>
 </div>
 
