@@ -300,13 +300,27 @@ class TerminalsHandler {
     }
 
     /**
-     * The "Connect" button's click handler. Calls the real-time check (backed by
-     * browseterm-control-grpc's own in-memory ConnectionRegistry - see
-     * check_device_connection's own docstring), not just a re-read of the same
-     * periodically-written Postgres heartbeat the passive 20s poll already uses - that would just
-     * be the same staleness problem behind a button. On success, shows the real terminal controls
-     * immediately rather than waiting for that Postgres write to catch up.
+     * The real-time check (backed by browseterm-control-grpc's own in-memory ConnectionRegistry -
+     * see check_device_connection's own docstring), shared by the manual Connect button and the
+     * passive 20s poll below.
+     *
+     * Why the poll needs this too, not just a re-read of /app/device-quota: tunnel_last_heartbeat_at
+     * is only ever written on a discrete event - a tunnel (re)registration, or this check
+     * confirming a connection - nothing refreshes it continuously in the background otherwise (the
+     * tunnel-registrar sidecar only polls its OWN local ngrok API on its own loop; it does not
+     * re-heartbeat Cloud on a timer). A real bug caught live: a single successful Connect looked
+     * fine in the moment, but tunnel_last_heartbeat_at then just sat there aging - anything reading
+     * it later (a page reload, or Play's own always-live isActiveDeviceTunnelOnline check) saw it
+     * cross back over the 90s staleness threshold with nothing having kept it fresh in between.
+     * Polling this same endpoint every 20s closes that gap: as long as the device is genuinely
+     * online, the heartbeat now never has the chance to go stale.
      */
+    async checkDeviceConnection() {
+        const response = await fetch('/app/device-connection-check', { method: 'POST' });
+        const data = await response.json();
+        return !!data.connected;
+    }
+
     async handleConnect() {
         const btn = this.elements.connectBtn;
         if (btn) {
@@ -314,9 +328,8 @@ class TerminalsHandler {
             btn.textContent = 'Connecting...';
         }
         try {
-            const response = await fetch('/app/device-connection-check', { method: 'POST' });
-            const data = await response.json();
-            if (data.connected) {
+            const connected = await this.checkDeviceConnection();
+            if (connected) {
                 this.deviceConnected = true;
                 await this.refreshDeviceQuota();
                 await this.loadTerminals();
@@ -567,21 +580,31 @@ class TerminalsHandler {
 
     /**
      * The Play button's disabled state (TerminalsUtilities.isActiveDeviceTunnelOnline) reads
-     * `window.activeDevice`, which is otherwise only refreshed opportunistically (opening the
-     * create-terminal modal, or a container status_change SSE event). A device reconnecting in
-     * the background is neither of those - it's a heartbeat timestamp aging back under the 90s
-     * threshold with no discrete event to react to - so without this, a stale-offline button
-     * could stay disabled for minutes after the device is actually reachable again, until the
-     * user manually reloads. Polling is the right tool here (not a dedicated SSE event) precisely
-     * because "online" is a staleness check, not a state transition.
+     * window.activeDevice's tunnel_last_heartbeat_at - which, it turns out, is only ever written
+     * on a discrete event (a tunnel (re)registration, or checkDeviceConnection confirming a live
+     * connection), never refreshed continuously in the background otherwise. Without this poll
+     * ALSO calling checkDeviceConnection (not just re-reading the same Postgres value via
+     * refreshDeviceQuota), that timestamp would simply age past the 90s threshold ~20s-90s after
+     * the last such event and stay looking stale/offline indefinitely, even while the device
+     * remains genuinely connected - a real bug caught live right after shipping the Connect
+     * button: a single successful Connect looked fine in the moment, then the same staleness
+     * reappeared shortly after with nothing having kept the heartbeat fresh in between. Calling the
+     * real-time check here every 20s closes that gap for good: as long as the device is actually
+     * online, the heartbeat now never gets the chance to go stale.
      */
     setupDeviceStatusPolling() {
         this.deviceStatusPollInterval = setInterval(async () => {
+            let connected = false;
+            try {
+                connected = await this.checkDeviceConnection();
+            } catch (error) {
+                console.error('Error polling device connection:', error);
+            }
             await this.refreshDeviceQuota();
             // Only ever upgrades false -> true (a background reconnect the owner never had to
             // click Connect for) - never the reverse, so this passive check can't undo a manual
-            // Connect click just because Postgres's own heartbeat write hasn't caught up yet.
-            if (!this.deviceConnected && TerminalsUtilities.isActiveDeviceTunnelOnline()) {
+            // Connect click just because a single poll tick happened to fail transiently.
+            if (!this.deviceConnected && connected) {
                 this.deviceConnected = true;
             }
             this.renderTerminalsList();
