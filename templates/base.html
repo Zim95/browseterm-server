@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="referrer" content="no-referrer">
     <title>{% block title %}BrowseTerm{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
 
     <!-- Apply dark mode immediately to prevent flash -->
     <script>
@@ -37,6 +38,7 @@
     <nav class="sidebar" id="sidebar">
         <div class="sidebar-header">
             <div class="logo">
+                <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="logo-icon">
                 <span class="logo-text">BrowseTerm</span>
             </div>
             <button class="hamburger" id="hamburger">

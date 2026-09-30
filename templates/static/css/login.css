@@ -20,6 +20,19 @@ body.login-page {
     max-width: 400px;
 }
 
+.login-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.6rem;
+}
+
+.login-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+}
+
 .welcome-section {
     text-align: center;
     margin-bottom: 2rem;

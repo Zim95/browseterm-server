@@ -313,84 +313,6 @@ body.dark-mode .terminal-warning {
     animation: save-spin 0.8s linear infinite;
 }
 
-/* Ads Sidebar */
-.ads-sidebar {
-    width: 320px;
-    background-color: var(--bg-tertiary);
-    border-left: 1px solid var(--border-color);
-    padding: 1rem;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-}
-
-.ad-banner {
-    background-color: var(--bg-secondary);
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: var(--shadow);
-    border: 1px solid var(--border-color);
-}
-
-.ad-header {
-    background-color: var(--bg-tertiary);
-    padding: 0.5rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    text-align: center;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.ad-content {
-    padding: 2rem;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    min-height: 250px;
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    text-align: center;
-}
-
-.ad-content p {
-    margin: 0.5rem 0;
-    font-size: 1rem;
-}
-
-.ad-size {
-    font-size: 0.85rem;
-    color: #666;
-    margin-top: 1rem;
-}
-
-/* Large ad banner */
-.ad-banner:last-child .ad-content {
-    min-height: 600px;
-}
-
-/* Scrollbar styling for ads sidebar */
-.ads-sidebar::-webkit-scrollbar {
-    width: 8px;
-}
-
-.ads-sidebar::-webkit-scrollbar-track {
-    background: var(--bg-tertiary);
-}
-
-.ads-sidebar::-webkit-scrollbar-thumb {
-    background: var(--border-color);
-    border-radius: 4px;
-}
-
-.ads-sidebar::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
-}
-
 /* Dark Mode Toggle Button */
 .dark-mode-toggle {
     position: fixed;
@@ -452,28 +374,10 @@ body.dark-mode .dark-mode-toggle .moon-icon {
 
 /* Responsive Design */
 @media (max-width: 1200px) {
-    .ads-sidebar {
-        width: 280px;
-    }
-    
-    .ad-content {
-        padding: 1.5rem;
-    }
-    
     .dark-mode-toggle {
         width: 45px;
         height: 45px;
         font-size: 1.3rem;
-    }
-}
-
-@media (max-width: 992px) {
-    .ads-sidebar {
-        display: none;
-    }
-    
-    .terminal-main {
-        width: 100%;
     }
 }
 

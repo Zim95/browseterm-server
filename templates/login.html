@@ -4,13 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Login - BrowseTerm</title>
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='/img/logo.svg') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/login.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', path='/css/base.css') }}">
 </head>
 <body class="login-page">
     <div class="container">
-        <h1>BrowseTerm</h1>
+        <div class="login-brand">
+            <img src="{{ url_for('static', path='/img/logo.svg') }}" alt="" class="login-logo">
+            <h1>BrowseTerm</h1>
+        </div>
         <div class="login-buttons">
             <a href="/auth/google/start?target=cloud" class="btn btn-google">
                 <i class="fab fa-google btn-icon"></i>

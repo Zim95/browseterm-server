@@ -85,6 +85,14 @@ body {
     transition: var(--transition);
 }
 
+.logo-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    margin-right: 0.6rem;
+}
+
 .logo-text {
     font-size: 1.5rem;
     font-weight: 700;
