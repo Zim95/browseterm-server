@@ -760,7 +760,7 @@ class TerminalsHandler {
         const terminal = this.terminals.find(t => t.id === terminalId);
         const terminalName = terminal?.name || 'this terminal';
         const confirmed = confirm(
-            `Hibernate "${terminalName}"? This saves a snapshot, stops it, and frees up this device's resources. It can be resumed later.`
+            `Hibernate "${terminalName}"? This stops it and frees up this device's resources, but does NOT save a snapshot - use Save first if you want to keep your work. It can be resumed later.`
         );
         if (!confirmed) return;
 
