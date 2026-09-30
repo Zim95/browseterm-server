@@ -23,8 +23,7 @@ Local has no PostgreSQL/Redis credentials for central state and reaches this rep
 
 ## P07 - Cloud-owned authentication
 
-Cloud is now the sole Google/GitHub OAuth authority (see `~/browseterm/p07.md`, the authoritative
-spec, and `p.md`'s "P07" section for the full write-up). Local no longer holds a Google/GitHub
+Cloud is now the sole Google/GitHub OAuth authority. Local no longer holds a Google/GitHub
 client id/secret, does not perform token exchange, and does not touch Cloud's Redis/Postgres
 directly for auth - it only talks to Cloud's HTTP API. Summary of what moved here:
 
@@ -84,8 +83,7 @@ README for the Local-side half of this change).
   event loop via `call_soon_threadsafe` to fan them out to per-user `asyncio.Queue` subscribers.
   The actual `container_status_change`/`container_save_status_change` Postgres triggers this
   listens for already existed in `browseterm-db`'s migration history - they'd just never been
-  applied to this project's dev cluster (see `~/browseterm/p.md`'s P10 section for the full story
-  of how that gap was found and fixed).
+  applied to this project's dev cluster until this was found and fixed.
 - `GET /events/stream?token=<sse_token>` (`src/cloud/sse_handlers.py`) - the browser connects here
   directly. **Public but possession-gated**, same pattern as P11's ws-token-consume: the token is
   in the query string (`EventSource` can't set custom headers) and resolves only to a session_id;
@@ -106,8 +104,7 @@ fields) - released back if the row insert then fails. `device_id` is optional as
 success. `src/cloud/resource_quantity.py` is a small dependency-free parser for the Kubernetes
 resource-quantity strings (`"500m"`, `"2Gi"`) these fields are stored as - Cloud doesn't depend on
 the `kubernetes` client library (P06 moved that to `browseterm-server-local`), so
-`kubernetes.utils.quantity.parse_quantity` isn't reachable from here. See `~/browseterm/p.md`'s
-P12 section for the full write-up, including why Hibernate/Resume accounting isn't wired up yet.
+`kubernetes.utils.quantity.parse_quantity` isn't reachable from here.
 
 ## P13 - device_id auto-resolves to the caller's active device
 
@@ -116,7 +113,7 @@ device_id - device registration/bootstrap (P07) is a `browseterm-desktop`-only c
 process Local has no IPC channel to. So `POST /containers`'s `device_id` is optional: when
 omitted, Cloud resolves the caller's currently-`ACTIVE` device automatically (reusing the "at most
 one ACTIVE device per user" invariant `device_handlers.py` already enforces elsewhere), or returns
-`400` if the user has no active device at all. See `~/browseterm/p.md`'s P13 section.
+`400` if the user has no active device at all.
 
 ## P14 - resource reconciliation
 
@@ -128,8 +125,7 @@ implicated device's `used_cpu`/`used_memory_bytes`/`used_storage_bytes` is **ove
 freshly-computed sum - a repair, not an adjustment, closing the loop on drift P12's reservation
 counters can accumulate. Known v1 limitation: a device whose containers have *all* stopped running
 since the last reconcile isn't reset to zero by this alone, since nothing in the request
-identifies it as needing reconciliation - see `~/browseterm/p.md`'s P14 section for why this is a
-deliberate scope decision.
+identifies it as needing reconciliation - this is a deliberate scope decision, not an oversight.
 
 ## P16 - snapshot version allocation
 
@@ -152,7 +148,7 @@ writing to Postgres directly. Updates BOTH the `container_snapshots` row itself 
 `containers` row's `save_status`/`save_error` (the frontend's SSE feed is driven by `containers`'
 own NOTIFY trigger, not `container_snapshots`). `saved_image`/`last_saved_at` on `containers` are
 only ever set when `status == "Succeeded"` - plan section 13: "On failure, saved_image must
-remain unchanged." See `~/browseterm/p.md`'s P17 section.
+remain unchanged."
 
 ## P18 - reaper's idle-scan and hibernate through Cloud
 
@@ -164,8 +160,7 @@ device_id is the current device" (plan section 16). Hibernate is the compound tr
 section 14 describes: `status=HIBERNATED`, `device_id=NULL`, and the container's device resource
 reservation released (reusing the same `_release_device_resources` helper `delete_container`
 uses) - reaper only calls this after it has itself confirmed the save this hibernate is based on
-actually succeeded; this endpoint has no save-confirmation logic of its own. See
-`~/browseterm/p.md`'s P18 section.
+actually succeeded; this endpoint has no save-confirmation logic of its own.
 
 ## P19 - cross-device resume
 
@@ -180,7 +175,7 @@ changes a container's size), same reserve-then-write ordering and release-on-fai
 as `create_container` - including releasing the reservation if this handler's own CAS loses the
 race. Local performs the actual pod start after this returns; on a pod-start failure it calls the
 existing P18 `POST /internal/containers/{id}/hibernate` to roll back, so no separate rollback
-endpoint was needed. See `~/browseterm/p.md`'s P19 section.
+endpoint was needed.
 
 ## What's here
 
