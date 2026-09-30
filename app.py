@@ -29,6 +29,7 @@ from src.cloud.health_handlers import healthz
 from src.cloud.device_handlers import (
     get_active_device_internal,
     get_device,
+    get_tunnel_generation,
     heartbeat_device,
     heartbeat_tunnel,
     list_devices,
@@ -173,6 +174,12 @@ app.add_api_route(path="/devices/{device_id}/heartbeat", endpoint=heartbeat_devi
 app.add_api_route(path="/devices/{device_id}/tunnel", endpoint=register_tunnel, methods=["POST"])
 app.add_api_route(
     path="/devices/{device_id}/tunnel/heartbeat", endpoint=heartbeat_tunnel, methods=["POST"]
+)
+# Side-effect-free read of Cloud's own tunnel_generation, for Tunnel Registrar to resync against
+# on startup (see device_handlers.get_tunnel_generation's own docstring for the incident this
+# closes).
+app.add_api_route(
+    path="/devices/{device_id}/tunnel/generation", endpoint=get_tunnel_generation, methods=["GET"]
 )
 app.add_api_route(
     path="/internal/users/{user_id}/active-device", endpoint=get_active_device_internal, methods=["GET"]

@@ -496,3 +496,33 @@ async def heartbeat_tunnel(request: Request) -> JSONResponse:
     except Exception:
         logger.error("tunnel heartbeat failed", exc_info=True)
         return JSONResponse(content={"error": "Error updating tunnel heartbeat"}, status_code=500)
+
+
+@authenticate_device
+async def get_tunnel_generation(request: Request) -> JSONResponse:
+    '''
+    GET /devices/{device_id}/tunnel/generation -- token-scoped, same 404-on-mismatch as every
+    other device route. A plain, side-effect-free read of Cloud's own authoritative
+    tunnel_generation counter, added so Tunnel Registrar (via Device Agent's local
+    GetTunnelGeneration RPC - see browseterm-device-control-spec's local_device_agent.proto) can
+    resync itself on startup instead of trusting its own locally-persisted value alone. That
+    local-only trust is exactly what caused a real incident (2026-09-30): the registrar's PVC
+    file had regressed below Cloud's real generation, and every subsequent report was silently
+    rejected forever (register_tunnel/heartbeat_tunnel's own stale-generation check above) with
+    no way for the registrar to ever notice or recover on its own.
+    '''
+    try:
+        device_id: str = request.path_params["device_id"]
+        if device_id != request.state.device_id:
+            return _device_not_found()
+        user_id = request.state.user_id
+        device_ops = DeviceOps(DB_CONFIG)
+
+        existing = await asyncio.to_thread(device_ops.find_one, {"id": device_id, "user_id": user_id})
+        if not existing.data:
+            return _device_not_found()
+
+        return JSONResponse(content={"generation": existing.data["tunnel_generation"]})
+    except Exception:
+        logger.error("get tunnel generation failed", exc_info=True)
+        return JSONResponse(content={"error": "Error getting tunnel generation"}, status_code=500)

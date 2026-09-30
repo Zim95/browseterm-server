@@ -426,6 +426,51 @@ class TestHeartbeatTunnel(TestCase):
         self.assertEqual(json.loads(result.body)["current_generation"], 5)
 
 
+class TestGetTunnelGeneration(TestCase):
+    '''GET /devices/{device_id}/tunnel/generation - a plain, side-effect-free read of Cloud's own
+    tunnel_generation, added so Tunnel Registrar can resync a locally-persisted counter that has
+    fallen behind (see device_handlers.get_tunnel_generation's own docstring).'''
+
+    def test_owner_reads_its_own_current_generation(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(
+            success=True, data=_device_row(tunnel_generation=35),
+        )
+        request = _mock_request(path_params={"device_id": DEVICE_A}, user_id=USER_A, device_id=DEVICE_A)
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.get_tunnel_generation.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["generation"], 35)
+        mock_ops.update.assert_not_called()  # side-effect-free
+
+    def test_never_registered_tunnel_returns_zero(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_device_row(tunnel_generation=0))
+        request = _mock_request(path_params={"device_id": DEVICE_A}, user_id=USER_A, device_id=DEVICE_A)
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.get_tunnel_generation.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 200)
+        import json
+        self.assertEqual(json.loads(result.body)["generation"], 0)
+
+    def test_d1_token_cannot_read_d2_tunnel_generation(self) -> None:
+        mock_ops = MagicMock()
+        request = _mock_request(path_params={"device_id": DEVICE_B}, user_id=USER_A, device_id=DEVICE_A)
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.get_tunnel_generation.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 404)
+        mock_ops.find_one.assert_not_called()
+
+    def test_nonexistent_device_returns_not_found(self) -> None:
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        request = _mock_request(path_params={"device_id": DEVICE_A}, user_id=USER_A, device_id=DEVICE_A)
+        with patch("src.cloud.device_handlers.DeviceOps", return_value=mock_ops):
+            result = asyncio.run(device_handlers.get_tunnel_generation.__wrapped__(request=request))
+        self.assertEqual(result.status_code, 404)
+
+
 class TestGetActiveDeviceInternal(TestCase):
     '''GET /internal/users/{user_id}/active-device -- internal-token-gated (Local's Profile page),
     not device-token gated, so it doesn't use `_mock_request` above at all.'''
