@@ -131,17 +131,19 @@ class TestDeleteContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
     @patch("src.cloud.container_handlers.DEVICE_COMMAND_DELETE_ENABLED", True)
     @patch("src.cloud.container_handlers.DeviceCommandOps")
     @patch("src.cloud.container_handlers.ContainerOps")
-    async def test_soft_deletes_immediately_without_waiting_for_device_confirmation(
+    async def test_does_not_soft_delete_or_hide_the_container_until_device_confirms(
         self, mock_container_ops_cls, mock_command_ops_cls,
     ) -> None:
         '''
-        Regression test: restores the old browseterm-server-local system's two-phase delete split
-        (instant DB removal vs. slow K8s cleanup) that the Cloud Control Plane migration's
-        single-call redesign had silently dropped - the container row is only ever HARD-deleted
-        once Device Agent confirms (still true, see the sibling test above), but it must be
-        SOFT-deleted (deleted_at stamped) right here, synchronously with this request, so it
-        disappears from the user's list and frees its name for reuse immediately instead of only
-        after the async teardown fully completes.
+        Regression test for the owner's own explicit ask: the container row is only ever
+        HARD-deleted once Device Agent confirms (still true, see the sibling test above), and must
+        also NOT be soft-deleted (deleted_at stamped) here at request time any more - an earlier
+        version of this code did, specifically so the container vanished from the user's list and
+        freed its name for reuse instantly, before the real pod teardown/resource release had even
+        started. That produced a confusing gap: the terminal disappeared immediately while the
+        device's used_* resources stayed reserved until the async teardown actually completed.
+        The container must stay visible (status DELETING) until pod deletion AND resource release
+        both genuinely happen together, in container_mutation.py's _apply_delete.
         '''
         mock_container_ops_cls.return_value.find_one.return_value = OperationResult(success=True, data=_container_row(status="Running"))
         mock_command_ops_cls.return_value.insert.return_value = OperationResult(success=True, data={"id": "cmd-1"})
@@ -151,7 +153,7 @@ class TestDeleteContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):
         await container_handlers.delete_container(request)
 
         update_call = mock_container_ops_cls.return_value.update.call_args[0]
-        self.assertIsNotNone(update_call[1]["deleted_at"])
+        self.assertNotIn("deleted_at", update_call[1])
 
 
 class TestHibernateContainerViaDeviceCommand(unittest.IsolatedAsyncioTestCase):

@@ -139,6 +139,10 @@ class TerminalsHandler {
         // Container IDs whose creation is still pending confirmation - cleared up on Running/Failed.
         this.pendingContainers = new Set();
         this.hibernatingIds = new Set();
+        // Container IDs currently being polled for real delete completion - see
+        // pollUntilDeleted's own docstring for why this exists (no live push event fires when a
+        // container row is finally hard-deleted, unlike every other status transition).
+        this.deletingPolls = new Map();
         // Whether to show the terminal action buttons at all, vs. a single "Connect" button in
         // their place (the owner's own design: don't show controls whose backing device might be
         // asleep/unreachable - make the user explicitly confirm a live connection first). Seeded
@@ -645,14 +649,53 @@ class TerminalsHandler {
             //
             // 'Hibernated' fires exactly when the real release happens (container_mutation.py's
             // _apply_hibernate updates status AND releases quota in the same step) - this catches
-            // it instantly. 'Deleting' only ever fires at REQUEST time (the soft-delete stamp) -
-            // the container row is later hard-DELETEd, not UPDATEd, when quota is actually
-            // released, and a SQL DELETE never fires this UPDATE-only trigger at all - so a
-            // delete's own quota release still only becomes visible via the 20s poll. Refreshing
-            // here anyway is still a real improvement (catches everything BUT delete's final
-            // number instantly) and is harmless even where it's a moment too early.
+            // it instantly. 'Deleting' only ever fires at REQUEST time (the status flip to
+            // DELETING) - the container row is later hard-DELETEd, and quota is only actually
+            // released right before that (container_mutation.py's _apply_delete), and a SQL
+            // DELETE never fires this UPDATE-only trigger at all - so refreshing quota here is a
+            // moment early for Delete specifically; pollUntilDeleted below re-refreshes it the
+            // instant the row is confirmed actually gone.
             this.refreshDeviceQuota();
+            if (new_status === 'Deleting') this.pollUntilDeleted(container_id, name);
         }
+    }
+
+    /**
+     * Every other terminal-list-affecting transition (Running, Failed, Hibernated, a fresh
+     * Create) either fires its own SSE status_change event or completes synchronously within the
+     * request that triggered it. A confirmed Delete does neither: the container row is
+     * hard-DELETEd (never UPDATEd) once Device Agent's teardown actually confirms, and Postgres's
+     * NOTIFY triggers only exist on UPDATE, so no live event ever announces that moment - the
+     * only way to find out is to keep asking. This polls /app/containers every 4s until this
+     * specific container is no longer in the response, then does the one-time "it's actually
+     * gone now" work (quota refresh, notification) that handleDelete/handleStatusChange used to
+     * do immediately and incorrectly, back when the row disappeared from the UI right at request
+     * time instead of at real completion. Capped at 3 minutes as a backstop matching the Save
+     * button's own watchdog - if something is stuck, stop silently polling forever and leave it
+     * to the container's own visible DELETING status (and a manual refresh) rather than spin
+     * indefinitely.
+     */
+    pollUntilDeleted(containerId, terminalName) {
+        if (this.deletingPolls.has(containerId)) return;
+
+        const startedAt = Date.now();
+        const MAX_POLL_MS = 3 * 60 * 1000;
+        const intervalId = setInterval(async () => {
+            if (Date.now() - startedAt > MAX_POLL_MS) {
+                clearInterval(intervalId);
+                this.deletingPolls.delete(containerId);
+                return;
+            }
+            await this.loadTerminals();
+            const stillPresent = this.terminals.some(t => t.id === containerId);
+            if (!stillPresent) {
+                clearInterval(intervalId);
+                this.deletingPolls.delete(containerId);
+                this.refreshDeviceQuota();
+                TerminalsUtilities.showNotification('info', 'Terminal Deleted', `Terminal "${terminalName}" has been deleted.`, 4000);
+            }
+        }, 4000);
+        this.deletingPolls.set(containerId, intervalId);
     }
 
     handlePlay(terminalId) {
@@ -766,6 +809,11 @@ class TerminalsHandler {
      * A single call now (migration Part 3) - Device Agent handles the actual pod teardown
      * asynchronously once this DELETE command is delivered, no separate DB/K8s two-step needed
      * from the browser's side any more.
+     *
+     * Deliberately does NOT claim the terminal is deleted here - it isn't yet, only requested.
+     * The container stays visible with a DELETING status (loadTerminals below picks that up
+     * immediately) until the pod is actually torn down and its resources released; pollUntilDeleted
+     * is what fires the real "Terminal Deleted" notification, once that's genuinely true.
      */
     async handleDelete(terminalId) {
         const terminal = this.terminals.find(t => t.id === terminalId);
@@ -784,10 +832,11 @@ class TerminalsHandler {
                 throw new Error(result.error || `HTTP ${resp.status}`);
             }
             await this.loadTerminals();
-            // Don't wait on the status_change SSE round-trip for this tab's own quota widget -
-            // see handleStatusChange's own Hibernated/Deleting branch for the general fix.
-            this.refreshDeviceQuota();
-            TerminalsUtilities.showNotification('info', 'Terminal Deleted', `Terminal "${terminalName}" has been deleted.`, 4000);
+            TerminalsUtilities.showNotification('info', 'Deleting Terminal', `Terminal "${terminalName}" is being deleted…`, 4000);
+            // Don't wait on the status_change SSE round-trip to start this - if it's slow/dropped,
+            // this tab's own poll still catches real completion (pollUntilDeleted no-ops if the
+            // SSE-driven call already started one for this same container).
+            this.pollUntilDeleted(terminalId, terminalName);
         } catch (error) {
             console.error('Error deleting terminal:', error);
             TerminalsUtilities.showNotification('error', 'Deletion Error', error.message, 5000);

@@ -121,9 +121,10 @@ async def list_containers(request: Request) -> JSONResponse:
     if not user_id:
         return _unauthorized()
     ops = ContainerOps(DB_CONFIG)
-    # exclude_deleted: a container mid-DELETE is soft-deleted immediately (deleted_at stamped)
-    # so it disappears from the user's list right away, while the real Kubernetes teardown - and
-    # the row's eventual hard delete - continue asynchronously in the background.
+    # exclude_deleted: kept for parity/safety, though DELETE no longer stamps deleted_at at
+    # request time - a container mid-DELETE stays visible here (status DELETING, rendered by the
+    # frontend as an in-flight state) until Device Agent confirms teardown and container_mutation.
+    # py's _apply_delete hard-deletes the row, releasing its resources in the same step.
     result = await asyncio.to_thread(ops.find, {"user_id": user_id}, exclude_deleted=True)
     if not result.success:
         logger.error("list containers failed", extra={"error": result.error})

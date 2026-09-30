@@ -117,23 +117,25 @@ async def _apply_delete(command: dict, status: str) -> None:
         # "Missing pod/service is success" already makes delete.py's handler report SUCCEEDED
         # for an already-gone pod - a real FAILED here means something else went wrong.
         #
-        # The container row was soft-deleted (deleted_at stamped) the instant DELETE was
-        # requested, so it's already invisible to the user and its name already free for reuse -
-        # a real failure here must undo that, or a container whose teardown genuinely failed
-        # would vanish from the user's view forever with a real, orphaned pod still running and
-        # no way for anyone to see or retry it. Reverting is best-effort: if a *different*
-        # container has since claimed this name (a real possibility now that the name frees up
-        # immediately), the partial unique index on (user_id, name) rejects the revert and this
-        # container stays soft-deleted, permanently invisible - a genuine, rare edge case, not
-        # silently corrected here; Part 22's reconciliation loop is the intended backstop for it.
-        container_ops = ContainerOps(DB_CONFIG)
-        revert_result = await asyncio.to_thread(
-            container_ops.update, {"id": command["container_id"], "user_id": command["user_id"]}, {"deleted_at": None},
+        # The container row is never soft-deleted at request time (container_handlers.py's
+        # _delete_container_via_device_command only flips status to DELETING) - it stays visible
+        # to the user, rendered as an in-flight state, for exactly as long as the real teardown
+        # takes. So a confirmed failure here must undo the optimistic DELETING status back to
+        # RUNNING, the same "undo the optimistic transition on a confirmed failure" pattern
+        # _apply_hibernate uses for its own HIBERNATING status - otherwise the container would be
+        # stuck showing as permanently "still working" with a real, orphaned pod still running and
+        # no way for anyone to see or retry it. Gated by conditional_container_update (device_id +
+        # placement_generation) so a stale/superseded result can't clobber a newer placement.
+        command_ops = DeviceCommandOps(DB_CONFIG)
+        reverted = await asyncio.to_thread(
+            command_ops.conditional_container_update,
+            command["container_id"], command["device_id"], command["placement_generation"],
+            {"status": ContainerStatus.RUNNING},
         )
-        if not revert_result.success:
-            logger.error(
-                "could not un-soft-delete container after failed device delete - name likely reused already",
-                extra={"command_id": command["id"], "container_id": command["container_id"], "error": revert_result.error},
+        if not reverted.success or reverted.data.get("matched", 0) == 0:
+            logger.info(
+                "delete failure revert skipped (stale placement or already moved on)",
+                extra={"command_id": command["id"], "container_id": command["container_id"]},
             )
         return
 
@@ -144,12 +146,16 @@ async def _apply_delete(command: dict, status: str) -> None:
         return  # already gone (e.g. a duplicate result for an already-processed delete)
 
     await _release_unreleased_command_quota(command["container_id"])
+    # Release used_* resources BEFORE the row itself is hard-deleted (and thus vanishes from the
+    # UI): the owner explicitly asked for the entry to only leave the list once the pod is gone
+    # AND its resources are released, not before. Releasing first means the worst case of a crash
+    # between these two calls is a lingering-but-already-freed row, never a vanished row with
+    # resources still shown as reserved.
+    await _release_used_resources(existing.data, device_ops)
     delete_result = await asyncio.to_thread(container_ops.delete, {"id": command["container_id"], "user_id": command["user_id"]})
     if not delete_result.success:
         logger.error("container row delete failed after successful device delete", extra={"command_id": command["id"]})
         return
-
-    await _release_used_resources(existing.data, device_ops)
 
 
 async def _apply_hibernate(command: dict, status: str, result: dict) -> None:

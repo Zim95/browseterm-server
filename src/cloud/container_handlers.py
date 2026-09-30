@@ -183,9 +183,10 @@ async def create_container(request: Request) -> JSONResponse:
             return JSONResponse(content={"error": str(e)}, status_code=400)
 
         ops = ContainerOps(DB_CONFIG)
-        # exclude_deleted: a soft-deleted row (an in-flight DELETE that hasn't been confirmed by
-        # Device Agent yet) must not block reusing its name - see uq_container_user_name's own
-        # partial-index migration for why the DB itself allows this too.
+        # exclude_deleted: a no-op in practice now - DELETE never stamps deleted_at any more
+        # (see _delete_container_via_device_command's own docstring), only a status of DELETING,
+        # so an in-flight delete's name stays correctly taken until the row is hard-deleted.
+        # Left in place in case a future soft-delete use case reappears elsewhere.
         existing = await asyncio.to_thread(ops.find_one, {"name": name, "user_id": user_id}, exclude_deleted=True)
         if existing.data:
             return JSONResponse(
@@ -543,9 +544,9 @@ async def list_containers(request: Request) -> JSONResponse:
         limit = request.query_params.get("limit")
         offset = request.query_params.get("offset")
         ops = ContainerOps(DB_CONFIG)
-        # exclude_deleted: same reasoning as the browser-facing list at /app/containers - a
-        # container mid-DELETE is soft-deleted immediately and shouldn't appear as active here
-        # either, regardless of caller.
+        # exclude_deleted: kept for parity with the browser-facing list at /app/containers, though
+        # DELETE no longer stamps deleted_at at request time - a container mid-DELETE now stays
+        # visible (status DELETING) until its teardown is confirmed and the row is hard-deleted.
         result = await asyncio.to_thread(ops.find,
             {"user_id": user_id},
             limit=int(limit) if limit else None,
@@ -644,18 +645,21 @@ async def _delete_container_via_device_command(container: dict, user_id: str) ->
     result arriving afterward would have no row/command left to apply to (CASCADE on
     device_commands.container_id).
 
-    But it IS soft-deleted (deleted_at stamped) right here, immediately - restoring the two-phase
-    split the old browseterm-server-local system had (delete_container_in_db, instant, vs.
-    delete_container_in_k8s, slow) that this migration's single-call redesign had silently
-    dropped: the container disappeared from list_containers and freed its name for reuse only
-    once the async Kubernetes teardown fully confirmed, which could take a while (or get stuck) -
-    not "immediately remove it from the UI, clean it up in the background" as originally intended.
-    containers.uq_container_user_name is now a partial unique index scoped to `deleted_at IS
-    NULL` specifically so a soft-deleted row here never blocks a new container reusing its name
-    while the real teardown is still in flight - see browseterm-db's matching migration. On a
-    confirmed FAILURE, container_mutation.py's _apply_delete reverts this (deleted_at back to
-    NULL) so the container becomes visible/manageable again, unless a new container has since
-    claimed the name.'''
+    Deliberately does NOT soft-delete (stamp deleted_at) here. An earlier version of this code
+    did, specifically to make the container vanish from list_containers - and thus the UI -
+    instantly, before the real pod teardown/resource release had even started. That produced a
+    confusing user-facing gap: the terminal disappeared from the list immediately, but the
+    device's used_cpu/used_memory_bytes/used_storage_bytes (released only in
+    container_mutation.py's _apply_delete, once Device Agent's CommandResult actually confirms
+    success) stayed reserved for however long the real teardown took. The owner asked for this to
+    be fixed so the entry only leaves the UI once the pod is genuinely gone AND its resources are
+    released - both of which happen together, atomically from the UI's point of view, in
+    _apply_delete's hard delete. Until then the container stays visible with status DELETING,
+    which the frontend already renders as an in-flight/"still working" state (see
+    terminals.js's mapStatusToDisplay). The one-time cost: a container's name stays taken for the
+    duration of its teardown instead of freeing up instantly (uq_container_user_name is scoped to
+    `deleted_at IS NULL`, so a row with no deleted_at still blocks reuse of its name) - an
+    acceptable tradeoff for not lying to the user about resources being free before they are.'''
     command_ops = DeviceCommandOps(DB_CONFIG)
     config_json = build_delete_config_json(container)
     insert_result = await asyncio.to_thread(command_ops.insert, {
@@ -670,7 +674,7 @@ async def _delete_container_via_device_command(container: dict, user_id: str) ->
     ops = ContainerOps(DB_CONFIG)
     await asyncio.to_thread(
         ops.update, {"id": container["id"], "user_id": user_id},
-        {"status": ContainerStatus.DELETING, "deleted_at": datetime.now(timezone.utc)},
+        {"status": ContainerStatus.DELETING},
     )
     return JSONResponse(content={"command": insert_result.data}, status_code=202)
 

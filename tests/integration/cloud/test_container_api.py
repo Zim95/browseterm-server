@@ -122,11 +122,12 @@ class TestCreateContainer(unittest.TestCase):
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_name_uniqueness_check_excludes_soft_deleted_containers(self, mock_ops_cls):
         '''
-        Regression test: a container whose DELETE was requested but hasn't been confirmed by
-        Device Agent yet is soft-deleted (deleted_at stamped) immediately, specifically so its
-        name frees up right away rather than staying blocked until the async teardown completes.
-        The uniqueness check must ask ContainerOps to exclude those rows, not just check for any
-        row with the name.
+        The uniqueness check must ask ContainerOps to exclude soft-deleted rows, not just check
+        for any row with the name. DELETE itself no longer soft-deletes at request time (a
+        container mid-delete now stays taken/visible - status DELETING - until Device Agent
+        confirms and the row is hard-deleted, per the owner's own explicit ask), so this mostly
+        guards a legacy/edge path today rather than the everyday DELETE flow, but the exclusion
+        must still hold for whatever soft-deleted rows do exist.
         '''
         mock_ops = MagicMock()
         mock_ops.find_one.return_value = OperationResult(success=True, data=None)

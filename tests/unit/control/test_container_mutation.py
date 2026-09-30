@@ -102,35 +102,66 @@ class TestApplyDelete(IsolatedAsyncioTestCase):
         mock_container_ops_cls.return_value.delete.assert_called_once_with({"id": "c1", "user_id": "u1"})
         mock_device_ops_cls.return_value.update.assert_called_once()
 
+    @patch("src.control.container_mutation.DeviceOps")
+    @patch("src.control.container_mutation.ContainerOps")
+    async def test_successful_delete_releases_resources_before_hard_deleting_row(self, mock_container_ops_cls, mock_device_ops_cls) -> None:
+        '''
+        Regression test for the owner's own explicit ask: the container only leaves the UI once
+        its row is hard-deleted, so resources must be released BEFORE that row delete, never
+        after - otherwise a crash between the two calls would leave a vanished entry with its
+        resources still shown as reserved, exactly the confusing state the owner wanted removed.
+        '''
+        call_order = []
+        mock_container_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "c1", "user_id": "u1", "device_id": "d1", "cpu_limit": "1", "memory_limit": "1Gi", "storage_limit": "2Gi"},
+        )
+
+        def _record_delete(*args, **kwargs):
+            call_order.append("delete_row")
+            return OperationResult(success=True)
+
+        def _record_release(*args, **kwargs):
+            call_order.append("release_resources")
+            return OperationResult(success=True)
+
+        mock_container_ops_cls.return_value.delete.side_effect = _record_delete
+        mock_device_ops_cls.return_value.find_one.return_value = OperationResult(
+            success=True, data={"id": "d1", "used_cpu": 2, "used_memory_bytes": 2_000_000_000, "used_storage_bytes": 4_000_000_000},
+        )
+        mock_device_ops_cls.return_value.update.side_effect = _record_release
+
+        await apply_command_result(_command(operation="Delete"), "succeeded", None, None)
+
+        self.assertEqual(call_order, ["release_resources", "delete_row"])
+
     @patch("src.control.container_mutation.ContainerOps")
     async def test_failed_delete_does_not_remove_row(self, mock_container_ops_cls) -> None:
         await apply_command_result(_command(operation="Delete"), "failed", None, "connection refused")
         mock_container_ops_cls.return_value.delete.assert_not_called()
 
-    @patch("src.control.container_mutation.ContainerOps")
-    async def test_failed_delete_reverts_the_immediate_soft_delete(self, mock_container_ops_cls) -> None:
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_failed_delete_reverts_the_optimistic_deleting_status(self, mock_command_ops_cls) -> None:
         '''
-        Regression test: delete_container now soft-deletes (deleted_at stamped) the instant it's
-        requested, before Device Agent has confirmed anything, so the container disappears from
-        the user's list and frees its name right away. A confirmed FAILURE here must undo that -
-        otherwise a container whose teardown genuinely failed would vanish from the user's view
-        forever with a real, orphaned pod still running and no way to see or retry it.
+        Regression test: delete_container no longer soft-deletes at request time - it only flips
+        status to DELETING, and the container stays visible (rendered as an in-flight state) until
+        confirmed. A confirmed FAILURE here must revert that status back to RUNNING - otherwise a
+        container whose teardown genuinely failed would be stuck showing as permanently "still
+        working" forever, with a real, orphaned pod still running and no way to see or retry it.
         '''
-        mock_container_ops_cls.return_value.update.return_value = OperationResult(success=True)
-        await apply_command_result(_command(operation="Delete", container_id="c1", user_id="u1"), "failed", None, "connection refused")
-        mock_container_ops_cls.return_value.update.assert_called_once_with(
-            {"id": "c1", "user_id": "u1"}, {"deleted_at": None},
-        )
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 1})
+        await apply_command_result(_command(operation="Delete", container_id="c1", device_id="d1", placement_generation=2), "failed", None, "connection refused")
+        container_id, device_id, generation, update_data = mock_command_ops_cls.return_value.conditional_container_update.call_args[0]
+        self.assertEqual(container_id, "c1")
+        self.assertEqual(device_id, "d1")
+        self.assertEqual(generation, 2)
+        self.assertEqual(update_data["status"].value, "Running")
 
-    @patch("src.control.container_mutation.ContainerOps")
-    async def test_failed_delete_revert_logs_but_does_not_raise_on_name_collision(self, mock_container_ops_cls) -> None:
-        '''If a new container has since claimed this name (possible now that the name frees up
-        immediately), the partial unique index rejects the revert - ContainerOps.update already
-        catches that as a clean OperationResult(success=False), so this must not raise, and must
-        leave the container soft-deleted rather than attempt anything more elaborate.'''
-        mock_container_ops_cls.return_value.update.return_value = OperationResult(success=False, error="duplicate key")
+    @patch("src.control.container_mutation.DeviceCommandOps")
+    async def test_failed_delete_revert_does_not_raise_on_stale_placement(self, mock_command_ops_cls) -> None:
+        '''A stale/superseded placement (matched: 0) must be skipped quietly, same as
+        _apply_hibernate's own revert - not treated as an error.'''
+        mock_command_ops_cls.return_value.conditional_container_update.return_value = OperationResult(success=True, data={"matched": 0})
         await apply_command_result(_command(operation="Delete"), "failed", None, "connection refused")  # must not raise
-        mock_container_ops_cls.return_value.delete.assert_not_called()
 
     @patch("src.control.container_mutation.ContainerOps")
     async def test_delete_for_already_gone_container_is_a_no_op(self, mock_container_ops_cls) -> None:
