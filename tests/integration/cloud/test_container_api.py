@@ -695,22 +695,32 @@ class TestUpdateContainerStatus(unittest.TestCase):
         self.assertEqual(result.status_code, 500)
 
 
+def _device_auth_request(path_params: dict, body: dict = None, device_id: str = DEVICE_A, user_id: str = USER_A) -> MagicMock:
+    '''Shared convention for the @authenticate_device-gated routes below (matches
+    test_save_status.py) - call the handler via its .__wrapped__ to bypass the decorator's own
+    Bearer-token parsing entirely and set request.state directly, same as a real validated token
+    would.'''
+    request = _mock_request(body=body, path_params=path_params)
+    request.state.device_id = device_id
+    request.state.user_id = user_id
+    request.state.scopes = []
+    return request
+
+
 class TestReconcileDeviceResources(unittest.TestCase):
-    '''P14: POST /internal/devices/resources/reconcile.'''
+    '''Finishes Part 12: POST /devices/{device_id}/resources/reconcile - device-Bearer-token
+    gated (was internal-token-gated with no device scoping at all).'''
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
-    def test_missing_token_rejected(self):
-        request = _mock_request(body={"running_container_ids": []}, headers={})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
-        self.assertEqual(result.status_code, 401)
+    def test_device_id_mismatch_is_not_found(self):
+        request = _device_auth_request({"device_id": "some-other-device"}, body={"running_container_ids": []})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_non_list_body_rejected(self):
-        request = _mock_request(body={"running_container_ids": "not-a-list"})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": "not-a-list"})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 400)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_sums_running_containers_per_device_and_overwrites(self, mock_container_ops_cls, mock_device_ops_cls):
@@ -728,8 +738,8 @@ class TestReconcileDeviceResources(unittest.TestCase):
         mock_device_ops.update.return_value = OperationResult(success=True)
         mock_device_ops_cls.return_value = mock_device_ops
 
-        request = _mock_request(body={"running_container_ids": ["c1", "c2"]})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": ["c1", "c2"]})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
 
         # 1 core + ceil(0.5 core) = 2 cores; 1Gi + 512Mi bytes; 2Gi + 1Gi bytes.
@@ -744,7 +754,6 @@ class TestReconcileDeviceResources(unittest.TestCase):
         payload = json.loads(result.body)
         self.assertIn(DEVICE_A, payload["reconciled_devices"])
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_running_pod_ips_repairs_stale_ip_address(self, mock_container_ops_cls, mock_device_ops_cls):
@@ -764,14 +773,13 @@ class TestReconcileDeviceResources(unittest.TestCase):
         mock_device_ops.update.return_value = OperationResult(success=True)
         mock_device_ops_cls.return_value = mock_device_ops
 
-        request = _mock_request(body={
+        request = _device_auth_request({"device_id": DEVICE_A}, body={
             "running_container_ids": [CONTAINER_A], "running_pod_ips": {CONTAINER_A: "10.42.0.149"},
         })
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"ip_address": "10.42.0.149"})
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_running_pod_ips_matching_current_ip_address_is_a_no_op(self, mock_container_ops_cls, mock_device_ops_cls):
@@ -785,14 +793,13 @@ class TestReconcileDeviceResources(unittest.TestCase):
         mock_device_ops.update.return_value = OperationResult(success=True)
         mock_device_ops_cls.return_value = mock_device_ops
 
-        request = _mock_request(body={
+        request = _device_auth_request({"device_id": DEVICE_A}, body={
             "running_container_ids": [CONTAINER_A], "running_pod_ips": {CONTAINER_A: "10.42.0.149"},
         })
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         mock_ops.update.assert_not_called()
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.DeviceOps")
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_container_with_no_device_id_skipped(self, mock_container_ops_cls, mock_device_ops_cls):
@@ -802,29 +809,47 @@ class TestReconcileDeviceResources(unittest.TestCase):
         mock_device_ops = MagicMock()
         mock_device_ops_cls.return_value = mock_device_ops
 
-        request = _mock_request(body={"running_container_ids": [CONTAINER_A]})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": [CONTAINER_A]})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         mock_device_ops.update.assert_not_called()
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
+    @patch("src.cloud.container_handlers.DeviceOps")
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_container_belonging_to_a_different_device_is_skipped(self, mock_container_ops_cls, mock_device_ops_cls):
+        '''Security regression guard: the old internal-token version trusted any container_id in
+        the body regardless of which device it actually belonged to - safe only because that
+        token was a fully-trusted global secret. A per-device Bearer token must not inherit that
+        trust: a container belonging to a DIFFERENT device must be ignored, not reconciled.'''
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row(
+            device_id="some-other-device", cpu_limit="1", memory_limit="1Gi", storage_limit="2Gi",
+        ))
+        mock_container_ops_cls.return_value = mock_ops
+        mock_device_ops = MagicMock()
+        mock_device_ops_cls.return_value = mock_device_ops
+
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": [CONTAINER_A]})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
+        self.assertEqual(result.status_code, 200)
+        mock_device_ops.update.assert_not_called()
+
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_unknown_container_id_skipped(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find_one.return_value = OperationResult(success=True, data=None)
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(body={"running_container_ids": ["does-not-exist"]})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": ["does-not-exist"]})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         import json
         self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_empty_running_list_reconciles_nothing(self, mock_container_ops_cls):
-        request = _mock_request(body={"running_container_ids": []})
-        result = asyncio.run(container_handlers.reconcile_device_resources(request))
+        request = _device_auth_request({"device_id": DEVICE_A}, body={"running_container_ids": []})
+        result = asyncio.run(container_handlers.reconcile_device_resources.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         import json
         self.assertEqual(json.loads(result.body)["reconciled_devices"], {})
@@ -841,8 +866,9 @@ def _running_row(container_id: str, updated_at, **overrides) -> dict:
 
 class TestListActiveContainersForDevice(unittest.TestCase):
     '''
-    GET /internal/devices/{device_id}/active-containers - status_monitor's periodic "does the DB
-    think something is Running that I can't actually find a pod for" safety net.
+    Finishes Part 12: GET /devices/{device_id}/active-containers - status_monitor's periodic "does
+    the DB think something is Running that I can't actually find a pod for" safety net, now
+    device-Bearer-token gated instead of internal-token gated.
     '''
 
     def setUp(self) -> None:
@@ -851,28 +877,25 @@ class TestListActiveContainersForDevice(unittest.TestCase):
         self.FRESH = (now - timedelta(seconds=5)).isoformat()   # inside the grace window
         self.OLD = (now - timedelta(seconds=200)).isoformat()   # well past the grace window
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
-    def test_missing_token_rejected(self):
-        request = _mock_request(path_params={"device_id": DEVICE_A}, headers={})
-        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
-        self.assertEqual(result.status_code, 401)
+    def test_device_id_mismatch_is_not_found(self):
+        request = _device_auth_request({"device_id": "some-other-device"})
+        result = asyncio.run(container_handlers.list_active_containers_for_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_returns_running_containers_older_than_the_grace_window(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find.return_value = OperationResult(success=True, data=[_running_row("c1", self.OLD)])
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"device_id": DEVICE_A})
-        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+        request = _device_auth_request({"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device.__wrapped__(request))
 
         self.assertEqual(result.status_code, 200)
         mock_ops.find.assert_called_once_with({"device_id": DEVICE_A, "status": ContainerStatus.RUNNING})
         import json
         self.assertEqual(json.loads(result.body)["container_ids"], ["c1"])
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_excludes_a_container_still_inside_the_grace_window(self, mock_container_ops_cls):
         '''A container that JUST became Running must not be flagged - status_monitor's own
@@ -881,13 +904,12 @@ class TestListActiveContainersForDevice(unittest.TestCase):
         mock_ops.find.return_value = OperationResult(success=True, data=[_running_row("c1", self.FRESH)])
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"device_id": DEVICE_A})
-        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+        request = _device_auth_request({"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device.__wrapped__(request))
 
         import json
         self.assertEqual(json.loads(result.body)["container_ids"], [])
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_only_queries_this_devices_running_containers(self, mock_container_ops_cls):
         '''Ownership: the query itself is scoped to {device_id, status=Running} - PENDING/
@@ -896,20 +918,19 @@ class TestListActiveContainersForDevice(unittest.TestCase):
         mock_ops.find.return_value = OperationResult(success=True, data=[])
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"device_id": "device-b-id"})
-        asyncio.run(container_handlers.list_active_containers_for_device(request))
+        request = _device_auth_request({"device_id": "device-b-id"}, device_id="device-b-id")
+        asyncio.run(container_handlers.list_active_containers_for_device.__wrapped__(request))
 
         mock_ops.find.assert_called_once_with({"device_id": "device-b-id", "status": ContainerStatus.RUNNING})
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_no_running_containers_returns_empty_list(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find.return_value = OperationResult(success=True, data=[])
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"device_id": DEVICE_A})
-        result = asyncio.run(container_handlers.list_active_containers_for_device(request))
+        request = _device_auth_request({"device_id": DEVICE_A})
+        result = asyncio.run(container_handlers.list_active_containers_for_device.__wrapped__(request))
 
         self.assertEqual(result.status_code, 200)
         import json
@@ -917,41 +938,37 @@ class TestListActiveContainersForDevice(unittest.TestCase):
 
 
 class TestListIdleContainers(unittest.TestCase):
-    '''P18: GET /internal/devices/{device_id}/containers/idle.'''
+    '''Finishes Part 12: GET /devices/{device_id}/containers/idle, now device-Bearer-token gated.'''
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
-    def test_missing_token_rejected(self):
-        request = _mock_request(
-            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "1800"}, headers={},
+    def test_device_id_mismatch_is_not_found(self):
+        request = _device_auth_request(
+            {"device_id": "some-other-device"}, device_id=DEVICE_A,
         )
-        result = asyncio.run(container_handlers.list_idle_containers(request))
-        self.assertEqual(result.status_code, 401)
+        request.query_params = {"idle_threshold_seconds": "1800"}
+        result = asyncio.run(container_handlers.list_idle_containers.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_missing_threshold_rejected(self):
-        request = _mock_request(path_params={"device_id": "device-a"}, query_params={})
-        result = asyncio.run(container_handlers.list_idle_containers(request))
+        request = _device_auth_request({"device_id": "device-a"}, device_id="device-a")
+        request.query_params = {}
+        result = asyncio.run(container_handlers.list_idle_containers.__wrapped__(request))
         self.assertEqual(result.status_code, 400)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_non_integer_threshold_rejected(self):
-        request = _mock_request(
-            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "not-a-number"},
-        )
-        result = asyncio.run(container_handlers.list_idle_containers(request))
+        request = _device_auth_request({"device_id": "device-a"}, device_id="device-a")
+        request.query_params = {"idle_threshold_seconds": "not-a-number"}
+        result = asyncio.run(container_handlers.list_idle_containers.__wrapped__(request))
         self.assertEqual(result.status_code, 400)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_scopes_query_to_the_given_device(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find_idle_containers.return_value = OperationResult(success=True, data=[_container_row()])
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(
-            path_params={"device_id": "device-a"}, query_params={"idle_threshold_seconds": "1800"},
-        )
-        result = asyncio.run(container_handlers.list_idle_containers(request))
+        request = _device_auth_request({"device_id": "device-a"}, device_id="device-a")
+        request.query_params = {"idle_threshold_seconds": "1800"}
+        result = asyncio.run(container_handlers.list_idle_containers.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         mock_ops.find_idle_containers.assert_called_once_with(1800, "device-a")
 
@@ -1063,66 +1080,107 @@ class TestHibernateContainer(unittest.TestCase):
         mock_command_ops.release_quota_for_command.assert_called_once_with("cmd-stuck")
 
 
-class TestGetContainerInternal(unittest.TestCase):
-    '''container-maker's off-direct-Postgres migration: GET /internal/containers/{container_id}
-    (no user_id scoping - same trusted-SYSTEM-caller pattern as hibernate/status).'''
+class TestGetContainerDevice(unittest.TestCase):
+    '''Finishes Part 12: GET /devices/{device_id}/containers/{container_id} - replaces the old
+    internal-token-gated GET /internal/containers/{container_id} container-maker's save() self-heal
+    used; now device-Bearer-token gated and scoped to that device's own containers.'''
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
-    def test_missing_token_rejected(self):
-        request = _mock_request(path_params={"container_id": CONTAINER_A}, headers={})
-        result = asyncio.run(container_handlers.get_container_internal(request))
-        self.assertEqual(result.status_code, 401)
+    def test_device_id_mismatch_is_not_found(self):
+        request = _device_auth_request({"device_id": "some-other-device", "container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.get_container_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_unknown_container_404s(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find_one.return_value = OperationResult(success=True, data=None)
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"container_id": CONTAINER_A})
-        result = asyncio.run(container_handlers.get_container_internal(request))
+        request = _device_auth_request({"device_id": DEVICE_A, "container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.get_container_device.__wrapped__(request))
         self.assertEqual(result.status_code, 404)
 
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
-    def test_found_container_returned_unscoped_by_user(self, mock_container_ops_cls):
+    def test_found_container_returned_scoped_by_device(self, mock_container_ops_cls):
         mock_ops = MagicMock()
         mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"container_id": CONTAINER_A})
-        result = asyncio.run(container_handlers.get_container_internal(request))
+        request = _device_auth_request({"device_id": DEVICE_A, "container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.get_container_device.__wrapped__(request))
         self.assertEqual(result.status_code, 200)
         import json
         self.assertEqual(json.loads(result.body)["container"]["id"], CONTAINER_A)
-        mock_ops.find_one.assert_called_once_with({"id": CONTAINER_A})
+        mock_ops.find_one.assert_called_once_with({"id": CONTAINER_A, "device_id": DEVICE_A})
+
+
+class TestUpdateContainerKubernetesIdDevice(unittest.TestCase):
+    '''Finishes Part 12: POST /devices/{device_id}/containers/{container_id}/kubernetes-id -
+    replaces container-maker's former use of the internal-token-gated POST /internal/containers/
+    {container_id} for its kubernetes_id self-heal (containers.py's save()).'''
+
+    def test_device_id_mismatch_is_not_found(self):
+        request = _device_auth_request({"device_id": "some-other-device", "container_id": CONTAINER_A})
+        result = asyncio.run(container_handlers.update_container_kubernetes_id_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
+
+    def test_missing_kubernetes_id_is_400(self):
+        request = _device_auth_request({"device_id": DEVICE_A, "container_id": CONTAINER_A}, body={})
+        result = asyncio.run(container_handlers.update_container_kubernetes_id_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 400)
+
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_container_not_owned_by_device_is_not_found(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=None)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _device_auth_request(
+            {"device_id": DEVICE_A, "container_id": CONTAINER_A}, body={"kubernetes_id": "new-pod-uid"},
+        )
+        result = asyncio.run(container_handlers.update_container_kubernetes_id_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 404)
+
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_self_heal_updates_kubernetes_id(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
+        mock_ops.update.return_value = OperationResult(success=True)
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _device_auth_request(
+            {"device_id": DEVICE_A, "container_id": CONTAINER_A}, body={"kubernetes_id": "new-pod-uid"},
+        )
+        result = asyncio.run(container_handlers.update_container_kubernetes_id_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 200)
+        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"kubernetes_id": "new-pod-uid"})
+
+    @patch("src.cloud.container_handlers.ContainerOps")
+    def test_update_failure_returns_500(self, mock_container_ops_cls):
+        mock_ops = MagicMock()
+        mock_ops.find_one.return_value = OperationResult(success=True, data=_container_row())
+        mock_ops.update.return_value = OperationResult(success=False, error="db down")
+        mock_container_ops_cls.return_value = mock_ops
+
+        request = _device_auth_request(
+            {"device_id": DEVICE_A, "container_id": CONTAINER_A}, body={"kubernetes_id": "x"},
+        )
+        result = asyncio.run(container_handlers.update_container_kubernetes_id_device.__wrapped__(request))
+        self.assertEqual(result.status_code, 500)
 
 
 class TestUpdateContainerInternal(unittest.TestCase):
-    '''container-maker's off-direct-Postgres migration: POST /internal/containers/{container_id}
-    - a strict field whitelist (kubernetes_id/save_status/save_error only), not a passthrough of
-    the request body like the user-scoped update_container.'''
+    '''save_reconciler.py's own stuck-save mark-failed path: POST /internal/containers/
+    {container_id} - a strict field whitelist (save_status/save_error only, kubernetes_id removed
+    once container-maker's own self-heal moved to update_container_kubernetes_id_device above),
+    not a passthrough of the request body like the user-scoped update_container. Stays
+    internal-token-gated: genuinely cluster-wide (every user's stuck saves), not one device's.'''
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_missing_token_rejected(self):
         request = _mock_request(path_params={"container_id": CONTAINER_A}, headers={})
         result = asyncio.run(container_handlers.update_container_internal(request))
         self.assertEqual(result.status_code, 401)
-
-    @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
-    @patch("src.cloud.container_handlers.ContainerOps")
-    def test_self_heal_updates_only_kubernetes_id(self, mock_container_ops_cls):
-        mock_ops = MagicMock()
-        mock_ops.update.return_value = OperationResult(success=True)
-        mock_container_ops_cls.return_value = mock_ops
-
-        request = _mock_request(
-            path_params={"container_id": CONTAINER_A}, body={"kubernetes_id": "new-pod-uid"}
-        )
-        result = asyncio.run(container_handlers.update_container_internal(request))
-        self.assertEqual(result.status_code, 200)
-        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"kubernetes_id": "new-pod-uid"})
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
@@ -1144,18 +1202,19 @@ class TestUpdateContainerInternal(unittest.TestCase):
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     @patch("src.cloud.container_handlers.ContainerOps")
     def test_disallowed_fields_are_stripped_not_applied(self, mock_container_ops_cls):
-        '''A caller trying to sneak status/device_id through this endpoint must be ignored - those
-        have their own dedicated, more carefully-guarded endpoints.'''
+        '''A caller trying to sneak status/device_id/kubernetes_id through this endpoint must be
+        ignored - kubernetes_id now has its own dedicated, device-scoped endpoint, and
+        status/device_id have their own dedicated, more carefully-guarded endpoints.'''
         mock_ops = MagicMock()
         mock_ops.update.return_value = OperationResult(success=True)
         mock_container_ops_cls.return_value = mock_ops
 
         request = _mock_request(
             path_params={"container_id": CONTAINER_A},
-            body={"kubernetes_id": "new-pod-uid", "status": "Deleted", "device_id": "sneaky"},
+            body={"save_status": "Failed", "kubernetes_id": "sneaky", "status": "Deleted", "device_id": "sneaky"},
         )
         asyncio.run(container_handlers.update_container_internal(request))
-        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"kubernetes_id": "new-pod-uid"})
+        mock_ops.update.assert_called_once_with({"id": CONTAINER_A}, {"save_status": "Failed"})
 
     @patch("src.cloud.container_handlers.CLOUD_INTERNAL_API_TOKEN", TOKEN)
     def test_no_updatable_fields_is_400(self):
@@ -1170,7 +1229,7 @@ class TestUpdateContainerInternal(unittest.TestCase):
         mock_ops.update.return_value = OperationResult(success=False, error="db down")
         mock_container_ops_cls.return_value = mock_ops
 
-        request = _mock_request(path_params={"container_id": CONTAINER_A}, body={"kubernetes_id": "x"})
+        request = _mock_request(path_params={"container_id": CONTAINER_A}, body={"save_status": "Failed"})
         result = asyncio.run(container_handlers.update_container_internal(request))
         self.assertEqual(result.status_code, 500)
 

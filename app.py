@@ -57,7 +57,7 @@ from src.cloud.container_handlers import (
     create_container,
     delete_container,
     get_container,
-    get_container_internal,
+    get_container_device,
     hibernate_container,
     list_containers,
     list_active_containers_for_device,
@@ -70,6 +70,7 @@ from src.cloud.container_handlers import (
     resume_container,
     update_container,
     update_container_internal,
+    update_container_kubernetes_id_device,
     update_container_status,
 )
 from src.cloud.snapshot_handlers import allocate_snapshot, report_snapshot_result, get_save_status
@@ -220,38 +221,15 @@ app.add_api_route(path="/containers/{container_id}/delete", endpoint=delete_cont
 # docstring for the full design.
 app.add_api_route(path="/containers/{container_id}/resume", endpoint=resume_container, methods=["POST"])
 
-# Internal system API (P09) - trusted cluster-wide callers (status_monitor) with no user_id of
-# their own, unlike the user-scoped /containers/* routes above. Same internal-token auth.
+# Internal system API (P09) - trusted cluster-wide callers with no user_id of their own, unlike
+# the user-scoped /containers/* routes above. Same internal-token auth. The reaper/status_monitor/
+# snapshot_job/container-maker per-device routes that used to live here have moved to the
+# device-Bearer-token routes below (Part 12's completion) - update_container_status is left
+# untouched here (out of scope for that pass; status_monitor's db_ops.py already appears to call
+# Device Agent's ReportContainerStatus RPC exclusively today, which would make this particular
+# route dead, but confirming and removing it was not part of this change).
 app.add_api_route(
     path="/internal/containers/{container_id}/status", endpoint=update_container_status, methods=["POST"]
-)
-# P14 - status_monitor periodically reports its currently-Running container_ids here to repair
-# any drift in P12's cached device used_* counters.
-app.add_api_route(
-    path="/internal/devices/resources/reconcile", endpoint=reconcile_device_resources, methods=["POST"]
-)
-# Durability-in-terminals: status_monitor's own periodic safety net for "the DB thinks this
-# device's container is Running but I can't actually find its pod" - see the handler's own
-# docstring for why this needs to be a device-scoped pull rather than relying on a live watch event.
-app.add_api_route(
-    path="/internal/devices/{device_id}/active-containers",
-    endpoint=list_active_containers_for_device, methods=["GET"],
-)
-# P16 - snapshot_job allocates a container_snapshots row here instead of writing to Postgres
-# directly. Same trusted-SYSTEM-caller pattern as the two routes above.
-app.add_api_route(
-    path="/internal/containers/{container_id}/snapshots/allocate", endpoint=allocate_snapshot, methods=["POST"]
-)
-# P17 - snapshot_job reports Running/Succeeded/Failed here as it progresses through a save
-# attempt, instead of writing to Postgres directly.
-app.add_api_route(
-    path="/internal/containers/{container_id}/snapshots/{snapshot_id}/report",
-    endpoint=report_snapshot_result, methods=["POST"],
-)
-# P18 - reaper finds its own device's idle containers and performs the hibernate transition
-# through these instead of a direct Postgres connection.
-app.add_api_route(
-    path="/internal/devices/{device_id}/containers/idle", endpoint=list_idle_containers, methods=["GET"]
 )
 app.add_api_route(
     path="/internal/containers/{container_id}/hibernate", endpoint=hibernate_container, methods=["POST"]
@@ -275,12 +253,42 @@ app.add_api_route(
     path="/devices/{device_id}/commands/{command_id}/result",
     endpoint=report_command_result, methods=["POST"],
 )
-# container-maker's off-direct-Postgres migration (see p.md's writeup): self-heal of a drifted
-# kubernetes_id, and the save reconciler's stuck-save sweep/mark-failed. The literal
-# /stuck-saves route MUST be registered before the {container_id} routes below it, or Starlette
-# would match "stuck-saves" as a container_id value instead.
+# Finishes Part 12: the last device-scoped local-stack call sites that used to require the global
+# CLOUD_INTERNAL_API_TOKEN secret, now reached through Device Agent's local API on each caller's
+# own per-device Bearer token instead - status_monitor's resource-drift reconciler/durability
+# check, reaper's idle sweep, snapshot_job's allocate/report, and container-maker's own
+# kubernetes_id self-heal. The old /internal/... routes these replace are gone; nothing else ever
+# called them.
+app.add_api_route(
+    path="/devices/{device_id}/resources/reconcile", endpoint=reconcile_device_resources, methods=["POST"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/active-containers", endpoint=list_active_containers_for_device, methods=["GET"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/containers/idle", endpoint=list_idle_containers, methods=["GET"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}/snapshots/allocate",
+    endpoint=allocate_snapshot, methods=["POST"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}/snapshots/{snapshot_id}/report",
+    endpoint=report_snapshot_result, methods=["POST"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}", endpoint=get_container_device, methods=["GET"],
+)
+app.add_api_route(
+    path="/devices/{device_id}/containers/{container_id}/kubernetes-id",
+    endpoint=update_container_kubernetes_id_device, methods=["POST"],
+)
+# save_reconciler.py's own stuck-save sweep/mark-failed - genuinely cluster-wide (every user's
+# stuck saves, not one device's), so it stays on the internal-token route; see
+# update_container_internal's own docstring for why this one couldn't move. The literal
+# /stuck-saves route MUST be registered before /internal/containers/{container_id} below it, or
+# Starlette would match "stuck-saves" as a container_id value instead.
 app.add_api_route(path="/internal/containers/stuck-saves", endpoint=list_stuck_saves, methods=["GET"])
-app.add_api_route(path="/internal/containers/{container_id}", endpoint=get_container_internal, methods=["GET"])
 app.add_api_route(path="/internal/containers/{container_id}", endpoint=update_container_internal, methods=["POST"])
 # remotetunelling.md Phase 5/7 - single-use terminal authorization tickets. create_terminal_session
 # is internal-token-gated (Local calls it server-to-server, same trust boundary as every other

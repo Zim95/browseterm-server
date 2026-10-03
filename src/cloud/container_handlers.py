@@ -734,20 +734,23 @@ async def update_container_status(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error updating container status"}, status_code=500)
 
 
+@authenticate_device
 async def list_idle_containers(request: Request) -> JSONResponse:
     '''
-    GET /internal/devices/{device_id}/containers/idle?idle_threshold_seconds=N
+    GET /devices/{device_id}/containers/idle?idle_threshold_seconds=N
 
     P18 (see ~/browseterm/p.md's "P18" section, plan section 16) - `reaper` (browseterm_workload)
-    uses this to find its own device's RUNNING-but-idle containers instead of querying Postgres
-    directly. Same trusted-SYSTEM-caller pattern as P09/P14 (no user_id) - device_id is the
-    scoping key here, not user_id, matching the plan's explicit instruction that the reaper "must
-    operate only on containers whose device_id is the current device."
+    uses this, via Device Agent's local API, to find its own device's RUNNING-but-idle containers
+    instead of querying Postgres directly. Finishes Part 12: this used to be internal-token-gated
+    (trusted-SYSTEM-caller, no user_id) with device_id taken on faith from the URL; now it's the
+    device's own Bearer token that proves which device_id this is, matching the plan's "must
+    operate only on containers whose device_id is the current device" the old version already
+    tried to express, just without anything actually verifying the caller was that device.
     '''
-    if not _internal_auth_ok(request):
-        return _unauthorized()
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
-        device_id = request.path_params["device_id"]
         idle_threshold_seconds = request.query_params.get("idle_threshold_seconds")
         if not idle_threshold_seconds:
             return JSONResponse(content={"error": "idle_threshold_seconds is required"}, status_code=400)
@@ -920,47 +923,87 @@ async def _save_container_via_device_command(container: dict) -> JSONResponse:
     return JSONResponse(content={"command": insert_result.data}, status_code=202)
 
 
-async def get_container_internal(request: Request) -> JSONResponse:
+@authenticate_device
+async def get_container_device(request: Request) -> JSONResponse:
     '''
-    GET /internal/containers/{container_id}
+    GET /devices/{device_id}/containers/{container_id}
 
-    Migrates container-maker off its former direct `ContainerOps.find_one({"id": ...})` call
-    (containers.py's save() self-heal path - see p.md's writeup on this migration). Same
-    trusted-SYSTEM-caller pattern as every other /internal/containers/* route: container-maker's
-    own id-only lookup (no user_id at all) was already effectively unscoped by user before this
-    migration, so this endpoint doesn't newly grant anything it didn't already have.
+    Finishes Part 12: replaces the old internal-token-gated GET /internal/containers/{container_id}
+    (container-maker's `Containers.save()` self-heal path - see p.md's writeup on this migration).
+    That route was id-only with no device/user scoping at all, safe only because it required the
+    global trusted-service secret; this is the same lookup, but now proven to belong to the
+    caller's own device via its Bearer token instead.
     '''
-    if not _internal_auth_ok(request):
-        return _unauthorized()
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
         container_id = request.path_params["container_id"]
         ops = ContainerOps(DB_CONFIG)
-        result = await asyncio.to_thread(ops.find_one, {"id": container_id})
+        result = await asyncio.to_thread(ops.find_one, {"id": container_id, "device_id": device_id})
         if not result.data:
             return _not_found()
         return JSONResponse(content={"container": result.data})
     except Exception:
-        logger.error("get container (internal) failed", exc_info=True)
+        logger.error("get container (device) failed", exc_info=True)
         return JSONResponse(content={"error": "Error getting container"}, status_code=500)
 
 
-# Fields container-maker is actually allowed to touch through update_container_internal - not a
+@authenticate_device
+async def update_container_kubernetes_id_device(request: Request) -> JSONResponse:
+    '''
+    POST /devices/{device_id}/containers/{container_id}/kubernetes-id
+
+    Finishes Part 12: replaces container-maker's former use of POST /internal/containers/
+    {container_id} (the `kubernetes_id`-only self-heal case - see containers.py's save()). The
+    same route's `save_status`/`save_error` use by save_reconciler.py stays on
+    update_container_internal below, unchanged - that sweep is genuinely cluster-wide (checks
+    every user's stuck saves, not one device's), so it cannot be converted to a per-device Bearer
+    credential the way this device-scoped case can.
+    '''
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
+    try:
+        container_id = request.path_params["container_id"]
+        body = await request.json()
+        kubernetes_id = body.get("kubernetes_id")
+        if not kubernetes_id:
+            return JSONResponse(content={"error": "kubernetes_id is required"}, status_code=400)
+
+        ops = ContainerOps(DB_CONFIG)
+        existing = await asyncio.to_thread(ops.find_one, {"id": container_id, "device_id": device_id})
+        if not existing.data:
+            return _not_found()
+        result = await asyncio.to_thread(ops.update, {"id": container_id}, {"kubernetes_id": kubernetes_id})
+        if not result.success:
+            logger.error("update container kubernetes_id (device) failed", extra={"container_id": container_id, "error": result.error})
+            return JSONResponse(content={"error": "Error updating container"}, status_code=500)
+        return JSONResponse(content={"ok": True})
+    except Exception:
+        logger.error("update container kubernetes_id (device) failed", exc_info=True)
+        return JSONResponse(content={"error": "Error updating container"}, status_code=500)
+
+
+# Fields save_reconciler.py is actually allowed to touch through update_container_internal - not a
 # passthrough of the whole request body, so this endpoint can't be used to move status/device_id/
 # anything else a SYSTEM caller shouldn't unilaterally change outside the dedicated endpoints
-# (update_container_status, hibernate_container) that already exist for those.
-_INTERNAL_UPDATABLE_FIELDS = {"kubernetes_id", "save_status", "save_error"}
+# (update_container_status, hibernate_container) that already exist for those. `kubernetes_id` was
+# removed from this whitelist once container-maker's own self-heal moved to the device-scoped
+# update_container_kubernetes_id_device above - save_reconciler.py never touched that field.
+_INTERNAL_UPDATABLE_FIELDS = {"save_status", "save_error"}
 
 
 async def update_container_internal(request: Request) -> JSONResponse:
     '''
     POST /internal/containers/{container_id}
 
-    Migrates container-maker off two former direct `ContainerOps.update()` calls:
-    - containers.py's save() self-heal (`kubernetes_id` only, when the DB's stored pod uid has
-      drifted from the pod's real current one).
-    - save_reconciler.py's `_mark_failed` (`save_status`/`save_error`, when a save's own snapshot
-      Job died without ever recording its own failure - see save_reconciler.py's module
-      docstring for why this exists).
+    Now used only by save_reconciler.py's `_mark_failed` (`save_status`/`save_error`, when a
+    save's own snapshot Job died without ever recording its own failure - see save_reconciler.py's
+    module docstring for why this exists) - a genuinely cluster-wide, cross-device/cross-user
+    sweep that cannot be converted to a per-device Bearer credential, unlike container-maker's own
+    former use of this same route (`kubernetes_id` self-heal), which finishing Part 12 moved to
+    the device-scoped update_container_kubernetes_id_device above.
     Deliberately whitelists ONLY those fields (see _INTERNAL_UPDATABLE_FIELDS) rather than
     accepting an arbitrary body, unlike the user-scoped update_container above.
     '''
@@ -1007,21 +1050,29 @@ async def list_stuck_saves(request: Request) -> JSONResponse:
         return JSONResponse(content={"error": "Error listing stuck saves"}, status_code=500)
 
 
+@authenticate_device
 async def reconcile_device_resources(request: Request) -> JSONResponse:
     '''
-    POST /internal/devices/resources/reconcile
+    POST /devices/{device_id}/resources/reconcile
 
     P14 (see ~/browseterm/p.md's "P14" section): status_monitor (browseterm_workload) periodically
     reports the container_ids of pods it currently sees actually Running in real Kubernetes - the
     ground truth P12's cached used_cpu/used_memory_bytes/used_storage_bytes counters can drift
-    away from (a missed release, a retried request, manual DB surgery). Same trusted SYSTEM caller
-    as update_container_status - no user_id, status_monitor watches its whole local cluster.
+    away from (a missed release, a retried request, manual DB surgery).
 
-    Body: {"running_container_ids": ["...", ...]}. For each id, looks up its container row (no
-    user_id filter - same reasoning as update_container_status) and, for every container that has
-    a device_id, sums its parsed cpu/memory/storage into a per-device running total. Each device
-    with at least one running container this call reports gets its used_* fields OVERWRITTEN
-    (not incremented) to that freshly-computed sum - this is a repair, not an adjustment.
+    Finishes Part 12: this used to be internal-token-gated with NO device scoping at all (any
+    container_id in the body was trusted and resolved to whatever device it happened to belong
+    to) - safe only because the internal token was itself a fully-trusted, cluster-wide secret.
+    Now that status_monitor reaches this through its own device's Bearer token (via Device
+    Agent's local API), any container_id in the body that does NOT belong to THIS device is
+    skipped rather than trusted - a legitimate report never contains one anyway (status_monitor
+    only ever sees its own local cluster's pods), so this only ever rejects something that
+    shouldn't have been possible to send in the first place.
+
+    Body: {"running_container_ids": ["...", ...]}. For each id, looks up its container row and
+    confirms it belongs to this device, then sums its parsed cpu/memory/storage into this
+    device's running total. used_* fields are OVERWRITTEN (not incremented) to that
+    freshly-computed sum - this is a repair, not an adjustment.
 
     Known limitation, not handled by this call alone: a device whose containers have ALL stopped
     running since the last reconcile (nothing in running_container_ids references it any more) is
@@ -1038,8 +1089,9 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
     Caught live: a real container's stored ip_address was in a subnet no pod in that cluster has
     ever used.
     '''
-    if not _internal_auth_ok(request):
-        return _unauthorized()
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
         body = await request.json()
         running_container_ids = body.get("running_container_ids")
@@ -1052,7 +1104,12 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
         for container_id in running_container_ids:
             result = await asyncio.to_thread(ops.find_one, {"id": container_id})
             container = result.data
-            if not container or not container.get("device_id"):
+            if not container or container.get("device_id") != device_id:
+                if container:
+                    logger.warning(
+                        "reconcile_device_resources: ignoring container_id belonging to a different device",
+                        extra={"container_id": container_id, "reporting_device_id": device_id, "actual_device_id": container.get("device_id")},
+                    )
                 continue
             pod_ip = running_pod_ips.get(container_id)
             if pod_ip and container.get("ip_address") != pod_ip:
@@ -1080,21 +1137,25 @@ async def reconcile_device_resources(request: Request) -> JSONResponse:
 
         device_ops = DeviceOps(DB_CONFIG)
         reconciled: dict[str, dict[str, int]] = {}
-        for device_id, totals in device_totals.items():
-            result = await asyncio.to_thread(device_ops.update, {"id": device_id}, totals)
+        # At most one key: every container kept above was already filtered to this device's own
+        # device_id, so this loop never actually iterates more than once - kept as a loop rather
+        # than inlined, since it's a direct, minimal diff from the pre-device-scoped version.
+        for target_device_id, totals in device_totals.items():
+            result = await asyncio.to_thread(device_ops.update, {"id": target_device_id}, totals)
             if not result.success:
-                logger.error("device resource reconcile failed", extra={"error": result.error, "device_id": device_id})
+                logger.error("device resource reconcile failed", extra={"error": result.error, "device_id": target_device_id})
                 continue
-            reconciled[device_id] = totals
+            reconciled[target_device_id] = totals
         return JSONResponse(content={"reconciled_devices": reconciled})
     except Exception:
         logger.error("device resource reconcile failed", exc_info=True)
         return JSONResponse(content={"error": "Error reconciling device resources"}, status_code=500)
 
 
+@authenticate_device
 async def list_active_containers_for_device(request: Request) -> JSONResponse:
     '''
-    GET /internal/devices/{device_id}/active-containers
+    GET /devices/{device_id}/active-containers
 
     Durability-in-terminals: status_monitor's own live pod watch can miss a pod's deletion if the
     pod disappears while the watch's own connection to the k8s API is down (or, worse, if
@@ -1115,15 +1176,14 @@ async def list_active_containers_for_device(request: Request) -> JSONResponse:
     separately-fetched pod list purely from ordinary timing skew between two independent reads,
     not because anything is actually lost.
 
-    Same trusted-SYSTEM-caller pattern as reconcile_device_resources - status_monitor has no
-    user_id or device Bearer credential of its own (see its own cloud_client.py docstring for
-    why), it's just told its own device_id via plain (non-secret) config, same as reaper already
-    is.
+    Finishes Part 12: status_monitor now reaches this through Device Agent's own local API, which
+    forwards it on Device Agent's per-device Bearer token - not the global internal-token secret
+    this route used to require.
     '''
-    if not _internal_auth_ok(request):
-        return _unauthorized()
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
-        device_id = request.path_params["device_id"]
         ops = ContainerOps(DB_CONFIG)
         result = await asyncio.to_thread(
             ops.find, {"device_id": device_id, "status": ContainerStatus.RUNNING}

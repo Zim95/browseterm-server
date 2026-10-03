@@ -25,27 +25,30 @@ from fastapi.responses import JSONResponse
 from browseterm_db.operations.all_operations import ContainerOps, SnapshotOps
 from browseterm_db.common.snapshot_version import format_snapshot_version
 
-from src.cloud.config import DB_CONFIG, CLOUD_INTERNAL_API_TOKEN, SNAPSHOT_REGISTRY_REPO_PREFIX
+from src.cloud.config import DB_CONFIG, SNAPSHOT_REGISTRY_REPO_PREFIX
 from src.cloud.device_handlers import authenticate_device
 from src.common.logging_setup import get_logger
 
 logger = get_logger("cloud_snapshot_handlers")
 
 
-def _internal_auth_ok(request: Request) -> bool:
-    return request.headers.get("X-Internal-Service-Token") == CLOUD_INTERNAL_API_TOKEN
-
-
+@authenticate_device
 async def allocate_snapshot(request: Request) -> JSONResponse:
     '''
-    POST /internal/containers/{container_id}/snapshots/allocate
+    POST /devices/{device_id}/containers/{container_id}/snapshots/allocate
 
     Body: {"request_id": "..."}. Returns {"snapshot": {...}} - either the existing row for this
     (container_id, request_id) if one already exists (idempotent retry - plan step 2), or a newly
     allocated Pending row (plan steps 3-4).
+
+    Finishes Part 12: `snapshot_job` now reaches this through Device Agent's local API, forwarded
+    on Device Agent's own per-device Bearer token - not the global internal-token secret this
+    route used to require (the old /internal/containers/{container_id}/snapshots/allocate route
+    is gone; nothing else ever called it).
     '''
-    if not _internal_auth_ok(request):
-        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
         container_id = request.path_params["container_id"]
         body = await request.json()
@@ -64,7 +67,7 @@ async def allocate_snapshot(request: Request) -> JSONResponse:
             return JSONResponse(content={"snapshot": existing.data})
 
         container_ops = ContainerOps(DB_CONFIG)
-        container_result = await asyncio.to_thread(container_ops.find_one, {"id": container_id})
+        container_result = await asyncio.to_thread(container_ops.find_one, {"id": container_id, "device_id": device_id})
         if not container_result.data:
             return JSONResponse(content={"error": "Container not found"}, status_code=404)
         container = container_result.data
@@ -110,9 +113,10 @@ async def allocate_snapshot(request: Request) -> JSONResponse:
 _TERMINAL_SNAPSHOT_STATUSES = {"Succeeded", "Failed"}
 
 
+@authenticate_device
 async def report_snapshot_result(request: Request) -> JSONResponse:
     '''
-    POST /internal/containers/{container_id}/snapshots/{snapshot_id}/report
+    POST /devices/{device_id}/containers/{container_id}/snapshots/{snapshot_id}/report
 
     P17 (see ~/browseterm/p.md's "P17" section, plan section 13). Body: {"status": "Running"|
     "Succeeded"|"Failed", "image_reference"?, "registry_digest"?, "error_detail"?}. `snapshot_job`
@@ -128,12 +132,21 @@ async def report_snapshot_result(request: Request) -> JSONResponse:
 
     `saved_image`/`last_saved_at` on the `containers` row are ONLY set when `status == "Succeeded"`
     - plan section 13 is explicit: "On failure, saved_image must remain unchanged."
+
+    Finishes Part 12: device-Bearer-token-gated now, like allocate_snapshot above - the old
+    internal-token route is gone.
     '''
-    if not _internal_auth_ok(request):
-        return JSONResponse(content={"error": "Unauthorized"}, status_code=401)
+    device_id = request.path_params["device_id"]
+    if device_id != request.state.device_id:
+        return _not_found()
     try:
         container_id = request.path_params["container_id"]
         snapshot_id = request.path_params["snapshot_id"]
+        container_check = await asyncio.to_thread(
+            ContainerOps(DB_CONFIG).find_one, {"id": container_id, "device_id": device_id}
+        )
+        if not container_check.data:
+            return _not_found()
         body = await request.json()
         status = body.get("status")
         if status not in {"Running", "Succeeded", "Failed"}:
